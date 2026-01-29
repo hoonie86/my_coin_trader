@@ -220,6 +220,12 @@ async def buy_scan_task(app):
                 sys.stdout.flush()
 
                 await asyncio.sleep(0.05)
+                # [예외 처리] 지원하지 않는 마켓(symbollist 미포함) 방어
+                markets_dict = getattr(exchange, 'markets', None)
+                if markets_dict is not None and symbol not in markets_dict:
+                    logger.info(f"지원하지 않는 마켓: {symbol}")
+                    continue
+
                 ohlcv = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '30m', limit=200)
                 if len(ohlcv) < 185: continue
 
@@ -394,13 +400,27 @@ async def sell_monitor_task(app):
                 tp_executed = False
                 # [기존 익절 로직 보존]
                 if this_profit >= 13.0:
-                    await asyncio.to_thread(exchange.create_market_sell_order, symbol, this_qty)
-                    await app.bot.send_message(config.CHAT_ID, f"🎯 [목표익절] {symbol} 13% 전량 매도")
-                    tp_executed = True
+                    balance = await asyncio.to_thread(exchange.fetch_balance)
+                    base = symbol.split('/')[0]
+                    free_qty = float(balance['free'].get(base, 0))
+                    sell_qty = min(this_qty, free_qty)
+                    if sell_qty <= 0:
+                        logger.info(f"매도 건너뜀(잔고 부족): {symbol}")
+                    else:
+                        await asyncio.to_thread(exchange.create_market_sell_order, symbol, sell_qty)
+                        await app.bot.send_message(config.CHAT_ID, f"🎯 [목표익절] {symbol} 13% 전량 매도")
+                        tp_executed = True
                 elif this_profit >= 8.0 and this_curr_p < ma40_line:
-                    await asyncio.to_thread(exchange.create_market_sell_order, symbol, this_qty)
-                    await app.bot.send_message(config.CHAT_ID, f"💰 [추적익절] {symbol} 8%구간 40선 이탈")
-                    tp_executed = True
+                    balance = await asyncio.to_thread(exchange.fetch_balance)
+                    base = symbol.split('/')[0]
+                    free_qty = float(balance['free'].get(base, 0))
+                    sell_qty = min(this_qty, free_qty)
+                    if sell_qty <= 0:
+                        logger.info(f"매도 건너뜀(잔고 부족): {symbol}")
+                    else:
+                        await asyncio.to_thread(exchange.create_market_sell_order, symbol, sell_qty)
+                        await app.bot.send_message(config.CHAT_ID, f"💰 [추적익절] {symbol} 8%구간 40선 이탈")
+                        tp_executed = True
 
                 if tp_executed:
                     if symbol in pending_approvals: del pending_approvals[symbol]
@@ -485,9 +505,16 @@ async def sell_monitor_task(app):
                 # 5단계: 최종 집행
                 if is_sell_final:
                     if status == 'AUTO' or is_night or "0순위" in sell_reason:
-                        await asyncio.to_thread(exchange.create_market_sell_order, symbol, this_qty)
-                        await app.bot.send_message(config.CHAT_ID, f"🔴 [매도 집행]\n{symbol} | 사유: {sell_reason}")
-                        if symbol in pending_approvals: del pending_approvals[symbol]
+                        balance = await asyncio.to_thread(exchange.fetch_balance)
+                        base = symbol.split('/')[0]
+                        free_qty = float(balance['free'].get(base, 0))
+                        sell_qty = min(this_qty, free_qty)
+                        if sell_qty <= 0:
+                            logger.info(f"매도 건너뜀(잔고 부족): {symbol}")
+                        else:
+                            await asyncio.to_thread(exchange.create_market_sell_order, symbol, sell_qty)
+                            await app.bot.send_message(config.CHAT_ID, f"🔴 [매도 집행]\n{symbol} | 사유: {sell_reason}")
+                            if symbol in pending_approvals: del pending_approvals[symbol]
                     else:
                         limit = pending_approvals.get(symbol, {}).get('wait_limit', 30)
                         if elapsed_min >= limit:
