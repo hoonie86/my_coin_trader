@@ -100,7 +100,17 @@ emergency_mode = {}
 
 # [사용자 원본 버전 2 - 메인 사용 중인 로직]
 def check_buy_signal(df, symbol, warning_list):
-    if len(df) < 185: return False, "데이터부족"
+    """
+    매수 신호 판단 함수 (4개 값 리턴)
+    
+    Returns:
+        tuple: (is_buy: bool, reason: str, grade: str, data_dict: dict)
+    """
+    # 기본 data_dict 초기화
+    data_dict = {}
+    
+    if len(df) < 185:
+        return False, "데이터부족", "", data_dict
 
     df['ma40'] = df['close'].rolling(40).mean()
     df['ma185'] = df['close'].rolling(185).mean()
@@ -109,18 +119,38 @@ def check_buy_signal(df, symbol, warning_list):
     curr = df.iloc[-1]
     prev = df.iloc[-2]
     curr_price = float(curr['close'])
+    
+    # 기본 수치 데이터 수집
+    ma40_val = float(curr['ma40']) if not pd.isna(curr['ma40']) else 0
+    ma185_val = float(curr['ma185']) if not pd.isna(curr['ma185']) else 0
+    rsi_val = float(curr['rsi']) if not pd.isna(curr['rsi']) else 50
+    
+    data_dict = {
+        'rsi': rsi_val,
+        'ma40_val': ma40_val,
+        'ma185_val': ma185_val,
+        'current_price': curr_price,
+        'grade': ''
+    }
 
-    if symbol.split('/')[0] in warning_list: return False, "투자유의"
+    if symbol.split('/')[0] in warning_list:
+        data_dict['grade'] = 'F'
+        return False, "투자유의", "F", data_dict
 
     ma185_past = df['ma185'].iloc[-30]
     is_was_descending = curr['ma185'] <= ma185_past
     diff_185 = (curr['ma185'] - prev['ma185']) / get_bithumb_tick_size(curr['ma185'])
     slope_rate = ((curr['ma185'] - prev['ma185']) / prev['ma185']) * 100
+    
+    data_dict['slope_rate'] = slope_rate
 
     if not (is_was_descending and diff_185 >= -0.2):
-        return False, "185일선 하락 조건 불만족"
+        reason = f"185일선 하락 조건 불만족(기울기:{slope_rate:.4f}%, diff:{diff_185:.2f})"
+        return False, reason, "", data_dict
 
-    if diff_185 < -1.2: return False, "185일선 급락(-1.2 이상)"
+    if diff_185 < -1.2:
+        reason = f"185일선 급락(diff:{diff_185:.2f} < -1.2, 기울기:{slope_rate:.4f}%)"
+        return False, reason, "", data_dict
 
     gold_index = -1
     for i in range(1, 97):
@@ -129,56 +159,89 @@ def check_buy_signal(df, symbol, warning_list):
             gold_index = len(df) - i
             break
 
-    if gold_index == -1: return False, "골든크로스 미발생"
-    bars_since_gold = len(df) - gold_index
-    if bars_since_gold < 4: return False, f"골든크로스 후 {bars_since_gold}봉(4봉 미만)"
+    bars_since_gold = len(df) - gold_index if gold_index != -1 else -1
+    data_dict['bars_since_gold'] = bars_since_gold
+    
+    if gold_index == -1:
+        reason = "골든크로스 미발생"
+        return False, reason, "", data_dict
+    
+    if bars_since_gold < 4:
+        reason = f"골든크로스 후 {bars_since_gold}봉(4봉 미만, 필요:4봉 이상)"
+        return False, reason, "", data_dict
 
-    disparity_40 = abs(curr_price - curr['ma40']) / curr['ma40']
-    if curr['rsi'] > 65: return False, f"RSI 과열({curr['rsi']:.1f} > 65)"
-    disparity_gold = abs(curr['ma40'] - curr['ma185']) / curr['ma185']
+    disparity_40 = abs(curr_price - curr['ma40']) / curr['ma40'] if curr['ma40'] > 0 else 999
+    disparity_40_pct = disparity_40 * 100
+    disparity_185 = abs(curr_price - curr['ma185']) / curr['ma185'] if curr['ma185'] > 0 else 999
+    disparity_185_pct = disparity_185 * 100
+    disparity_gold = abs(curr['ma40'] - curr['ma185']) / curr['ma185'] if curr['ma185'] > 0 else 999
+    
+    data_dict['disparity_40'] = disparity_40
+    data_dict['disparity_40_pct'] = disparity_40_pct
+    data_dict['disparity_185'] = disparity_185
+    data_dict['disparity_185_pct'] = disparity_185_pct
+    data_dict['disparity_gold'] = disparity_gold
+    
+    if rsi_val > 65:
+        reason = f"RSI 과열({rsi_val:.1f} > 65, 현재가:{curr_price:,.0f})"
+        return False, reason, "", data_dict
 
     # [정교화] 거래량 체크: 최근 20분 내 10% 이상 거래량 발생 여부
-    # 30분봉 기준으로 최근 20분 = 최근 1봉, 하지만 더 정교하게 최근 2-3봉도 체크
-    base_period = 20  # 기준 기간 (봉 수)
-    recent_volumes = df['vol'].tail(base_period)  # 최근 20봉의 거래량
-    base_avg_vol = recent_volumes.mean()  # 기준 평균 거래량
+    base_period = 20
+    recent_volumes = df['vol'].tail(base_period)
+    base_avg_vol = recent_volumes.mean()
     
-    # 최근 3봉(약 90분) 중 하나라도 평균 대비 10% 이상인지 체크
     recent_3bars = df['vol'].tail(3)
     has_volume_surge = False
+    max_vol_ratio = 0
     for vol_val in recent_3bars:
-        if base_avg_vol > 0 and vol_val >= base_avg_vol * 1.1:  # 10% 이상 증가
-            has_volume_surge = True
-            break
+        if base_avg_vol > 0:
+            ratio = vol_val / base_avg_vol
+            max_vol_ratio = max(max_vol_ratio, ratio)
+            if ratio >= 1.1:
+                has_volume_surge = True
     
     curr_vol = curr['vol']
     vol_ratio = (curr_vol / base_avg_vol) if base_avg_vol > 0 else 0
     
+    data_dict['vol_ratio'] = vol_ratio
+    data_dict['has_volume_surge'] = has_volume_surge
+    data_dict['max_vol_ratio'] = max_vol_ratio
+    
     if curr_price > curr['ma40']:
         if disparity_40 <= 0.07:
-            # 양봉이거나 거래량 급증(10% 이상)이면 조건 만족
             if curr['close'] >= curr['open'] or has_volume_surge:
                 if slope_rate >= -0.01 and disparity_gold <= 0.005:
-                    return True, "💎 [S+] 밥그릇 바닥 완전 수렴"
+                    data_dict['grade'] = 'S+'
+                    return True, "💎 [S+] 밥그릇 바닥 완전 수렴", "S+", data_dict
                 if slope_rate >= -0.01:
-                    return True, "🚀 [A+] 185선 평행/우상향 전환"
-                return True, "🚀 A급 상승대기(골드안착)"
+                    data_dict['grade'] = 'A+'
+                    return True, "🚀 [A+] 185선 평행/우상향 전환", "A+", data_dict
+                data_dict['grade'] = 'A'
+                return True, "🚀 A급 상승대기(골드안착)", "A", data_dict
             else:
-                return False, f"거래량 부족(현재:{curr_vol:.0f} vs 기준평균:{base_avg_vol:.0f}, 최근3봉 중 10% 이상 없음)"
+                reason = f"거래량 부족(현재:{curr_vol:.0f} vs 기준평균:{base_avg_vol:.0f}, 최대비율:{max_vol_ratio:.3f} < 1.1)"
+                return False, reason, "", data_dict
 
     if disparity_40 <= 0.025:
         if abs(diff_185) < 1.0:
             if slope_rate >= -0.01 and disparity_gold <= 0.015:
-                return True, "⭐ [S급] 밥그릇 바닥 탈출(변곡점)"
-            return True, "S급 에너지응축(40선밀착)"
+                data_dict['grade'] = 'S'
+                return True, "⭐ [S급] 밥그릇 바닥 탈출(변곡점)", "S", data_dict
+            data_dict['grade'] = 'S'
+            return True, "S급 에너지응축(40선밀착)", "S", data_dict
 
     # 최종 탈락 사유 판단
     if curr_price <= curr['ma40']:
-        return False, f"현재가({curr_price:,.0f})가 40일선({curr['ma40']:,.0f}) 이하"
-    if disparity_40 > 0.07:
-        return False, f"40일선 이격도 과다({disparity_40*100:.2f}% > 7%)"
+        reason = f"현재가({curr_price:,.0f}) ≤ 40일선({ma40_val:,.0f}, 이격도:{disparity_40_pct:.2f}%)"
+        return False, reason, "", data_dict
     
-    return False, "기타 조건 불만족"
+    if disparity_40 > 0.07:
+        reason = f"40일선 이격도 과다({disparity_40_pct:.2f}% > 7%, 현재가:{curr_price:,.0f}, 40일선:{ma40_val:,.0f})"
+        return False, reason, "", data_dict
+    
+    reason = f"기타 조건 불만족(현재가:{curr_price:,.0f}, 40일선:{ma40_val:,.0f}, 이격도:{disparity_40_pct:.2f}%)"
+    return False, reason, "", data_dict
 
 
 # [사용자 원본] 정밀 2음봉 로직

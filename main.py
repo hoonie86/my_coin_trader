@@ -230,12 +230,12 @@ async def buy_scan_task(app):
                 if len(ohlcv) < 185: continue
 
                 df = pd.DataFrame(ohlcv, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
-                is_buy, reason = strategy.check_buy_signal(df, symbol, w_list)
+                is_buy, reason, grade, data_dict = strategy.check_buy_signal(df, symbol, w_list)
                 
-                # [분석 봇] 매수 신호가 없을 때 탈락 사유 기록
+                # [분석 봇] 매수 신호가 없을 때 탈락 사유 및 상세 수치 기록
                 if not is_buy and reason:
                     current_price = float(df.iloc[-1]['close'])
-                    analyzer.record_missed_opportunity(symbol, reason, current_price)
+                    analyzer.record_missed_opportunity(symbol, reason, current_price, data_dict)
 
                 if is_buy:
                     if symbol in notified_symbols and (datetime.now() - notified_symbols[symbol]) < timedelta(hours=1):
@@ -246,7 +246,8 @@ async def buy_scan_task(app):
                     free_krw = float(balance['free'].get('KRW', 0))
                     buy_cost = await get_buy_cost()
 
-                    is_s_class_check = any(x in reason for x in ["S급", "[S]", "[S+]"])
+                    # [개선] grade 값 우선 사용, 없으면 reason에서 추출
+                    is_s_class_check = (grade and grade.startswith("S")) or any(x in reason for x in ["S급", "[S]", "[S+]"])
                     indiv_mode_check = buy_individual_status.get(symbol)
                     curr_mode_check = indiv_mode_check if indiv_mode_check else ("AUTO" if is_night else buy_mute_mode)
 
@@ -268,7 +269,7 @@ async def buy_scan_task(app):
                     # [매수 집행/알림 로직]
                     indiv_mode = buy_individual_status.get(symbol)
                     curr_mode = indiv_mode if indiv_mode else ("AUTO" if is_night else buy_mute_mode)
-                    is_s_class = "S급" in reason
+                    is_s_class = (grade and grade.startswith("S")) or "S급" in reason
 
                     if curr_mode == "AUTO" and is_s_class:
                         if free_krw < 1000:
@@ -304,7 +305,7 @@ async def buy_scan_task(app):
                 if 0 < current_mark < 30 and current_mark > info['last_check_min']:
                     ohlcv_now = await asyncio.to_thread(exchange.fetch_ohlcv, sym, '30m', limit=200)
                     df_now = pd.DataFrame(ohlcv_now, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
-                    still_buy, now_reason = strategy.check_buy_signal(df_now, sym, w_list)
+                    still_buy, now_reason, now_grade, now_data_dict = strategy.check_buy_signal(df_now, sym, w_list)
 
                     if still_buy:
                         info['last_check_min'] = current_mark
@@ -318,7 +319,7 @@ async def buy_scan_task(app):
                 if elapsed >= 30:
                     ohlcv_final = await asyncio.to_thread(exchange.fetch_ohlcv, sym, '30m', limit=200)
                     df_final = pd.DataFrame(ohlcv_final, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
-                    is_still_good, final_reason = strategy.check_buy_signal(df_final, sym, w_list)
+                    is_still_good, final_reason, final_grade, final_data_dict = strategy.check_buy_signal(df_final, sym, w_list)
 
                     if is_still_good:
                         success, msg = await safe_market_buy(sym, info['cost'], "S")
@@ -904,13 +905,19 @@ def get_current_grade(symbol, df):
     [최종] strategy.check_buy_signal 로직과 100% 동기화된 등급 판별
     """
     try:
-        # 이미 정의된 매수 신호 함수를 호출하여 등급(reason)을 가져옴
-        # 사용자님 코드 구조상 세 번째 반환값인 reason에 "A급" 또는 "S급"이 포함되어 있음
-        is_buy, reason = strategy.check_buy_signal(df, symbol, config.WARNING_LIST)
+        # check_buy_signal이 4개 값을 리턴하도록 변경됨: (is_buy, reason, grade, data_dict)
+        is_buy, reason, grade, data_dict = strategy.check_buy_signal(df, symbol, config.WARNING_LIST)
 
         if is_buy:
-            if "A급" in reason: return "A"
-            if "S급" in reason: return "S"
+            # grade 값이 직접 반환됨 (예: "S+", "A+", "A", "S")
+            if grade:
+                # "S+" -> "S", "A+" -> "A"로 변환하여 반환
+                if grade.startswith("S"): return "S"
+                if grade.startswith("A"): return "A"
+                return grade
+            # grade가 없으면 reason에서 추출
+            if "S급" in reason or "[S" in reason: return "S"
+            if "A급" in reason or "[A" in reason: return "A"
 
         return "B"  # 그 외 일반 등급
     except Exception as e:
