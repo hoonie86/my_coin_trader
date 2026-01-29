@@ -3,7 +3,7 @@ import pandas as pd
 import sys
 import json
 import os
-import strategy, config, telegram_ui
+import strategy, config, telegram_ui, analyzer
 from datetime import datetime, timedelta
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CallbackQueryHandler, ContextTypes, MessageHandler, filters
@@ -231,6 +231,11 @@ async def buy_scan_task(app):
 
                 df = pd.DataFrame(ohlcv, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
                 is_buy, reason = strategy.check_buy_signal(df, symbol, w_list)
+                
+                # [분석 봇] 매수 신호가 없을 때 탈락 사유 기록
+                if not is_buy and reason:
+                    current_price = float(df.iloc[-1]['close'])
+                    analyzer.record_missed_opportunity(symbol, reason, current_price)
 
                 if is_buy:
                     if symbol in notified_symbols and (datetime.now() - notified_symbols[symbol]) < timedelta(hours=1):
@@ -540,11 +545,11 @@ async def sell_monitor_task(app):
                     await app.bot.send_message(config.CHAT_ID, msg_text, reply_markup=InlineKeyboardMarkup(final_rows))
                 last_report_time = datetime.now()
 
-            await asyncio.sleep(60)
+            await asyncio.sleep(180)  # [변경] 매도 감시 주기 1분 -> 3분
         except Exception as e:
             import traceback
             logger.error(f"Sell Monitor Error: {e}\n{traceback.format_exc()}")
-            await asyncio.sleep(60)
+            await asyncio.sleep(180)  # [변경] 에러 발생 시에도 3분 대기
 
 
 async def handle_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE):

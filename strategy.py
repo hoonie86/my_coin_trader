@@ -118,9 +118,9 @@ def check_buy_signal(df, symbol, warning_list):
     slope_rate = ((curr['ma185'] - prev['ma185']) / prev['ma185']) * 100
 
     if not (is_was_descending and diff_185 >= -0.2):
-        return False, ""
+        return False, "185일선 하락 조건 불만족"
 
-    if diff_185 < -1.2: return False, ""
+    if diff_185 < -1.2: return False, "185일선 급락(-1.2 이상)"
 
     gold_index = -1
     for i in range(1, 97):
@@ -129,22 +129,42 @@ def check_buy_signal(df, symbol, warning_list):
             gold_index = len(df) - i
             break
 
-    if gold_index == -1: return False, ""
+    if gold_index == -1: return False, "골든크로스 미발생"
     bars_since_gold = len(df) - gold_index
-    if bars_since_gold < 4: return False, ""
+    if bars_since_gold < 4: return False, f"골든크로스 후 {bars_since_gold}봉(4봉 미만)"
 
     disparity_40 = abs(curr_price - curr['ma40']) / curr['ma40']
-    if curr['rsi'] > 65: return False, ""
+    if curr['rsi'] > 65: return False, f"RSI 과열({curr['rsi']:.1f} > 65)"
     disparity_gold = abs(curr['ma40'] - curr['ma185']) / curr['ma185']
 
+    # [정교화] 거래량 체크: 최근 20분 내 10% 이상 거래량 발생 여부
+    # 30분봉 기준으로 최근 20분 = 최근 1봉, 하지만 더 정교하게 최근 2-3봉도 체크
+    base_period = 20  # 기준 기간 (봉 수)
+    recent_volumes = df['vol'].tail(base_period)  # 최근 20봉의 거래량
+    base_avg_vol = recent_volumes.mean()  # 기준 평균 거래량
+    
+    # 최근 3봉(약 90분) 중 하나라도 평균 대비 10% 이상인지 체크
+    recent_3bars = df['vol'].tail(3)
+    has_volume_surge = False
+    for vol_val in recent_3bars:
+        if base_avg_vol > 0 and vol_val >= base_avg_vol * 1.1:  # 10% 이상 증가
+            has_volume_surge = True
+            break
+    
+    curr_vol = curr['vol']
+    vol_ratio = (curr_vol / base_avg_vol) if base_avg_vol > 0 else 0
+    
     if curr_price > curr['ma40']:
         if disparity_40 <= 0.07:
-            if curr['close'] >= curr['open'] or curr['vol'] > df['vol'].tail(5).mean():
+            # 양봉이거나 거래량 급증(10% 이상)이면 조건 만족
+            if curr['close'] >= curr['open'] or has_volume_surge:
                 if slope_rate >= -0.01 and disparity_gold <= 0.005:
                     return True, "💎 [S+] 밥그릇 바닥 완전 수렴"
                 if slope_rate >= -0.01:
                     return True, "🚀 [A+] 185선 평행/우상향 전환"
                 return True, "🚀 A급 상승대기(골드안착)"
+            else:
+                return False, f"거래량 부족(현재:{curr_vol:.0f} vs 기준평균:{base_avg_vol:.0f}, 최근3봉 중 10% 이상 없음)"
 
     if disparity_40 <= 0.025:
         if abs(diff_185) < 1.0:
@@ -152,7 +172,13 @@ def check_buy_signal(df, symbol, warning_list):
                 return True, "⭐ [S급] 밥그릇 바닥 탈출(변곡점)"
             return True, "S급 에너지응축(40선밀착)"
 
-    return False, ""
+    # 최종 탈락 사유 판단
+    if curr_price <= curr['ma40']:
+        return False, f"현재가({curr_price:,.0f})가 40일선({curr['ma40']:,.0f}) 이하"
+    if disparity_40 > 0.07:
+        return False, f"40일선 이격도 과다({disparity_40*100:.2f}% > 7%)"
+    
+    return False, "기타 조건 불만족"
 
 
 # [사용자 원본] 정밀 2음봉 로직
@@ -183,6 +209,7 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
     global emergency_mode
     df['ma40'] = df['close'].rolling(40).mean()
     df['ma90'] = df['close'].rolling(90).mean()
+    df['ma185'] = df['close'].rolling(185).mean()
 
     curr = df.iloc[-1]
     curr_p = curr['close']
@@ -193,6 +220,19 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
 
     # [보정] 수익률 계산 시 purchase_price가 0일 때 -100% 뜨는 것 방지
     profit_rate = (curr_p - purchase_price) / purchase_price if purchase_price > 0 else 0
+    profit_rate_pct = profit_rate * 100
+
+    # [S급 털림 방지 로직] 급등 진행 중 판단 및 매도 유예
+    ma40_val = curr['ma40']
+    ma185_val = curr['ma185'] if not pd.isna(curr['ma185']) else 0
+    
+    if ma185_val > 0:
+        is_price_above_ma40 = curr_p > ma40_val
+        is_ma40_above_ma185 = ma40_val > ma185_val
+        is_profit_above_10 = profit_rate_pct >= 10.0
+        
+        if is_price_above_ma40 and is_ma40_above_ma185 and is_profit_above_10:
+            return False, "급등 진행 중(매도 유예)"
 
     # 0순위: 긴급 감시 (RSI 80 이상)
     if curr_rsi >= 80:

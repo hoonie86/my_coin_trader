@@ -1,0 +1,230 @@
+{
+    "AKT/KRW": {
+        "avg_price": 636.0,
+        "total_quantity": 221.30660378,
+        "last_update": "2026-01-24 10:01:52"
+    },
+    "OPEN/KRW": {
+        "avg_price": 231.0,
+        "total_quantity": 43.29,
+        "last_update": "2026-01-24 11:13:00"
+    },
+    "ORBS/KRW": {
+        "avg_price": 15.14,
+        "total_quantity": 660.5019,
+        "last_update": "2026-01-24 11:14:52"
+    },
+    "SOON/KRW": {
+        "avg_price": 468.0,
+        "total_quantity": 21.3675,
+        "last_update": "2026-01-24 11:40:42"
+    },
+    "DRIFT/KRW": {
+        "avg_price": 227.0,
+        "total_quantity": 44.0528,
+        "last_update": "2026-01-24 12:09:10"
+    },
+    "A8/KRW": {
+        "avg_price": 55.13,
+        "total_quantity": 181.3894,
+        "last_update": "2026-01-24 12:55:57"
+    },
+    "XPLA/KRW": {
+        "avg_price": 27.12,
+        "total_quantity": 368.7315,
+        "last_update": "2026-01-24 18:46:29"
+    },
+    "FITFI/KRW": {
+        "avg_price": 1.174,
+        "total_quantity": 17035.7751,
+        "last_update": "2026-01-24 20:40:12",
+        "buy_time": "2026-01-24 20:40:12"
+    },
+    "ROA/KRW": {
+        "avg_price": 9.282665134903118,
+        "total_quantity": 3231.8304,
+        "last_update": "2026-01-25 00:42:02",
+        "buy_time": "2026-01-25 00:42:02"
+    },
+    "ACH/KRW": {
+        "avg_price": 18.37,
+        "total_quantity": 544.3658,
+        "last_update": "2026-01-24 22:08:58",
+        "buy_time": "2026-01-24 22:08:58"
+    },
+    "CRO/KRW": {
+        "avg_price": 137.0,
+        "total_quantity": 145.9854,
+        "last_update": "2026-01-25 05:15:55",
+        "buy_time": "2026-01-25 05:15:55"
+    },
+    "TAIKO/KRW": {
+        "avg_price": 245.49083459556593,
+        "total_quantity": 81.46940000000001,
+        "last_update": "2026-01-25 06:54:06",
+        "buy_time": "2026-01-25 06:54:06"
+    },
+    "IP/KRW": {
+        "avg_price": 3545.0,
+        "total_quantity": 2.8208,
+        "last_update": "2026-01-25 02:05:49",
+        "buy_time": "2026-01-25 02:05:49"
+    },
+    "STEEM/KRW": {
+        "avg_price": 96.87,
+        "total_quantity": 103.2311,
+        "last_update": "2026-01-25 02:44:28",
+        "buy_time": "2026-01-25 02:44:28"
+    },
+    "REQ/KRW": {
+        "avg_price": 157.0,
+        "total_quantity": 63.6942,
+        "grade": "A",
+        "last_update": "2026-01-28 00:57:21",
+        "buy_time": "2026-01-28 00:57:21"
+    },
+    "HYPER/KRW": {
+        "avg_price": 182.0,
+        "total_quantity": 54.945,
+        "last_update": "2026-01-25 03:42:30",
+        "buy_time": "2026-01-25 03:42:30"
+    },
+    "MASK/KRW": {
+        "avg_price": 920.0,
+        "total_quantity": 10.8695,
+        "last_update": "2026-01-25 04:07:49",
+        "buy_time": "2026-01-25 04:07:49"
+    },
+    "CKB/KRW": {
+        "avg_price": 3.645972572623992,
+        "total_quantity": 5485.5046999999995,
+        "last_update": "2026-01-25 06:10:57",
+        "buy_time": "2026-01-25 06:10:57"
+    },
+    "JUP/KRW": {
+        "avg_price": 290.0,
+        "total_quantity": 34.4827,
+        "last_update": "2026-01-25 04:36:23",
+        "buy_time": "2026-01-25 04:36:23"
+    },
+    "LAYER/KRW": {
+        "avg_price": 210.0,
+        "total_quantity": 95.238,
+        "last_update": "2026-01-25 07:08:23",
+        "buy_time": "2026-01-25 07:08:23"
+    },
+    "OM/KRW": {
+        "avg_price": 98.89,
+        "total_quantity": 101.1224,
+        "last_update": "2026-01-25 04:37:36",
+        "buy_time": "2026-01-25 04:37:36"
+    },
+    "API3/KRW": {
+        "avg_price": 605.0,
+        "total_quantity": 16.5289,
+        "last_update": "2026-01-25 05:03:41",
+        "buy_time": "2026-01-25 05:03:41"
+    },
+    "RSR/KRW": {
+        "avg_price": 3.5030000000000006,
+        "total_quantity": 2854.6959,
+        "last_update": "2026-01-25 05:16:10",
+        "buy_time": "2026-01-25 05:16:10"
+    },
+    "H/KRW": {
+        "avg_price": 245.99999999999997,
+        "total_quantity": 40.6504,
+        "last_update": "2026-01-25 05:32:32",
+        "buy_time": "2026-01-25 05:32:32"
+    },
+    "LSK/KRW": {
+        "avg_price": 263.0,
+        "total_quantity": 38.0228,
+        "last_update": "2026-01-25 05:58:46",
+        "buy_time": "2026-01-25 05:58:46"
+    },
+    "MOVE/KRW": {
+        "avg_price": 50.29,
+        "total_quantity": 198.8466,
+        "last_update": "2026-01-25 06:40:25",
+        "buy_time": "2026-01-25 06:40:25"
+    },
+    "BIO/KRW": {
+        "avg_price": 74.79,
+        "total_quantity": 133.7077,
+        "last_update": "2026-01-25 06:40:47",
+        "buy_time": "2026-01-25 06:40:47"
+    },
+    "CTK/KRW": {
+        "avg_price": 371.0,
+        "total_quantity": 26.9541,
+        "last_update": "2026-01-25 06:52:41",
+        "buy_time": "2026-01-25 06:52:41"
+    },
+    "NFT/KRW": {
+        "avg_price": 0.0006,
+        "total_quantity": 16666666.6666,
+        "last_update": "2026-01-25 06:52:45",
+        "buy_time": "2026-01-25 06:52:45"
+    },
+    "REZ/KRW": {
+        "avg_price": 6.821,
+        "total_quantity": 2932.12138983,
+        "last_update": "2026-01-25 16:45:49",
+        "buy_time": "2026-01-25 16:45:49"
+    },
+    "ORCA/KRW": {
+        "avg_price": 1614.9999999999998,
+        "total_quantity": 6.1919,
+        "last_update": "2026-01-25 17:01:22",
+        "buy_time": "2026-01-25 17:01:22"
+    },
+    "UOS/KRW": {
+        "avg_price": 14.350000000000001,
+        "total_quantity": 1393.7282,
+        "last_update": "2026-01-25 18:03:23",
+        "buy_time": "2026-01-25 18:03:23"
+    },
+    "VANA/KRW": {
+        "avg_price": 3232.9999999999995,
+        "total_quantity": 6.1862,
+        "last_update": "2026-01-25 18:05:49",
+        "buy_time": "2026-01-25 18:05:49"
+    },
+    "FORT/KRW": {
+        "avg_price": 30.3,
+        "total_quantity": 660.066,
+        "last_update": "2026-01-25 19:32:11",
+        "buy_time": "2026-01-25 19:32:11"
+    },
+    "KNC/KRW": {
+        "avg_price": 327.0,
+        "total_quantity": 61.162,
+        "last_update": "2026-01-25 19:53:21",
+        "buy_time": "2026-01-25 19:53:21"
+    },
+    "BEAM/KRW": {
+        "avg_price": 4.476,
+        "total_quantity": 4468.2752,
+        "last_update": "2026-01-25 23:02:05",
+        "buy_time": "2026-01-25 23:02:05"
+    },
+    "MVL/KRW": {
+        "avg_price": 2.567,
+        "total_quantity": 7791.1959,
+        "last_update": "2026-01-26 01:23:53",
+        "buy_time": "2026-01-26 01:23:53"
+    },
+    "AQT/KRW": {
+        "avg_price": 930.0000000000001,
+        "total_quantity": 21.5053,
+        "last_update": "2026-01-26 03:11:25",
+        "buy_time": "2026-01-26 03:11:25"
+    },
+    "ADP/KRW": {
+        "avg_price": 1.353,
+        "total_quantity": 14781.966,
+        "last_update": "2026-01-26 09:47:09",
+        "buy_time": "2026-01-26 09:47:09"
+    }
+}
