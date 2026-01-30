@@ -268,23 +268,33 @@ def check_buy_signal(df, symbol, warning_list):
 
 # [사용자 원본] 정밀 2음봉 로직
 def check_2_negative_candles(df):
-    if len(df) < 15: return False, ""
-    window = df.iloc[-15:-3]
+    # [수정] 탐색 범위를 15봉에서 30봉으로 확대하여 안정성 확보
+    if len(df) < 30: return False, ""
+    window = df.iloc[-30:-3]
     high_idx = window['vol'].idxmax()
     high_candle = window.loc[high_idx]
+    
     if high_candle['close'] <= high_candle['open']: return False, ""
+    
+    # [유지] 사용자 원본 기준: 거래량 10%
     high_volume = high_candle['vol']
     threshold_vol = high_volume * 0.10
+    
     curr_p = df.iloc[-1]['close']
+    # [유지] 사용자 원본 기준: 고점 대비 97% 영역
     is_high_price_zone = curr_p >= (high_candle['high'] * 0.97)
+    
     post_candles = df.iloc[-3:]
     negative_count = 0
     for _, candle in post_candles.iterrows():
         if (candle['close'] < candle['open']) and (candle['vol'] >= threshold_vol):
             negative_count += 1
+            
     if negative_count >= 2 and is_high_price_zone:
-        return True, f"🚨 고점({high_candle['high']:,.0f}) 부근 10% 이상 실린 정밀 2음봉"
+        return True, f"🚨 고점({high_candle['high']:,.0f}) 부근 세력 이탈(2음봉)"
+    
     return False, ""
+
 
 
 # ---------------------------------------------------------
@@ -292,31 +302,60 @@ def check_2_negative_candles(df):
 # ---------------------------------------------------------
 async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_inventory_age=99, status=None):
     global emergency_mode
+    
+    # [유지] 지표 계산
     df['ma40'] = df['close'].rolling(40).mean()
     df['ma90'] = df['close'].rolling(90).mean()
     df['ma185'] = df['close'].rolling(185).mean()
 
     curr = df.iloc[-1]
+    prev = df.iloc[-2] # [추가] 급등 감지용
     curr_p = curr['close']
 
-    # [보정] RSI 계산 시 NaN 방어 로직 추가
-    rsi_val = calculate_rsi(df)
-    curr_rsi = rsi_val.iloc[-1] if not rsi_val.empty else 50
-
-    # [보정] 수익률 계산 시 purchase_price가 0일 때 -100% 뜨는 것 방지
+    # [보정] RSI 및 수익률 계산
+    rsi_series = calculate_rsi(df)
+    curr_rsi = rsi_series.iloc[-1] if not rsi_series.empty else 50
     profit_rate = (curr_p - purchase_price) / purchase_price if purchase_price > 0 else 0
     profit_rate_pct = profit_rate * 100
 
-    # [S급 털림 방지 로직] 급등 진행 중 판단 및 매도 유예
     ma40_val = curr['ma40']
     ma185_val = curr['ma185'] if not pd.isna(curr['ma185']) else 0
+
+    # ---------------------------------------------------------
+    # [정비 1 & 3] 급등 제어 및 2음봉 감시 (3분/5분 내 5% 폭등 시에만)
+    # ---------------------------------------------------------
+    # 30분봉 데이터이므로 봉 하나가 5% 이상 솟구치면 급등으로 판정
+    is_surging = (curr_p - prev['open']) / prev['open'] >= 0.05
     
+    if is_surging:
+        is_2_neg, reason_2_neg = check_2_negative_candles(df)
+        if is_2_neg:
+            return True, f"🚀 단기 급등 후 세력 이탈: {reason_2_neg}"
+
+    # ---------------------------------------------------------
+    # [정비 2] 40 지지선 및 S+급 보호 (상향->평행->상향 로직)
+    # ---------------------------------------------------------
+    # 최근 20봉 중 ma40의 기울기가 가장 완만했던 구간의 가격을 지지선으로 설정
+    parallel_window = df.iloc[-20:]
+    support_idx = (parallel_window['ma40'].diff().abs()).idxmin()
+    support_price = df.loc[support_idx, 'ma40']
+
+    # S+ 상승 초입(-2% ~ +5%) 보호
+    is_early_stage = -2.0 < profit_rate_pct < 5.0
+    
+    # 40선 지지선 매도 판정
+    if curr_p < support_price:
+        # 상승 초입 눌림목(지지선의 98%)은 유예해줌
+        if not (is_early_stage and curr_p >= support_price * 0.98):
+            return True, f"📉 40선 지지선({support_price:,.0f}) 이탈"
+
+    # ---------------------------------------------------------
+    # [정비 4] 기존 유예 로직 및 기타 매도
+    # ---------------------------------------------------------
+    # [S급 털림 방지] 급등 진행 중 매도 유예 (수익 10% 이상 & 정배열 시)
     if ma185_val > 0:
-        is_price_above_ma40 = curr_p > ma40_val
         is_ma40_above_ma185 = ma40_val > ma185_val
-        is_profit_above_10 = profit_rate_pct >= 10.0
-        
-        if is_price_above_ma40 and is_ma40_above_ma185 and is_profit_above_10:
+        if curr_p > ma40_val and is_ma40_above_ma185 and profit_rate_pct >= 10.0:
             return False, "급등 진행 중(매도 유예)"
 
     # 0순위: 긴급 감시 (RSI 80 이상)
@@ -324,54 +363,45 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
         if not emergency_mode.get(symbol, False):
             emergency_mode[symbol] = True
 
-    # [수정 불가 원칙] 정밀 2음봉 매도 체크
-    is_2_neg, reason_2_neg = check_2_negative_candles(df)
-    if is_2_neg:
-        return True, reason_2_neg
-
     # 상태 유지(KEEP) 중일 때 긴급 매도 외 일반 매도 차단
     if status == 'KEEP':
         return False, "유지 중"
 
-    # 일반 매도 로직 (40선/90선 이탈)
+    # 일반 매도 로직 (90선 최종 이탈 및 3% 익절 보전)
     if curr_p < curr['ma90']:
         return True, "📉 90선 최종 이탈 매도"
 
-    if curr_p < curr['ma40'] and profit_rate < 0:
-        return True, "📉 40선 하단 손절"
+    # 3% 수익권에서 지지선 위협 시 익절
+    if profit_rate_pct >= 3.0 and curr_p < support_price * 1.01:
+        return True, "✅ 3% 수익 보전 익절"
 
     return False, "안전"
 
 
 def get_report_visuals(this_profit, is_sell_signal, this_curr_p, ma40_val, sell_reason, symbol, pending_approvals):
     from datetime import datetime
-    is_trend_up = this_curr_p >= ma40_val
     wait_data = pending_approvals.get(symbol)
-    remains = 0
-    if wait_data and 'start_time' in wait_data:
+    
+    # [수정] 긴급 매도 상태 고정 및 이모티콘 정비
+    if wait_data and wait_data.get('status') in ['WAITING', 'NOTIFIED']:
         elapsed = (datetime.now() - wait_data['start_time']).total_seconds() / 60
         limit = wait_data.get('wait_limit', 30)
         remains = max(0, int(limit - elapsed))
-
-    if wait_data and wait_data.get('status') == 'WAITING':
-        return "🟡", f"⏳ {remains}분 남음 ({wait_data.get('wait_limit')}m)"
-
-    if wait_data and wait_data.get('status') == 'NOTIFIED':
-        is_urgent = ("1순위" in sell_reason or "2음봉" in sell_reason or "급락" in sell_reason)
+        
+        # 긴급 판단 건은 🚨 아이콘 유지
+        is_urgent = ("🚨" in wait_data.get('last_icon', '') or "급등" in sell_reason or "2음봉" in sell_reason)
         icon = "🚨" if is_urgent else "🔵"
-        status_msg = "긴급매도" if is_urgent else "일반매도"
-        return icon, f"⏳ {remains}분 후 {status_msg} (신호:{sell_reason})"
+        msg = "긴급매도유예" if is_urgent else "일반매도유예"
+        return icon, f"⏳ {remains}m 후 {msg}"
 
-    # [흰색 박멸 보정] ⚪이 나오지 않도록 조건문 순서 조정 및 강제 색상 부여
     if is_sell_signal:
         return "🔴", f"⚠️ 매도신호({sell_reason})"
 
-    if not is_trend_up:
+    if this_curr_p < ma40_val:
         return "🟡", "⚠️ 40선 하단(주의)"
 
-    if is_trend_up:
-        # 추세 위일 때 수익권이면 빨강, 손실권이면 초록 (사용자 원본 로직)
-        return ("🔴", "✅ 추세Best") if this_profit > 0 else ("🟢", "✅ 차트양호")
-
-    # 마지막 리턴에서 절대 ⚪이 안 나오도록 🟢로 마무리
-    return "🟢", "차트양호"
+    # [수정] 수익권 빨강, 안정권 초록으로 통일
+    if this_profit > 0:
+        return "🔴", "✅ 수익구간(안정)"
+    
+    return "🟢", "✅ 매수구간(안정)"
