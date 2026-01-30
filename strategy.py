@@ -46,31 +46,32 @@ def check_buy_signal_v1(df, symbol, warning_list):
         if pd.isna(curr['ma185']) or pd.isna(prev['ma185']):
             return False, "지표계산오류(NaN)"
 
+        # 1. 기본 기울기 및 데이터 계산
         tick_size = get_bithumb_tick_size(curr['ma185'])
         if not tick_size or tick_size == 0: tick_size = 1
         diff_185 = (curr['ma185'] - prev['ma185']) / tick_size
         slope_rate = ((curr['ma185'] - prev['ma185']) / prev['ma185']) * 100
+        
+        # 2. [사용자 의도 반영] 하락 확인 기간 조정 (2일 전 vs 5시간 전)
+        # 30분봉 기준: 2일 전(-96), 5시간 전(-10)
+        ma185_past_2d = df['ma185'].iloc[-96] if len(df) >= 96 else df['ma185'].iloc[0]
+        ma185_recent_5h = df['ma185'].iloc[-10] if len(df) >= 10 else df['ma185'].iloc[0]
+        
+        # 과거 2일간 하락세였는지 확인
+        is_was_descending = ma185_recent_5h <= ma185_past_2d
+        # 현재 반등 중(-0.06 이상)인지 확인
+        is_turning_up = slope_rate >= -0.06
 
-        if slope_rate <= -0.2:
-            return False, ""
+        # 3. [논리 결합] 충분히 하락했거나, 혹은 지금 반등/평행 중이면 통과
+        if not (is_was_descending or is_turning_up):
+            reason = f"185일선 추세 부적합(기울기:{slope_rate:.4f}%)"
+            return False, reason, "", {} # data_dict가 필요하면 추가
 
-        ma185_series_2d = df['ma185'].iloc[-96:]
-        is_steady_descending = (ma185_series_2d.diff().dropna() <= 0).all()
-        ma185_past = df['ma185'].iloc[-30]
-        # 185일선 상태 및 기울기 계산
-        diff_185 = (curr['ma185'] - prev['ma185']) / get_bithumb_tick_size(curr['ma185'])
-        slope_rate = ((curr['ma185'] - prev['ma185']) / prev['ma185']) * 100
-        data_dict['slope_rate'] = slope_rate
+        # 4. 급격한 폭락(-1.2 미만)은 여전히 방어
+        if diff_185 < -1.2:
+            return False, "185일선 급락 차단"
 
-        # [수정] 기존 is_was_descending 변수 대신 새로운 안전 조건 사용
-        # 기울기가 -0.06% 이상이면 (완만한 하락, 평행, 상승 모두 포함) 통과
-        is_slope_safe = (slope_rate >= -0.06) or (abs(slope_rate) <= 0.06)
-
-        # 185일선이 가파르게 꺾이는 급락장만 차단
-        if not is_slope_safe:
-            reason = f"185일선 급락 감지(기울기:{slope_rate:.4f}%, diff:{diff_185:.2f})"
-            return False, reason, "", data_dict
-
+        # 여기서부터 gold_index 로직 시작...
         # 이후 골든크로스(gold_index) 체크 로직으로 자연스럽게 이어짐
 
 
