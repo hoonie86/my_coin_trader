@@ -20,6 +20,8 @@ notified_symbols = {}
 pending_approvals = {}
 profit_alerts = {}
 pending_s_buys = {}
+# [사후분석] 미지 패턴 기록 종목의 60분 후 수익률 추적용 { symbol: (recorded_at, price_at_record) }
+missed_60m_tracker = {}
 
 # [평단가 로컬 관리용]
 INV_FILE = "inventory.json"
@@ -193,8 +195,8 @@ async def get_buy_cost():
 
 
 async def buy_scan_task(app):
-    """매수 스캔 태스크: 들여쓰기 교정 및 S급 추적 로직 정상화"""
-    global buy_mute_mode, notified_symbols, buy_individual_status, pending_s_buys
+    """매수 스캔 태스크: 들여쓰기 교정 및 S급 추적 로직 정상화 + 1분봉 수급/미지패턴/60분수익률 연동"""
+    global buy_mute_mode, notified_symbols, buy_individual_status, pending_s_buys, missed_60m_tracker
     while True:
         try:
             assets = await get_my_assets()
@@ -210,6 +212,20 @@ async def buy_scan_task(app):
                    and m['symbol'].split('/')[0] not in w_list
                    and m['symbol'] not in owned_symbols
             ]
+
+            # [사후분석] 60분 경과한 미지 기록 종목 수익률 로그 업데이트 (기존 로직과 겹치지 않도록 먼저 처리)
+            now = datetime.now()
+            for sym in list(missed_60m_tracker.keys()):
+                rec_at, price_at = missed_60m_tracker[sym]
+                if (now - rec_at).total_seconds() >= 3600:
+                    try:
+                        ticker = await asyncio.to_thread(exchange.fetch_ticker, sym)
+                        price_60m = float(ticker.get('last') or ticker.get('close') or 0)
+                        if price_60m:
+                            analyzer.update_missed_opportunity_return(sym, rec_at.strftime('%Y-%m-%d %H:%M:%S'), price_at, price_60m)
+                    except Exception as e:
+                        logger.error(f"60m return check error {sym}: {e}")
+                    del missed_60m_tracker[sym]
 
             print(f"\n🔎 [매수 스캔] {len(krw_filtered)}종목 시작 | 모드: {current_display_mode}")
 
@@ -230,12 +246,22 @@ async def buy_scan_task(app):
                 if len(ohlcv) < 185: continue
 
                 df = pd.DataFrame(ohlcv, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
-                is_buy, reason, grade, data_dict = strategy.check_buy_signal(df, symbol, w_list)
+                # [수급 돌파] 1분봉 거래량 20봉 평균 300% + 3분 내 3% 급등 체크용 (옵션: 1m 있으면 전략에 전달)
+                df_1m = None
+                try:
+                    ohlcv_1m = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '1m', limit=25)
+                    if ohlcv_1m and len(ohlcv_1m) >= 21:
+                        df_1m = pd.DataFrame(ohlcv_1m, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
+                except Exception:
+                    pass
+                is_buy, reason, grade, data_dict = strategy.check_buy_signal(df, symbol, w_list, df_1m)
                 
-                # [분석 봇] 매수 신호가 없을 때 탈락 사유 및 상세 수치 기록
+                # [분석 봇] 매수하지 않더라도 탈락 사유·패턴태그·등급 포함 상세 수치 기록 (조건 1개라도 만족/3분 내 3% 급등 포함)
+                current_price = float(df.iloc[-1]['close'])
                 if not is_buy and reason:
-                    current_price = float(df.iloc[-1]['close'])
                     analyzer.record_missed_opportunity(symbol, reason, current_price, data_dict)
+                    # [사후분석] 기록된 종목 60분 후 수익률 로그 업데이트용 등록 (조건 만족/3%급등 포함 모든 미지 기록)
+                    missed_60m_tracker[symbol] = (datetime.now(), current_price)
 
                 if is_buy:
                     if symbol in notified_symbols and (datetime.now() - notified_symbols[symbol]) < timedelta(hours=1):
@@ -518,7 +544,22 @@ async def sell_monitor_task(app):
                         if sell_qty <= 0:
                             logger.info(f"매도 건너뜀(잔고 부족): {symbol}")
                         else:
-                            await asyncio.to_thread(exchange.create_market_sell_order, symbol, sell_qty)
+                            # [사후분석] 손절 시 직전 1분 봉(하락 속도) 수집 후 매도 실행
+                            last_1m_open, last_1m_close = None, None
+                            if this_profit < 0:
+                                try:
+                                    ohlcv_1m = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '1m', limit=3)
+                                    if ohlcv_1m and len(ohlcv_1m) >= 2:
+                                        last_1m_open = float(ohlcv_1m[-2][1])
+                                        last_1m_close = float(ohlcv_1m[-2][4])
+                                except Exception:
+                                    pass
+                            order_result = await asyncio.to_thread(exchange.create_market_sell_order, symbol, sell_qty)
+                            exec_price = float(order_result.get('average') or order_result.get('price') or this_curr_p)
+                            if this_profit < 0 and this_avg_p and this_avg_p > 0:
+                                target_stop = this_avg_p * 0.98
+                                slippage_pct = (exec_price - target_stop) / target_stop * 100
+                                analyzer.record_loss_review(symbol, exec_price, target_stop, slippage_pct, last_1m_open, last_1m_close)
                             await app.bot.send_message(config.CHAT_ID, f"🔴 [매도 집행]\n{symbol} | 사유: {sell_reason}")
                             if symbol in pending_approvals: del pending_approvals[symbol]
                     else:
