@@ -382,26 +382,26 @@ def get_report_visuals(this_profit, is_sell_signal, this_curr_p, ma40_val, sell_
     from datetime import datetime
     wait_data = pending_approvals.get(symbol)
     
-    # [수정] 긴급 매도 상태 고정 및 이모티콘 정비
+    # [1] 유예 및 긴급 상태 (파랑/🚨)
     if wait_data and wait_data.get('status') in ['WAITING', 'NOTIFIED']:
         elapsed = (datetime.now() - wait_data['start_time']).total_seconds() / 60
         limit = wait_data.get('wait_limit', 30)
         remains = max(0, int(limit - elapsed))
         
-        # 긴급 판단 건은 🚨 아이콘 유지
+        # 긴급 판단(2음봉, 급락 등)은 사이렌(🚨) 고정, 일반은 파랑(🔵)
         is_urgent = ("🚨" in wait_data.get('last_icon', '') or "급등" in sell_reason or "2음봉" in sell_reason)
         icon = "🚨" if is_urgent else "🔵"
         msg = "긴급매도유예" if is_urgent else "일반매도유예"
         return icon, f"⏳ {remains}m 후 {msg}"
 
+    # [2] 매도 신호 발생 (빨강 - 위험 신호)
     if is_sell_signal:
         return "🔴", f"⚠️ 매도신호({sell_reason})"
 
+    # [3] 40선 하단 (노랑 - 주의 단계)
     if this_curr_p < ma40_val:
         return "🟡", "⚠️ 40선 하단(주의)"
 
-    # [수정] 수익권 빨강, 안정권 초록으로 통일
-    if this_profit > 0:
-        return "🔴", "✅ 수익구간(안정)"
-    
-    return "🟢", "✅ 매수구간(안정)"
+    # [4] 차트 양호 (초록 - 홀딩/안전 신호)
+    # 매도 신호가 없고 40선 위라면 수익률과 관계없이 초록색으로 표시
+    return "🟢", "✅ 차트양호(홀딩)"
