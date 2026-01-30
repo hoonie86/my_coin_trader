@@ -64,13 +64,14 @@ manual_inventory = load_inventory()
 
 
 async def safe_market_buy(symbol, cost, grade="A"):
-    """시장가 매수 집행 및 진입 등급(grade) 기록 보강"""
+    """시장가 매수 집행 및 진입 등급(grade) 기록 보강. KRW 초과 오류 방지용 보수적 한도 적용."""
     try:
         balance = await asyncio.to_thread(exchange.fetch_balance)
         free_krw = float(balance['free'].get('KRW', 0))
-        safe_cost = int(min(cost, free_krw * 0.90))
-
-        if safe_cost < 1000: return False, "잔액 부족"
+        # [KRW 초과 방지] 수수료·슬리피지·호가 반올림 대비 85% 한도 (bithumb 주문량 초과 오류 방지)
+        safe_cost = min(cost, int(free_krw * 0.85))
+        if safe_cost < 1000:
+            return False, "잔액 부족"
 
         # [수정 부분] Ticker 정보가 None인 경우를 대비한 방어 로직
         ticker = await asyncio.to_thread(exchange.fetch_ticker, symbol)
@@ -83,13 +84,15 @@ async def safe_market_buy(symbol, cost, grade="A"):
 
         curr_p = float(curr_p)
 
-        # 수량 계산 (소수점 4자리 절사)
+        # 수량 계산 (소수점 4자리 절사). 실제 체결금액이 safe_cost를 넘지 않도록 금액 기준으로 역산
         import math
         amount = math.floor((safe_cost / curr_p) * 10000) / 10000
+        if amount <= 0:
+            return False, "수량 계산 오류(금액/가격)"
 
         print(f"🛒 [매수집행] {symbol} | 금액: {safe_cost} | 수량: {amount} | 등급: {grade}")
 
-        # 3. 시장가 매수 실행
+        # 3. 시장가 매수 실행 (cost 파라미터로 주문 금액 상한 전달)
         await asyncio.to_thread(
             exchange.create_order,
             symbol,

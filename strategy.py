@@ -202,6 +202,8 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
     # [신규] 단기 정배열/골든크로스용 5일·20일 이평선 (30분봉 기준 5봉/20봉)
     df['ma5'] = df['close'].rolling(5).mean()
     df['ma20'] = df['close'].rolling(20).mean()
+    # [단기 정배열 전환] 40일×90일 골든크로스용
+    df['ma90'] = df['close'].rolling(90).mean()
 
     curr = df.iloc[-1]
     prev = df.iloc[-2]
@@ -210,6 +212,10 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
     # [가격 필터] 10원 미만 또는 10,000원 이상 → BTC 마켓 동전주/비정상 차단
     if curr_price < 10 or curr_price >= 10000:
         return False, "가격필터(BTC마켓)", "", data_dict
+
+    # [유의 종목] 수급 돌파(S/S+) 포함 모든 매수 신호에서 투자유의 종목 제외 (먼저 검사)
+    if symbol.split('/')[0] in warning_list:
+        return False, "투자유의", "F", data_dict
 
     # ---------- [신규] 수급 돌파: 1분봉 기준 20봉 평균의 300% + 3분 내 3% 급등 (185일선 무관 공격 매수) ----------
     if df_1m is not None and len(df_1m) >= 21:
@@ -251,9 +257,7 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
 
     data_dict = _fill_data_dict_full(df, curr, prev, curr_price, symbol)
 
-    if symbol.split('/')[0] in warning_list:
-        data_dict['grade'] = 'F'
-        return False, "투자유의", "F", data_dict
+    # (투자유의 검사는 가격 필터 직후에 이미 수행됨. 수급 돌파 포함 모든 경로에서 유의 종목 제외)
 
     # 1. [기존 유지] 2일 전 대비 5시간 전 하락 여부 확인 (밥그릇 바닥 확인)
     ma185_p_2d = df['ma185'].iloc[-96] if len(df) >= 96 else df['ma185'].iloc[0]
@@ -277,13 +281,16 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
         reason = "✅ [A] 역추세 과매도(RSI≤20 또는 185이격≤-10%이고 현재가>40일선)"
         return True, reason, "A", data_dict
 
-    # ---------- [신규] 단기 정배열 전환: 185일선 하락 중이라도 5일선 골든크로스 20일선 + 현재가>20일선 → 추세 전환 ----------
-    if ma5_val and ma20_val and len(df) >= 3:
-        prev_5, prev_20 = df['ma5'].iloc[-2], df['ma20'].iloc[-2]
-        if not (pd.isna(prev_5) or pd.isna(prev_20)) and prev_5 <= prev_20 and ma5_val > ma20_val and curr_price > ma20_val:
-            data_dict['grade'] = 'A'
-            data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
-            return True, "✅ [A] 단기 정배열 전환(5일×20일 골든크로스, 현재가>20일선)", "A", data_dict
+    # ---------- [신규] 단기 정배열 전환: 40일선 골든크로스 90일선 + 현재가>40일선 (과도한 5/20 조건 대체) ----------
+    if len(df) >= 90:
+        ma90_curr = curr.get('ma90')
+        ma90_prev = df['ma90'].iloc[-2]
+        if not (pd.isna(ma90_curr) or pd.isna(ma90_prev)) and ma40_val and ma90_curr:
+            prev_40, prev_90 = df['ma40'].iloc[-2], ma90_prev
+            if prev_40 <= prev_90 and ma40_val > float(ma90_curr) and curr_price > ma40_val:
+                data_dict['grade'] = 'A'
+                data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
+                return True, "✅ [A] 단기 정배열 전환(40일×90일 골든크로스, 현재가>40일선)", "A", data_dict
 
     # [기존 유지] ZRO/STG처럼 고개 든 놈을 살려주는 OR 로직
     if not (slope_rate >= -0.06 or is_was_descending):
