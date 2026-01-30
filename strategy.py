@@ -150,15 +150,24 @@ def check_buy_signal(df, symbol, warning_list):
         data_dict['grade'] = 'F'
         return False, "투자유의", "F", data_dict
 
-    ma185_past = df['ma185'].iloc[-30]
-    is_was_descending = curr['ma185'] <= ma185_past
+    # 1. 2일 전 대비 5시간 전 하락 여부 확인 (밥그릇 바닥 확인)
+    ma185_p_2d = df['ma185'].iloc[-96] if len(df) >= 96 else df['ma185'].iloc[0]
+    ma185_r_5h = df['ma185'].iloc[-10] if len(df) >= 10 else df['ma185'].iloc[0]
+    is_was_descending = ma185_r_5h <= ma185_p_2d
+
+    # 2. 현재 기울기 수치 (기존 계산식 유지)
     diff_185 = (curr['ma185'] - prev['ma185']) / get_bithumb_tick_size(curr['ma185'])
     slope_rate = ((curr['ma185'] - prev['ma185']) / prev['ma185']) * 100
-    
     data_dict['slope_rate'] = slope_rate
 
-    if not (is_was_descending and diff_185 >= -0.2):
-        reason = f"185일선 하락 조건 불만족(기울기:{slope_rate:.4f}%, diff:{diff_185:.2f})"
+    # [수정 핵심] ZRO(-0.0384)나 STG(0.0217)처럼 고개 든 놈을 살려주는 OR 로직
+    if not (slope_rate >= -0.06 or is_was_descending):
+        reason = f"185일선 하락 조건 불만족(기울기:{slope_rate:.4f}%)"
+        return False, reason, "", data_dict
+
+    # 3. 안전장치: 급격한 수직 낙하만 방어
+    if diff_185 < -1.2:
+        reason = f"185일선 급락(diff:{diff_185:.2f} < -1.2)"
         return False, reason, "", data_dict
 
     if diff_185 < -1.2:
