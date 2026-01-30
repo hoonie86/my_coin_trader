@@ -268,13 +268,13 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
     disparity_185_pct = (curr_price - ma185_val) / ma185_val * 100 if ma185_val and ma185_val != 0 else 0
     data_dict['disparity_185_pct'] = disparity_185_pct
 
-    # ---------- [신규] 역추세 과매도: 185일선 하락 중이라도 RSI≤25 또는 185일선 이격도≤-5% 이면 매수 후보 ----------
+    # ---------- [신규] 역추세 과매도: 185일선 하락 중이라도 RSI≤20 또는 185일선 이격도≤-10% 이고 현재가>40일선 이면 매수 후보 ----------
     is_185_falling = slope_rate < -0.06 and not is_was_descending
-    if is_185_falling and (rsi_val <= 25 or disparity_185_pct <= -5.0):
+    if is_185_falling and (rsi_val <= 20 or disparity_185_pct <= -10.0) and curr_price > curr['ma40']:
         # 등급 A: 하락 중 과매도 구간
         data_dict['grade'] = 'A'
         data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
-        reason = "✅ [A] 역추세 과매도(RSI≤25 또는 185이격≤-5%)"
+        reason = "✅ [A] 역추세 과매도(RSI≤20 또는 185이격≤-10%이고 현재가>40일선)"
         return True, reason, "A", data_dict
 
     # ---------- [신규] 단기 정배열 전환: 185일선 하락 중이라도 5일선 골든크로스 20일선 + 현재가>20일선 → 추세 전환 ----------
