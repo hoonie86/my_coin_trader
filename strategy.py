@@ -572,7 +572,7 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
 
     # 최고점 대비 일정 비율 하락 시 익절/손절 (추가 필터)
     # 3% 수익이 깨지기 전, 고점 대비 3% 하락 시 즉시 대응
-    if profit_rate_pct >= 1.0 and curr_p < high_candle['high'] * 0.97:
+    if profit_rate_pct >= 1.0 and curr_p < high_price * 0.97:
         return True, "🚨 고점 대비 3% 하락 (수익 보전)"
 
     if profit_rate_pct >= 3.0 and curr_p < support_price * 1.01:
