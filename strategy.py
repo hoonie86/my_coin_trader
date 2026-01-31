@@ -472,8 +472,8 @@ def check_2_negative_candles(df):
     threshold_vol = high_volume * 0.10
     
     curr_p = df.iloc[-1]['close']
-    # [유지] 사용자 원본 기준: 고점 대비 97% 영역
-    is_high_price_zone = curr_p >= (high_candle['high'] * 0.97)
+    # [유지] 사용자 원본 기준: 고점 대비 90% 영역
+    is_high_price_zone = curr_p >= (high_candle['high'] * 0.90)
     
     post_candles = df.iloc[-3:]
     negative_count = 0
@@ -562,9 +562,14 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
     if curr_p < curr['ma90']:
         return True, "📉 90선 최종 이탈 매도"
 
-    # 3% 수익권에서 지지선 위협 시 익절
+    # 최고점 대비 일정 비율 하락 시 익절/손절 (추가 필터)
+    # 3% 수익이 깨지기 전, 고점 대비 3% 하락 시 즉시 대응
+    if profit_rate_pct >= 1.0 and curr_p < high_candle['high'] * 0.97:
+        return True, "🚨 고점 대비 3% 하락 (수익 보전)"
+
     if profit_rate_pct >= 3.0 and curr_p < support_price * 1.01:
         return True, "✅ 3% 수익 보전 익절"
+
 
     return False, "안전"
 
