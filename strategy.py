@@ -561,7 +561,8 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
     # 일반 매도 로직 (90선 최종 이탈 및 3% 익절 보전)
     if curr_p < curr['ma90']:
         return True, "📉 90선 최종 이탈 매도"
-
+    # [수정] high_candle 정의 및 에러 방지 로직 추가
+     high_candle = df.iloc[-20:].loc[df['high'].idxmax()] # 최근 20봉 중 최고가 캔들 추출
     # 최고점 대비 일정 비율 하락 시 익절/손절 (추가 필터)
     # 3% 수익이 깨지기 전, 고점 대비 3% 하락 시 즉시 대응
     if profit_rate_pct >= 1.0 and curr_p < high_candle['high'] * 0.97:
