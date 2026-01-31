@@ -217,36 +217,59 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
     if symbol.split('/')[0] in warning_list:
         return False, "투자유의", "F", data_dict
 
-    # ---------- [신규] 수급 돌파: 1분봉 기준 20봉 평균의 300% + 3분 내 3% 급등 (185일선 무관 공격 매수) ----------
+    # ---------- [개선] 수급 돌파: 1분봉 기준 (RSI 과열 및 고점 추격 방지 추가) ----------
     if df_1m is not None and len(df_1m) >= 21:
+        # 유의종목이면 수급 로직 타기 전에 즉시 차단
+        if symbol.split('/')[0] in warning_list:
+            return False, "유의종목차단(S)", "", data_dict
+
         vol_avg_20 = df_1m['vol'].tail(20).mean()
         vol_cur = float(df_1m.iloc[-1]['vol'])
         price_3bars_ago_1m = float(df_1m.iloc[-4]['close']) if len(df_1m) >= 4 else 0
         surge_3pct_1m = (price_3bars_ago_1m > 0 and (curr_price - price_3bars_ago_1m) / price_3bars_ago_1m >= 0.03)
-        if vol_avg_20 > 0 and vol_cur >= vol_avg_20 * 3 and surge_3pct_1m:
-            data_dict = _fill_data_dict_full(df, curr, prev, curr_price, symbol)
-            data_dict['grade'] = 'S'
-            data_dict['pattern_labels'] = _get_pattern_labels(
-                df, curr, curr_price, data_dict.get('rsi'), float(curr['ma5']) if not pd.isna(curr.get('ma5')) else None,
-                float(curr['ma20']) if not pd.isna(curr.get('ma20')) else None, float(curr['ma185']) if not pd.isna(curr.get('ma185')) else None)
-            return True, "💎 [S] 수급 돌파(1분봉 거래량300%+3분내3%급등)", "S", data_dict
+        
+        # [핵심 필터 추가]
+        rsi_1m = calculate_rsi(df_1m).iloc[-1] # 1분봉 RSI 계산
+        day_low = df['low'].min() # 당일 저점
+        up_from_low = (curr_price - day_low) / day_low if day_low > 0 else 0
 
-    # [기존 유지] 30분봉 기준 S+ 수급: 거래량 300% + 3봉 내 3% 급등 → 185일선 무관 즉시 S+ 매수
+        # 조건: 거래량 300% + 3분 내 3% + RSI 70미만 + 당일 저점대비 7%이내 상승
+        if vol_avg_20 > 0 and vol_cur >= vol_avg_20 * 3 and surge_3pct_1m:
+            if rsi_1m < 70 and up_from_low < 0.07:
+                data_dict = _fill_data_dict_full(df, curr, prev, curr_price, symbol)
+                data_dict['grade'] = 'S'
+                data_dict['pattern_labels'] = _get_pattern_labels(
+                    df, curr, curr_price, data_dict.get('rsi'), float(curr['ma5']) if not pd.isna(curr.get('ma5')) else None,
+                    float(curr['ma20']) if not pd.isna(curr.get('ma20')) else None, float(curr['ma185']) if not pd.isna(curr.get('ma185')) else None)
+                return True, f"💎 [S] 수급 돌파(RSI:{int(rsi_1m)}/상승:{up_from_low*100:.1f}%)", "S", data_dict
+            else:
+                # 조건은 맞지만 과열인 경우 로그만 남기고 패스하도록 설계 가능
+                pass
+
+    # ---------- [기존 유지 및 보강] 30분봉 기준 S+ 수급 ----------
     if len(df) >= 5:
+        # 유의종목 차단
+        if symbol.split('/')[0] in warning_list:
+            return False, "유의종목차단(S+)", "", data_dict
+
         avg_vol_5 = df['vol'].tail(5).mean()
         volume_300 = (avg_vol_5 > 0 and float(curr['vol']) >= avg_vol_5 * 3)
-        if len(df) >= 4:
-            price_3bars_ago = float(df.iloc[-4]['close'])
-            price_surge_3pct = (price_3bars_ago > 0 and (curr_price - price_3bars_ago) / price_3bars_ago >= 0.03)
-        else:
-            price_surge_3pct = False
+        
+        price_3bars_ago = float(df.iloc[-4]['close']) if len(df) >= 4 else 0
+        price_surge_3pct = (price_3bars_ago > 0 and (curr_price - price_3bars_ago) / price_3bars_ago >= 0.03)
+        
+        # 30분봉 기준 과열 판단
+        rsi_val = data_dict.get('rsi', 50) if data_dict else calculate_rsi(df).iloc[-1]
+        
         if volume_300 and price_surge_3pct:
-            data_dict = _fill_data_dict_full(df, curr, prev, curr_price, symbol)
-            data_dict['grade'] = 'S+'
-            data_dict['pattern_labels'] = _get_pattern_labels(
-                df, curr, curr_price, data_dict.get('rsi'), float(curr['ma5']) if not pd.isna(curr.get('ma5')) else None,
-                float(curr['ma20']) if not pd.isna(curr.get('ma20')) else None, float(curr['ma185']) if not pd.isna(curr.get('ma185')) else None)
-            return True, "💎 [S+] 수급 급등(거래량300%+3%급등)", "S+", data_dict
+            # RSI 70 이상이거나 이미 너무 쏜 종목은 S+에서 제외
+            if rsi_val < 70:
+                data_dict = _fill_data_dict_full(df, curr, prev, curr_price, symbol)
+                data_dict['grade'] = 'S+'
+                data_dict['pattern_labels'] = _get_pattern_labels(
+                    df, curr, curr_price, rsi_val, float(curr['ma5']) if not pd.isna(curr.get('ma5')) else None,
+                    float(curr['ma20']) if not pd.isna(curr.get('ma20')) else None, float(curr['ma185']) if not pd.isna(curr.get('ma185')) else None)
+                return True, "💎 [S+] 수급 급등(안전권 진입)", "S+", data_dict
 
     # ---------- [공통] data_dict 전체 수치 채우기 (조건 탈락 여부와 관계없이) ----------
     ma40_val = float(curr['ma40']) if not pd.isna(curr['ma40']) else 0
@@ -369,6 +392,13 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
             if curr['close'] >= curr['open'] or has_volume_surge:
                 data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
                 if slope_rate >= -0.01 and disparity_gold <= 0.005:
+                    # 최근 50개 캔들의 최고점 대비 낙폭을 계산하여 가짜 바닥 필터링
+                    recent_max = df['high'].rolling(window=50).max().iloc[-1]
+                    drop_rate = ((recent_max - curr_price) / recent_max) * 100
+                    
+                    if drop_rate < 10: # 낙폭이 10% 미만이면 고점 눌림목으로 간주
+                        data_dict['grade'] = 'A'
+                        return True, f"📉 [A] {symbol} 고점 눌림목 (추가 하락 주의)", "A", data_dict
                     data_dict['grade'] = 'S+'
                     return True, "💎 [S+] 밥그릇 바닥 완전 수렴", "S+", data_dict
                 if slope_rate >= -0.01:
@@ -398,6 +428,11 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
 
     # 최종 탈락 사유 판단 (모든 수치·패턴 라벨 기록 후 반환)
     data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
+    # S+급 등이 확정되었으나 현재가가 40선 밑에 있어 하락세가 우려되는 경우 보완
+    if curr_price <= curr['ma40'] and data_dict.get('grade') in ['S+', 'S', 'A+']:
+         data_dict['grade'] = 'A' # 등급 하향
+         # 기존 reason 뒤에 하락세 경고 문구 추가
+    
     if curr_price <= curr['ma40']:
         reason = f"현재가({curr_price:,.0f}) ≤ 40일선({ma40_val:,.0f}, 이격도:{disparity_40_pct:.2f}%)"
         return False, reason, "", data_dict
