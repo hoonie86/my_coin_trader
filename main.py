@@ -485,6 +485,15 @@ async def sell_monitor_task(app):
                 if is_sell_signal:
                     if "0순위" in sell_reason or "절대익절" in sell_reason:
                         is_sell_final = True
+                        # [추가] 0순위나 절대익절도 유예 시스템에 등록 (10분 적용)
+                        if symbol not in pending_approvals:
+                            pending_approvals[symbol] = {
+                                'status': 'NOTIFIED',
+                                'start_time': datetime.now(),
+                                'entry_profit': this_profit,
+                                'reason': sell_reason,
+                                'wait_limit': 10
+                            }
                     elif symbol not in pending_approvals:
                         # [기존 로직] 사유별 유예 시간 차등 (10분 vs 30분)
                         wait_limit = 10 if ("1순위" in sell_reason or "2음봉" in sell_reason) else 30
@@ -513,9 +522,14 @@ async def sell_monitor_task(app):
                         elif wait_data.get('status') in ['WAITING', 'NOTIFIED']:
                             elapsed_min = (datetime.now() - wait_data['start_time']).total_seconds() / 60
                             current_limit = wait_data.get('wait_limit', 30)
-
                             if elapsed_min >= current_limit:
                                 is_sell_final = True
+                                # [추가] 자동 모드일 경우 여기서 직접 매도 호출
+                                if sell_mute_status.get(symbol) == 'AUTO':
+                                    await execute_sell(app, symbol, f"무응답 자동 매도 ({int(elapsed_min)}분 경과)")
+                                    if symbol in pending_approvals: del pending_approvals[symbol]
+                                    continue
+
                 else:
                     if symbol in pending_approvals: del pending_approvals[symbol]
 
@@ -538,7 +552,11 @@ async def sell_monitor_task(app):
                     InlineKeyboardButton(f"🔍 {symbol.split('/')[0]}", callback_data=f"manage_asset:{symbol}"))
 
                 # 5단계: 최종 집행
+                # 감시 루프 하단부
                 if is_sell_final:
+                    # 이미 위에서 execute_sell을 했다면 중복 실행 방지 로직 필요
+                    await execute_sell(app, symbol, sell_reason)
+                    if symbol in pending_approvals: del pending_approvals[symbol]
                     if status == 'AUTO' or is_night or "0순위" in sell_reason:
                         balance = await asyncio.to_thread(exchange.fetch_balance)
                         base = symbol.split('/')[0]
