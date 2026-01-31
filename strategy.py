@@ -414,6 +414,18 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
     if disparity_40 <= 0.025:
         if abs(diff_185) < 1.0:
             data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
+            # --- [신규 필터 추가] 폭락 중인 칼날 잡기 방지 ---
+            # 1. 현재 캔들이 음봉이면서 시가 대비 2% 이상 하락 중인지 확인
+            is_falling_now = (curr['close'] < curr['open']) and ((curr['open'] - curr['close']) / curr['open'] >= 0.02)
+            # 2. 최근 3봉 중 음봉이 2개 이상인지 확인 (하락 관성)
+            recent_3_candles = df.iloc[-3:]
+            negative_candles = len(recent_3_candles[recent_3_candles['close'] < recent_3_candles['open']])
+            
+            if is_falling_now or negative_candles >= 2:
+                # 폭락 중이면 S급 부여를 취소하고 하단으로 흘려보내거나 탈락시킴
+                reason = "📉 [탈락] 40선 밀착했으나 하락 관성 강함 (폭락 주의)"
+                return False, reason, "", data_dict
+            # --- [신규 필터 끝] ---
             if slope_rate >= -0.01 and disparity_gold <= 0.015:
                 data_dict['grade'] = 'S'
                 return True, "⭐ [S급] 밥그릇 바닥 탈출(변곡점)", "S", data_dict
