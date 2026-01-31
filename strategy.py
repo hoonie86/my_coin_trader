@@ -107,7 +107,11 @@ def check_buy_signal_v1(df, symbol, warning_list):
                         return True, "⭐ [S] 185선 평행/상승 & 40선 수렴 중"
                     else:
                         return True, "🚀 [A+] 185선 하락 멈춤 및 평행/우상향"
-        return False, ""    
+        return False, ""
+    except Exception as e:
+        logger.error(f"❌ 매수 신호 포착 중 오류 ({symbol}): {e}")
+        return False, "에러발생"
+
 
 # 긴급 감시 상태 저장 변수
 emergency_mode = {}
