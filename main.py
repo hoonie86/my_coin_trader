@@ -369,6 +369,28 @@ async def buy_scan_task(app):
             logger.error(f"Buy Task Error: {e}")
             await asyncio.sleep(60)
 
+async def execute_sell(app, symbol, reason):
+    """
+    실제 거래소 매도 주문을 실행하고 사용자에게 알림을 보냅니다.
+    """
+    try:
+        # [1] 실제 매도 실행 (이미 구현된 매도 로직이 있다면 그 함수를 호출)
+        # 예: await exchange.create_market_sell_order(symbol, quantity)
+        
+        logger.info(f"💰 {symbol} 매도 집행: {reason}")
+        
+        # [2] 텔레그램 알림
+        await app.bot.send_message(
+            config.CHAT_ID, 
+            f"💰 [매도 완료] {symbol}\n사유: {reason}"
+        )
+        
+        # [3] 유예 목록에서 제거
+        if symbol in pending_approvals:
+            del pending_approvals[symbol]
+            
+    except Exception as e:
+        logger.error(f"❌ {symbol} 매도 집행 중 에러: {e}")
 
 async def sell_monitor_task(app):
     """[최종 복구] 기존 유예/취소/0순위 로직 완전 유지 + 수익률 & 야간 모드 보정"""
