@@ -72,9 +72,6 @@ def check_buy_signal_v1(df, symbol, warning_list):
             return False, "185일선 급락 차단"
 
         # 여기서부터 gold_index 로직 시작...
-        # 이후 골든크로스(gold_index) 체크 로직으로 자연스럽게 이어짐
-
-
         gold_index = -1
         for i in range(1, 97):
             if df['ma40'].iloc[-i - 1] < df['ma185'].iloc[-i - 1] and \
@@ -85,6 +82,15 @@ def check_buy_signal_v1(df, symbol, warning_list):
         if gold_index == -1: return False, ""
         bars_since_gold = len(df) - gold_index
         if bars_since_gold < 4: return False, ""
+
+        # [추가] 골든크로스 발생 지점부터 현재까지의 구간 내 최고가 계산
+        # 골크 이후의 고점을 추적하여 '설거지' 물량을 방어합니다.
+        relevant_df = df.iloc[gold_index:]
+        max_peak_price = relevant_df['high'].max()
+
+        # [필터] 현재가가 해당 구간 최고가 대비 5% 이상 하락했다면 진입 금지
+        if curr_price < max_peak_price * 0.95:
+            return False, "고점 대비 5% 이상 이탈(설거지 방어)"
 
         disparity_40 = abs(curr_price - curr['ma40']) / curr['ma40']
         if curr['rsi'] > 65: return False, ""
@@ -101,11 +107,7 @@ def check_buy_signal_v1(df, symbol, warning_list):
                         return True, "⭐ [S] 185선 평행/상승 & 40선 수렴 중"
                     else:
                         return True, "🚀 [A+] 185선 하락 멈춤 및 평행/우상향"
-        return False, ""
-    except Exception as e:
-        logger.error(f"❌ 매수 신호 포착 중 오류 ({symbol}): {e}")
-        return False, "에러발생"
-
+        return False, ""    
 
 # 긴급 감시 상태 저장 변수
 emergency_mode = {}
@@ -247,10 +249,14 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
                 pass
 
     # ---------- [기존 유지 및 보강] 30분봉 기준 S+ 수급 ----------
+# ---------- [기존 유지 및 보강] 30분봉 기준 S+ 수급 ----------
     if len(df) >= 5:
         # 유의종목 차단
         if symbol.split('/')[0] in warning_list:
             return False, "유의종목차단(S+)", "", data_dict
+
+        # [추가] 골크 전조 10봉 포함, 최근 15봉 내 최고가 계산 (설거지 방지용 기준점)
+        max_peak_price = df['high'].iloc[-15:].max()
 
         avg_vol_5 = df['vol'].tail(5).mean()
         volume_300 = (avg_vol_5 > 0 and float(curr['vol']) >= avg_vol_5 * 3)
@@ -260,17 +266,14 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
         
         # 30분봉 기준 과열 판단
         rsi_val = data_dict.get('rsi', 50) if data_dict else calculate_rsi(df).iloc[-1]
-        
+
         if volume_300 and price_surge_3pct:
-            # RSI 70 이상이거나 이미 너무 쏜 종목은 S+에서 제외
-            if rsi_val < 70:
+            # [수정] RSI 조건에 '고점 대비 5% 이탈 방지' 필터 결합
+            if rsi_val < 70 and curr_price >= max_peak_price * 0.95:
                 data_dict = _fill_data_dict_full(df, curr, prev, curr_price, symbol)
                 data_dict['grade'] = 'S+'
-                data_dict['pattern_labels'] = _get_pattern_labels(
-                    df, curr, curr_price, rsi_val, float(curr['ma5']) if not pd.isna(curr.get('ma5')) else None,
-                    float(curr['ma20']) if not pd.isna(curr.get('ma20')) else None, float(curr['ma185']) if not pd.isna(curr.get('ma185')) else None)
-                return True, "💎 [S+] 수급 급등(안전권 진입)", "S+", data_dict
-
+                return True, f"🔥 [S+급] 수급 급등(안전권 진입) - 세력 매집 의심", "S+", data_dict
+                
     # ---------- [공통] data_dict 전체 수치 채우기 (조건 탈락 여부와 관계없이) ----------
     ma40_val = float(curr['ma40']) if not pd.isna(curr['ma40']) else 0
     ma185_val = float(curr['ma185']) if not pd.isna(curr['ma185']) else 0
