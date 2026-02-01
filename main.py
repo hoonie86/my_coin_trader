@@ -413,6 +413,8 @@ async def sell_monitor_task(app):
     global last_report_time, sell_mute_status, pending_approvals, profit_alerts
     while True:
         try:
+            # 기본 대기 시간 3분
+            wait_time = 180
             # [추가] 서버 실시간 확인용 시간
             now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
@@ -436,6 +438,12 @@ async def sell_monitor_task(app):
 
                 # 수익률 계산 (보정된 평단가 사용)
                 this_profit = ((this_curr_p - this_avg_p) / this_avg_p * 100) if this_avg_p > 0 else 0
+                ######### [수정: 루프 주기 단축 결정] #########
+                # 종목들을 훑다가 한 놈이라도 급등(10%↑) 중이면 
+                # 이 루프가 끝난 뒤 잠드는 시간을 30초로 줄입니다.
+                if this_profit >= 10.0 or emergency_mode.get(symbol, False):
+                    wait_time = min(wait_time, 30) 
+                ##############################################
                 this_profit_krw = (this_curr_p - this_avg_p) * this_qty
 
                 # [수정] 인벤토리에서 등급 가져오기
@@ -477,19 +485,20 @@ async def sell_monitor_task(app):
                 ma40_line = df['close'].rolling(40).mean().iloc[-1]
 
                 tp_executed = False
-                # [기존 익절 로직 보존]
-                if this_profit >= 13.0:
-                    balance = await asyncio.to_thread(exchange.fetch_balance)
-                    base = symbol.split('/')[0]
-                    free_qty = float(balance['free'].get(base, 0))
-                    sell_qty = min(this_qty, free_qty)
-                    if sell_qty <= 0:
-                        logger.info(f"매도 건너뜀(잔고 부족): {symbol}")
-                    else:
-                        await asyncio.to_thread(exchange.create_market_sell_order, symbol, sell_qty)
-                        await app.bot.send_message(config.CHAT_ID, f"🎯 [목표익절] {symbol} 13% 전량 매도")
-                        tp_executed = True
-                elif this_profit >= 8.0 and this_curr_p < ma40_line:
+                # # [기존 익절 로직 보존]
+                # if this_profit >= 13.0:
+                #     balance = await asyncio.to_thread(exchange.fetch_balance)
+                #     base = symbol.split('/')[0]
+                #     free_qty = float(balance['free'].get(base, 0))
+                #     sell_qty = min(this_qty, free_qty)
+                #     if sell_qty <= 0:
+                #         logger.info(f"매도 건너뜀(잔고 부족): {symbol}")
+                #     else:
+                #         await asyncio.to_thread(exchange.create_market_sell_order, symbol, sell_qty)
+                #         await app.bot.send_message(config.CHAT_ID, f"🎯 [목표익절] {symbol} 13% 전량 매도")
+                #         tp_executed = True
+                # elif this_profit >= 8.0 and this_curr_p < ma40_line:
+                if this_profit >= 8.0 and this_curr_p < ma40_line:    
                     balance = await asyncio.to_thread(exchange.fetch_balance)
                     base = symbol.split('/')[0]
                     free_qty = float(balance['free'].get(base, 0))
@@ -722,7 +731,7 @@ async def sell_monitor_task(app):
                     await app.bot.send_message(config.CHAT_ID, msg_text, reply_markup=InlineKeyboardMarkup(final_rows))
                 last_report_time = datetime.now()
 
-            await asyncio.sleep(180)  # [변경] 매도 감시 주기 1분 -> 3분
+            await asyncio.sleep(wait_time)  # [변경] 매도 감시 주기 1분 -> 3분
         except Exception as e:
             import traceback
             logger.error(f"Sell Monitor Error: {e}\n{traceback.format_exc()}")

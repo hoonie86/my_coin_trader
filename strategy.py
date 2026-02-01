@@ -516,13 +516,51 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
 
     # [보정] RSI 및 수익률 계산
     rsi_series = calculate_rsi(df)
-    curr_rsi = rsi_series.iloc[-1] if not rsi_series.empty else 50
+    has_rsi_spike = (rsi_series.tail(14) >= 80).any()
+    
     profit_rate = (curr_p - purchase_price) / purchase_price if purchase_price > 0 else 0
     profit_rate_pct = profit_rate * 100
 
     ma40_val = curr['ma40']
     ma185_val = curr['ma185'] if not pd.isna(curr['ma185']) else 0
 
+    # 0순위: 긴급 감시 스위치 작동
+    if has_rsi_spike:
+        if not emergency_mode.get(symbol, False):
+            emergency_mode[symbol] = True
+            logger.info(f"🔥 [비상] {symbol} 최근 14봉 내 RSI 80 돌파 이력 포착! 비상 모드 진입")
+
+    # ---------------------------------------------------------
+    ######### [신규: 급등 시 3분봉 비상 체제 전환] #########
+    # ---------------------------------------------------------
+    # 수익 10% 이상이거나 RSI 80 이상이면 3분봉 정밀 감시 가동
+    if profit_rate_pct >= 10.0 or emergency_mode.get(symbol, False):
+        try:
+            # 3분봉 데이터 호출 (노이즈 방지를 위해 여기서 직접 fetch)
+            ohlcv_3m = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '3m', limit=50)
+            df_3m = pd.DataFrame(ohlcv_3m, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
+            df_3m['ma40'] = df_3m['close'].rolling(40).mean()
+            curr_3m = df_3m.iloc[-1]
+
+            # A. 3분봉 기준 2음봉 세력 이탈 감지
+            is_2_neg, reason_2_neg = check_2_negative_candles(df_3m)
+            if is_2_neg:
+                return True, f"🚀 [비상-3m] 세력 이탈: {reason_2_neg}"
+            
+            # B. 3분봉 기준 40선 이탈 (천장 대책 - 익절)
+            if curr_3m['close'] < curr_3m['ma40']:
+                return True, f"💰 [비상-3m] 3분봉 40선 이탈 (익절)"
+
+            # C. 3분봉 기준 고점 대비 3% 하락 (수익 보전)
+            high_3m = df_3m['high'].tail(15).max()
+            if curr_3m['close'] < high_3m * 0.97:
+                return True, f"🚨 [비상-3m] 고점 대비 3% 하락"
+
+            # 급등 상황이면 아래 30분봉 일반 로직은 건너뛰고 홀딩
+            return False, "🚀 급등 모드 유지 (3분봉 추적 중)"
+        except Exception as e:
+            logger.error(f"3분봉 분석 에러: {e}")
+            # 에러 시에는 안전하게 기존 30분봉 로직으로 흐르게 둡니다.
     # ---------------------------------------------------------
     # [정비 1 & 3] 급등 제어 및 2음봉 감시 (3분/5분 내 5% 폭등 시에만)
     # ---------------------------------------------------------
@@ -560,11 +598,6 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
         if curr_p > ma40_val and is_ma40_above_ma185 and profit_rate_pct >= 10.0:
             return False, "급등 진행 중(매도 유예)"
 
-    # 0순위: 긴급 감시 (RSI 80 이상)
-    if curr_rsi >= 80:
-        if not emergency_mode.get(symbol, False):
-            emergency_mode[symbol] = True
-
     # 상태 유지(KEEP) 중일 때 긴급 매도 외 일반 매도 차단
     if status == 'KEEP':
         return False, "유지 중"
@@ -585,7 +618,7 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
     # 3% 수익이 깨지기 전, 고점 대비 3% 하락 시 즉시 대응
     if profit_rate_pct >= 1.0 and curr_p < high_price * 0.97:
         return True, "🚨 고점 대비 3% 하락 (수익 보전)"
-
+    # 3% 수익이 생기고 40선 이탈 시 익절
     if profit_rate_pct >= 3.0 and curr_p < support_price * 1.01:
         return True, "✅ 3% 수익 보전 익절"
 
