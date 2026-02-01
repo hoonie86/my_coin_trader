@@ -39,6 +39,12 @@ def load_inventory():
             return {}
     return {}
 
+def get_symbol_buy_type(symbol):
+    """인벤토리에서 해당 종목의 buy_type을 직접 조회"""
+    inv_data = load_inventory()  # 이미 main에 있는 함수 활용
+    sym_only = symbol.split('/')[0]
+    inv_item = inv_data.get(symbol) or inv_data.get(sym_only) or {}
+    return inv_item.get('buy_type', 1)
 
 def save_inventory(symbol, avg_price, quantity, grade="A", buy_type=1):
     """평단가, 수량, 그리고 [진입 등급]을 로컬 파일에 안전하게 저장합니다."""
@@ -277,6 +283,7 @@ async def buy_scan_task(app):
                     balance = await asyncio.to_thread(exchange.fetch_balance)
                     free_krw = float(balance['free'].get('KRW', 0))
                     buy_cost = await get_buy_cost()
+                    buy_type = get_symbol_buy_type(symbol)
 
                     # [개선] grade 값 우선 사용, 없으면 reason에서 추출
                     is_s_class_check = (grade and grade.startswith("S")) or any(x in reason for x in ["S급", "[S]", "[S+]"])
@@ -446,9 +453,14 @@ async def sell_monitor_task(app):
                 this_curr_p = float(ticker.get('last') or ticker.get('close') or 0)
                 # 인벤토리 데이터 미리 로드 (평단가 보충 및 등급 확인용)
                 inv_item = inv_data.get(symbol) or inv_data.get(symbol.split('/')[0]) or {}
-                this_avg_p = float(inv_item.get('purchase_price') or inv_item.get('avg_price') or data.get('avg_buy_price') or 0)
+                this_avg_p = float(
+                    inv_item.get('price') or 
+                    inv_item.get('purchase_price') or 
+                    inv_item.get('avg_price') or 
+                    data.get('avg_price') or 0
+                )
 
-                this_qty = float(data.get('total', 0))
+                this_qty = float(data.get('total') or inv_item.get('total_quantity') or 0)
 
                 # 수익률 계산 (보정된 평단가 사용)
                 this_profit = ((this_curr_p - this_avg_p) / this_avg_p * 100) if this_avg_p > 0 else 0
@@ -943,7 +955,7 @@ async def handle_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 curr_grade = existing_item.get('grade', 'A')
                 curr_type = existing_item.get('buy_type', 1)
                 assets = await get_my_assets()
-                qty = assets.get(sym, {}).get('total', 0)
+                qty = assets.get(sym, {}).get('total_quantity', 0)
                 save_inventory(sym, price, qty, curr_grade, curr_type)
                 await update.message.reply_text(f"✅ {sym} 평단가 {price:,.0f}원 설정 완료")
             except:
@@ -983,22 +995,34 @@ async def process_report_logic(update, context, query=None):
             ticker = await asyncio.to_thread(exchange.fetch_ticker, symbol)
             this_curr_p = float(ticker.get('last') or ticker.get('close') or 0)
             if this_curr_p == 0: continue
+            sym_only = symbol.split('/')[0] # 'LSK/KRW' -> 'LSK'
+            # 1순위: LSK/KRW, 2순위: LSK
+            inv_item = inv_data.get(symbol) or inv_data.get(sym_only) or {}
 
-            # [수정] 평단가 참조 키 보강 (-100% 및 종목 누락 방지)
-            this_avg_p = float(data.get('avg_buy_price') or data.get('avg_price') or 0)
+            # [수정] JSON에서 확실히 평단가를 가져오게 키 이름을 모두 체크
+            # 사용자님이 저장한 키가 'price'든 'purchase_price'든 다 뒤집니다.
+            this_avg_p = float(
+                inv_item.get('price') or 
+                inv_item.get('purchase_price') or 
+                inv_item.get('avg_price') or 
+                data.get('avg_price') or 0
+            )
+            
+            this_qty = float(
+                inv_item.get('total_quantity') or 
+                inv_item.get('total') or 
+                data.get('total') or 0
+            )
 
-            # 인벤토리 데이터 미리 로드 (평단가 보충 및 등급 확인용)
-            inv_item = inv_data.get(symbol) or inv_data.get(symbol.split('/')[0]) or {}
+            # [디버그 로그] 이제 JSON평단이 None인지 숫자인지 꼭 보세요.
+            config.logger.info(f"🚨 [FINAL CHECK] {symbol} | JSON데이터유무:{bool(inv_item)} | 최종평단:{this_avg_p}")
 
-            # [보강] 거래소 데이터에 평단가가 없으면 인벤토리 값으로 대체하여 0원(누락/오류) 방지
-            if this_avg_p <= 0:
-                this_avg_p = float(inv_item.get('purchase_price') or 0)
-
-            this_qty = float(data.get('total', 0))
-
-            # 평단가 보정을 통해 this_profit이 정상적으로 계산됨 (리스트 누락 방지)
+            # 수익률 계산
             this_profit = ((this_curr_p - this_avg_p) / this_avg_p * 100) if this_avg_p > 0 else 0
             this_profit_krw = (this_curr_p - this_avg_p) * this_qty
+            
+            # 계산 결과 확인 로그
+            config.logger.info(f"📊 [CALC RESULT] {symbol} | 수익률:{this_profit:.2f}% | 수익금:{this_profit_krw:,.0f}원")
 
             # 인벤토리 데이터 매칭 (등급 및 매수시간)
             this_grade = inv_item.get('grade', 'A')
