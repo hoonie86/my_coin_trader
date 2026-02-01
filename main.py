@@ -39,7 +39,7 @@ def load_inventory():
     return {}
 
 
-def save_inventory(symbol, avg_price, quantity, grade="A"):
+def save_inventory(symbol, avg_price, quantity, grade="A", buy_type=1):
     """평단가, 수량, 그리고 [진입 등급]을 로컬 파일에 안전하게 저장합니다."""
     try:
         inv = load_inventory()
@@ -922,9 +922,15 @@ async def handle_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 parts = msg.split()
                 coin, price = parts[0].upper(), float(parts[2])
                 sym = f"{coin}/KRW"
+                # 기존 인벤토리 데이터를 불러와서 기존 등급/타입을 유지하도록 보강
+                inv_data = load_inventory()
+                existing_item = inv_data.get(sym, {})
+                
+                curr_grade = existing_item.get('grade', 'A')
+                curr_type = existing_item.get('buy_type', 1)
                 assets = await get_my_assets()
                 qty = assets.get(sym, {}).get('total', 0)
-                save_inventory(sym, price, qty)
+                save_inventory(sym, price, qty, curr_grade, curr_type)
                 await update.message.reply_text(f"✅ {sym} 평단가 {price:,.0f}원 설정 완료")
             except:
                 pass
