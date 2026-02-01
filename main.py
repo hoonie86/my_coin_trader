@@ -1005,9 +1005,22 @@ async def process_report_logic(update, context, query=None):
             if status == 'KEEP' and not (is_sell_signal and "0순위" in sell_reason):
                 report_color, status_text, mode_str = "🟢", "유지 중", " 🔒"
             else:
+                # [수정] pending_approvals에 없더라도 is_sell_signal이 True면 
+                # 유예 로직을 시뮬레이션하여 색상을 결정합니다.
+                
+                # 만약 지금 신호는 왔는데 아직 정기 루프가 등록을 안 했다면?
+                # 가상의 대기 데이터를 만들어 visuals 함수에 전달합니다.
+                temp_approvals = pending_approvals.copy()
+                if is_sell_signal and symbol not in temp_approvals:
+                    temp_approvals[symbol] = {
+                        'status': 'NOTIFIED',
+                        'start_time': datetime.now(),
+                        'wait_limit': 10 if ("1순위" in sell_reason or "2음봉" in sell_reason) else 30
+                    }
+
                 report_color, status_text = strategy.get_report_visuals(
                     this_profit, is_sell_signal, this_curr_p, ma40_line,
-                    sell_reason, symbol, pending_approvals
+                    sell_reason, symbol, temp_approvals # 보정된 approvals 전달
                 )
                 mode_str = " 🤖" if status == 'AUTO' else ""
 
