@@ -376,8 +376,22 @@ async def execute_sell(app, symbol, reason):
     try:
         # [1] 실제 매도 실행 (이미 구현된 매도 로직이 있다면 그 함수를 호출)
         # 예: await exchange.create_market_sell_order(symbol, quantity)
+        # 1. 현재 잔고 확인
+        balance = await asyncio.to_thread(exchange.fetch_balance)
+        base = symbol.split('/')[0]
+        quantity = float(balance['free'].get(base, 0))
+
+        # 2. 최소 주문 수량 체크 (잔고가 거의 없으면 무시)
+        if quantity <= 0:
+            logger.warning(f"⚠️ {symbol} 매도 실패: 잔고가 0입니다.")
+            return
+
+        # 3. 실제 시장가 매도 주문 던지기
+        # 주문이 완료될 때까지 await로 기다립니다.
+        order_result = await asyncio.to_thread(exchange.create_market_sell_order, symbol, quantity)
         
-        logger.info(f"💰 {symbol} 매도 집행: {reason}")
+        logger.info(f"💰 {symbol} 매도 집행 완료: {reason} | 수량: {quantity}")
+
         
         # [2] 텔레그램 알림
         await app.bot.send_message(
@@ -526,7 +540,7 @@ async def sell_monitor_task(app):
                     if this_profit <= -3.0:
                         is_sell_signal = True
                         sell_reason = "📉 [3번] 매수가 대비 -3% 절대 손절선 도달"
-                        
+
                 # 0순위 급등/절대익절 판정
                 if status == 'KEEP' and is_sell_signal and "0순위" in sell_reason:
                     is_sell_final = True
