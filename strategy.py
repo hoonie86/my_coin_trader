@@ -83,14 +83,18 @@ def check_buy_signal_v1(df, symbol, warning_list):
         bars_since_gold = len(df) - gold_index
         if bars_since_gold < 4: return False, ""
 
-        # [추가] 골든크로스 발생 지점부터 현재까지의 구간 내 최고가 계산
-        # 골크 이후의 고점을 추적하여 '설거지' 물량을 방어합니다.
-        relevant_df = df.iloc[gold_index:]
-        max_peak_price = relevant_df['high'].max()
+        # ##########################################################
+        # [신규 추가] 골크 10봉 전 ~ 현재 직전봉까지의 최고가 필터
+        # ##########################################################
+        # 기존: gold_index 이후만 체크 -> 수정: 골크 10봉 전부터 체크 (사용자 의도)
+        search_start_idx = max(0, gold_index - 10)
+        # iloc[start:-1]을 사용하여 '현재 확정되지 않은 봉'을 제외한 직전봉까지의 고점을 봅니다.
+        relevant_range = df.iloc[search_start_idx : -1]
+        max_peak_price = relevant_range['high'].max()
 
-        # [필터] 현재가가 해당 구간 최고가 대비 5% 이상 하락했다면 진입 금지
         if curr_price < max_peak_price * 0.95:
-            return False, "고점 대비 5% 이상 이탈(설거지 방어)"
+            return False, f"고점({max_peak_price:,.0f}) 대비 5% 이상 이탈(설거지 방어)"
+        # ##########################################################
 
         disparity_40 = abs(curr_price - curr['ma40']) / curr['ma40']
         if curr['rsi'] > 65: return False, ""

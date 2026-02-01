@@ -165,7 +165,8 @@ async def get_my_assets():
             assets[symbol] = {
                 'avg_price': avg_p,
                 'total': total,
-                'buy_time': local_item.get('buy_time', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+                # 수정: purchase_time으로 키 명칭 통일
+                'purchase_time': local_item.get('purchase_time') or local_item.get('buy_time') or datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
 
         return assets
@@ -448,16 +449,22 @@ async def sell_monitor_task(app):
 
                 # 실시간 경과 시간 및 타입 추출
                 this_elapsed_bars = 0
-                buy_time_str = inv_item.get('purchase_time')
+                buy_time_str = inv_item.get('purchase_time') 
                 if buy_time_str:
                     try:
                         buy_time_dt = datetime.strptime(buy_time_str, '%Y-%m-%d %H:%M:%S')
                         diff_sec = (datetime.now() - buy_time_dt).total_seconds()
-                        this_elapsed_bars = int(diff_sec / 1800)  # 30분봉 기준 경과 수
+                        this_elapsed_bars = int(diff_sec / 1800)  # 30분봉 기준
                     except:
-                        this_elapsed_bars = 999
+                        this_elapsed_bars = 0 # 에러 시 0으로 초기화하여 유예 적용
                 else:
                     this_elapsed_bars = 999
+
+                # 추가 로직: 매수 초기(6봉 미만) 90선 이탈 신호 강제 무시
+                if is_sell_signal and this_elapsed_bars < 6:
+                    if "90선" in sell_reason or "40선" in sell_reason:
+                        is_sell_signal = False
+                        sell_reason = ""
 
                 # 인벤토리에서 매수 당시 결정된 타입(1, 2, 3)을 가져옵니다.
                 this_buy_type = inv_item.get('buy_type', 1)
