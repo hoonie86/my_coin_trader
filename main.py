@@ -671,7 +671,7 @@ async def sell_monitor_task(app):
             # 정기 리포트 발송 (기존 로직 유지)
             if (datetime.now() - last_report_time).total_seconds() >= config.REPORT_INTERVAL:
                 if report_lines:
-                    summary = f"🔵:{sum(1 for l in report_lines if '🔵' in l)} | 🔴:{sum(1 for l in report_lines if '🔴' in l)} | 🟢:{sum(1 for l in report_lines if '🟢' in l)}"
+                    summary = f"🔵:{sum(1 for l in report_lines if '🔵' in l)} | 🟡:{sum(1 for l in report_lines if '🟡' in l)} | 🔴:{sum(1 for l in report_lines if '🔴' in l)} | 🟢:{sum(1 for l in report_lines if '🟢' in l)}"
                     msg_text = f"📊 [정기 리포트] ({now_str}){' (야간 AUTO)' if is_night else ''}\n{summary}\n" + "━━━━━━━━━━━━\n" + "\n".join(
                         report_lines)
                     final_rows = [symbol_buttons[i:i + 4] for i in range(0, len(symbol_buttons), 4)]
