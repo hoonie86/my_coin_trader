@@ -622,9 +622,12 @@ async def sell_monitor_task(app):
 
                 # [최종 출력] 등급 포함 한 줄 구성
                 report_line = f"{report_color} [{this_grade}] {symbol.split('/')[0]:<6} | {this_curr_p:,.0f}원 | {this_profit:+.2f}%({this_profit_krw:+,.0f}원) | {status_text}{mode_icon}"
-                report_lines.append(report_line)
-                symbol_buttons.append(
-                    InlineKeyboardButton(f"🔍 {symbol.split('/')[0]}", callback_data=f"manage_asset:{symbol}"))
+                ##### [수정/추가] 정렬을 위해 딕셔너리 형태로 데이터를 임시 저장합니다. #####
+                report_lines.append({
+                    'text': report_line,
+                    'profit': this_profit,
+                    'button': InlineKeyboardButton(f"🔍 {symbol.split('/')[0]}", callback_data=f"manage_asset:{symbol}")
+                })
 
                 # 5단계: 최종 집행
                 # 감시 루프 하단부
@@ -671,9 +674,26 @@ async def sell_monitor_task(app):
             # 정기 리포트 발송 (기존 로직 유지)
             if (datetime.now() - last_report_time).total_seconds() >= config.REPORT_INTERVAL:
                 if report_lines:
-                    summary = f"🔵:{sum(1 for l in report_lines if '🔵' in l)} | 🟡:{sum(1 for l in report_lines if '🟡' in l)} | 🔴:{sum(1 for l in report_lines if '🔴' in l)} | 🟢:{sum(1 for l in report_lines if '🟢' in l)}"
-                    msg_text = f"📊 [정기 리포트] ({now_str}){' (야간 AUTO)' if is_night else ''}\n{summary}\n" + "━━━━━━━━━━━━\n" + "\n".join(
-                        report_lines)
+                    ##### [수정/추가] 1. 상세 목록 수익률 내림차순 정렬 #####
+                    report_lines.sort(key=lambda x: x['profit'], reverse=True)
+                    
+                    # 텍스트와 버튼 리스트 재구성
+                    final_text_lines = [item['text'] for item in report_lines]
+                    sorted_buttons = [item['button'] for item in report_lines]
+
+                    ##### [수정/추가] 2. 요약란 집계 순서 변경: 초 > 파 > 노 > 빨 #####
+                    summary = (
+                        f"🟢:{sum(1 for l in final_text_lines if '🟢' in l)} | "
+                        f"🔵:{sum(1 for l in final_text_lines if '🔵' in l)} | "
+                        f"🟡:{sum(1 for l in final_text_lines if '🟡' in l)} | "
+                        f"🔴:{sum(1 for l in final_text_lines if '🔴' in l)}"
+                    )
+                    msg_text = (
+                        f"📊 [정기 리포트] ({now_str}){' (야간 AUTO)' if is_night else ''}\n"
+                        f"{summary}\n"
+                        f"━━━━━━━━━━━━\n"
+                        + "\n".join(final_text_lines)
+                    )
                     final_rows = [symbol_buttons[i:i + 4] for i in range(0, len(symbol_buttons), 4)]
                     is_all_auto = all(sell_mute_status.get(s) == 'AUTO' for s in assets.keys()) if assets else False
                     report_kb = telegram_ui.get_report_inline_kb(is_all_auto)
@@ -906,8 +926,8 @@ async def process_report_logic(update, context, query=None):
         inv_data = load_inventory()
         is_night = config.is_sleeping_time()
 
-        report_lines = []
-        symbol_buttons = []
+        ##### [수정] 정렬과 집계를 위해 딕셔너리 구조 리스트로 변경 #####
+        report_data_list = []
         urgent_count = 0
 
         # [핵심] 필터링(continue) 없이 assets에 있는 모든 종목을 순회
@@ -934,9 +954,18 @@ async def process_report_logic(update, context, query=None):
 
             # 인벤토리 데이터 매칭 (등급 및 매수시간)
             this_grade = inv_item.get('grade', 'A')
-
-            # [흰색 박멸] 시간을 강제로 과거로 설정하여 6봉 유예(⚪) 조건을 원천 차단
-            this_elapsed_bars = 999
+            # 실시간 경과 시간 추출
+            this_elapsed_bars = 0
+            buy_time_str = inv_item.get('purchase_time')
+            if buy_time_str:
+                try:
+                    buy_time_dt = datetime.strptime(buy_time_str, '%Y-%m-%d %H:%M:%S')
+                    diff_sec = (datetime.now() - buy_time_dt).total_seconds()
+                    this_elapsed_bars = int(diff_sec / 1800)  # 30분봉 기준
+                except:
+                    this_elapsed_bars = 999
+            else:
+                this_elapsed_bars = 999
 
             # 야간 모드 및 모드 아이콘 판정
             raw_status = sell_mute_status.get(symbol, 'WATCH')
@@ -950,7 +979,28 @@ async def process_report_logic(update, context, query=None):
             is_sell_signal, sell_reason = await strategy.check_sell_signal(
                 exchange, df, symbol, this_avg_p, this_elapsed_bars, status
             )
-
+            # [추가: 3번 타입 방어 로직 - 정기 리포트와 동일하게 맞춤] #####
+            
+            this_buy_type = inv_item.get('buy_type', 1)
+            if this_buy_type == 3:
+                # [1순위] 절대 손절선 감시
+                if this_profit <= -3.0:
+                    is_sell_signal = True
+                    sell_reason = "📉 [3번-절대손절] 매수가 대비 -3% 도달"
+                else:
+                    # 90선 무시
+                    if is_sell_signal and "90선" in sell_reason:
+                        is_sell_signal = False
+                        sell_reason = ""
+                    # 6봉 이전 40선 이탈 무시
+                    if this_elapsed_bars < 6:
+                        if is_sell_signal and "40선" in sell_reason:
+                            is_sell_signal = False
+                            sell_reason = ""
+                    # 6봉 이후 사유 변경
+                    else:
+                        if is_sell_signal and "40선" in sell_reason:
+                            sell_reason = "⚠️ [3번-유예종료] 6봉 경과 후 40선 이탈"
             # 비주얼 판정 (기존 로직 보존)
             if status == 'KEEP' and not (is_sell_signal and "0순위" in sell_reason):
                 report_color, status_text, mode_str = "🟢", "유지 중", " 🔒"
@@ -965,11 +1015,28 @@ async def process_report_logic(update, context, query=None):
 
             # [기존 출력 포맷 유지]
             report_line = f"{report_color} [{this_grade}] {symbol.split('/')[0]:<6} | {this_curr_p:,.0f}원 | {this_profit:+.2f}%({this_profit_krw:+,.0f}원) | {status_text}{mode_str}"
-            report_lines.append(report_line)
+            ##### [변경] 정렬을 위해 데이터 객체로 저장 #####
+            report_data_list.append({
+                'text': report_line,
+                'profit': this_profit,
+                'button': InlineKeyboardButton(f"🔍 {symbol.split('/')[0]}", callback_data=f"manage_asset:{symbol}")
+            })
 
-            # 종목 상세 버튼 생성
-            symbol_buttons.append(
-                InlineKeyboardButton(f"🔍 {symbol.split('/')[0]}", callback_data=f"manage_asset:{symbol}")
+        ##### [추가] 1. 수익률 기준 내림차순 정렬 #####
+        report_data_list.sort(key=lambda x: x['profit'], reverse=True)
+        
+        # 텍스트 라인과 버튼 리스트 추출
+        final_text_lines = [item['text'] for item in report_data_list]
+        symbol_buttons = [item['button'] for item in report_data_list]
+
+        ##### [추가] 2. 요약 집계 생성 (초-파-노-빨 순서) #####
+        summary = ""
+        if final_text_lines:
+            summary = (
+                f"🟢:{sum(1 for l in final_text_lines if '🟢' in l)} | "
+                f"🔵:{sum(1 for l in final_text_lines if '🔵' in l)} | "
+                f"🟡:{sum(1 for l in final_text_lines if '🟡' in l)} | "
+                f"🔴:{sum(1 for l in final_text_lines if '🔴' in l)}\n"
             )
 
         # [원본 로직] 하단 버튼 키보드 구성 (기능 유지)
@@ -981,7 +1048,7 @@ async def process_report_logic(update, context, query=None):
 
         # 최종 메시지 조립
         night_tag = " (야간 AUTO)" if is_night else ""
-        msg_text = f"📊 [실시간 리포트]{night_tag}\n" + ("\n".join(report_lines) if report_lines else "보유 종목 없음")
+        msg_text = f"📊 [실시간 리포트]{night_tag}\n{summary}" + ("━━━━━━━━━━━━\n" + "\n".join(final_text_lines) if final_text_lines else "보유 종목 없음")
 
         # 전송 방식 분기 (수정 vs 신규)
         if query:
