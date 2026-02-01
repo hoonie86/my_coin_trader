@@ -46,11 +46,12 @@ def save_inventory(symbol, avg_price, quantity, grade="A"):
         # [수정] buy_time을 기록하여 strategy의 '6봉 유예' 로직과 연동
         # [추가] grade를 기록하여 실시간 리포트에서 진입 당시 등급 확인 가능
         inv[symbol] = {
-            "avg_price": avg_price,
+            "purchase_price": avg_price,
             "total_quantity": quantity,
             "grade": grade,  # 진입 등급 저장 추가
             "last_update": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            "buy_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            "purchase_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            "buy_type": buy_type
         }
         with open(INV_FILE, "w") as f:
             json.dump(inv, f, indent=4)
@@ -63,7 +64,7 @@ def save_inventory(symbol, avg_price, quantity, grade="A"):
 manual_inventory = load_inventory()
 
 
-async def safe_market_buy(symbol, cost, grade="A"):
+async def safe_market_buy(symbol, cost, grade="A", buy_type=1):
     """시장가 매수 집행 및 진입 등급(grade) 기록 보강. KRW 초과 오류 방지용 보수적 한도 적용."""
     try:
         balance = await asyncio.to_thread(exchange.fetch_balance)
@@ -110,7 +111,7 @@ async def safe_market_buy(symbol, cost, grade="A"):
         final_avg = ((old_p * old_q) + (curr_p * amount)) / (old_q + amount)
 
         # [수정] 보강된 save_inventory를 호출하여 등급까지 저장
-        save_inventory(symbol, final_avg, old_q + amount, grade)
+        save_inventory(symbol, final_avg, old_q + amount, grade, buy_type)
 
         return True, "성공"
     except Exception as e:
@@ -427,16 +428,9 @@ async def sell_monitor_task(app):
                 # 0단계: 기본 데이터 수집
                 ticker = await asyncio.to_thread(exchange.fetch_ticker, symbol)
                 this_curr_p = float(ticker.get('last') or ticker.get('close') or 0)
-
-                # [수정] 평단가 참조 키 보강: data에 없으면 inv_data에서 보충하여 -100% 방지
-                this_avg_p = float(data.get('avg_buy_price') or data.get('avg_price') or 0)
-
+                this_avg_p = float(inv_item.get('purchase_price') or inv_item.get('avg_price') or data.get('avg_buy_price') or 0)
                 # 인벤토리 데이터 미리 로드 (평단가 보충 및 등급 확인용)
                 inv_item = inv_data.get(symbol) or inv_data.get(symbol.split('/')[0]) or {}
-
-                # 거래소 데이터에 평단가가 0으로 나올 경우 인벤토리 값으로 대체
-                if this_avg_p <= 0:
-                    this_avg_p = float(inv_item.get('purchase_price') or 0)
 
                 this_qty = float(data.get('total', 0))
 
@@ -449,7 +443,7 @@ async def sell_monitor_task(app):
 
                 # 실시간 경과 시간 및 타입 추출
                 this_elapsed_bars = 0
-                buy_time_str = inv_item.get('purchase_time') 
+                buy_time_str = inv_item.get('purchase_time') or inv_item.get('buy_time') or inv_item.get('last_update') 
                 if buy_time_str:
                     try:
                         buy_time_dt = datetime.strptime(buy_time_str, '%Y-%m-%d %H:%M:%S')
