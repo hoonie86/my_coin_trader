@@ -22,7 +22,8 @@ profit_alerts = {}
 pending_s_buys = {}
 # [사후분석] 미지 패턴 기록 종목의 60분 후 수익률 추적용 { symbol: (recorded_at, price_at_record) }
 missed_60m_tracker = {}
-
+# [추가] 비상 체제 상태를 저장할 딕셔너리 선언
+emergency_mode = {}
 # [평단가 로컬 관리용]
 INV_FILE = "inventory.json"
 
@@ -423,7 +424,7 @@ async def execute_sell(app, symbol, reason):
 
 async def sell_monitor_task(app):
     """[최종 복구] 기존 유예/취소/0순위 로직 완전 유지 + 수익률 & 야간 모드 보정"""
-    global last_report_time, sell_mute_status, pending_approvals, profit_alerts
+    global last_report_time, sell_mute_status, pending_approvals, profit_alerts, emergency_mode
     while True:
         try:
             # 기본 대기 시간 3분
