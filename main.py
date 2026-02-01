@@ -300,9 +300,22 @@ async def buy_scan_task(app):
                     # [매수 집행/알림 로직]
                     indiv_mode = buy_individual_status.get(symbol)
                     curr_mode = indiv_mode if indiv_mode else ("AUTO" if is_night else buy_mute_mode)
-                    is_s_class = (grade and grade.startswith("S")) or "S급" in reason
+                    #########################################################
+                    # [수정] 등급 판정 및 타입별 자동 매수 필터링
+                    # S+, S는 'S'로 / A+, A는 'A'로 통합 판정
+                    current_grade = "S" if ((grade and grade.startswith("S")) or "S급" in reason) else ("A" if "A" in (grade or reason) else "B")
 
-                    if curr_mode == "AUTO" and is_s_class:
+                    can_auto_buy = False
+                    if curr_mode == "AUTO":
+                        if buy_type == 1:
+                            # 타입 1: A급, S급 모두 자동 매수
+                            if current_grade in ["S", "A"]: can_auto_buy = True
+                        elif buy_type in [2, 3]:
+                            # 타입 2, 3: 오직 S급만 자동 매수
+                            if current_grade == "S": can_auto_buy = True
+
+                    if can_auto_buy:
+                    #########################################################
                         if free_krw < 1000:
                             await app.bot.send_message(config.CHAT_ID, f"❌ [S급 자동매수 실패] {symbol}\n사유: 잔액 부족")
                         else:
@@ -430,9 +443,9 @@ async def sell_monitor_task(app):
                 # 0단계: 기본 데이터 수집
                 ticker = await asyncio.to_thread(exchange.fetch_ticker, symbol)
                 this_curr_p = float(ticker.get('last') or ticker.get('close') or 0)
-                this_avg_p = float(inv_item.get('purchase_price') or inv_item.get('avg_price') or data.get('avg_buy_price') or 0)
                 # 인벤토리 데이터 미리 로드 (평단가 보충 및 등급 확인용)
                 inv_item = inv_data.get(symbol) or inv_data.get(symbol.split('/')[0]) or {}
+                this_avg_p = float(inv_item.get('purchase_price') or inv_item.get('avg_price') or data.get('avg_buy_price') or 0)
 
                 this_qty = float(data.get('total', 0))
 
@@ -1173,7 +1186,7 @@ def get_current_grade(symbol, df):
         return "B"  # 그 외 일반 등급
     except Exception as e:
         logger.error(f"Grade check error: {e}")
-        return "A"  # 에러 시 안전하게 자동매수 차단 등급 반환
+        return "B"  # 에러 시 안전하게 자동매수 차단 등급 반환
 
 async def main():
     print("🚀 가상화폐 자동 매매 시스템 가동...")
