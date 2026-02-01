@@ -432,8 +432,21 @@ async def sell_monitor_task(app):
                 # [수정] 인벤토리에서 등급 가져오기
                 this_grade = inv_item.get('grade', 'A')
 
-                # [흰색 박멸] 시간을 강제로 과거(30일 전)로 설정하여 6봉 유예(⚪) 조건을 강제 돌파
-                this_elapsed_bars = 999
+                # 실시간 경과 시간 및 타입 추출
+                this_elapsed_bars = 0
+                buy_time_str = inv_item.get('purchase_time')
+                if buy_time_str:
+                    try:
+                        buy_time_dt = datetime.strptime(buy_time_str, '%Y-%m-%d %H:%M:%S')
+                        diff_sec = (datetime.now() - buy_time_dt).total_seconds()
+                        this_elapsed_bars = int(diff_sec / 1800)  # 30분봉 기준 경과 수
+                    except:
+                        this_elapsed_bars = 999
+                else:
+                    this_elapsed_bars = 999
+
+                # 인벤토리에서 매수 당시 결정된 타입(1, 2, 3)을 가져옵니다.
+                this_buy_type = inv_item.get('buy_type', 1)
 
                 # 1단계: 수익 알람 (기존 로직 유지)
                 if this_profit >= 1.0:
@@ -496,7 +509,24 @@ async def sell_monitor_task(app):
                     symbol_inventory_age=this_elapsed_bars,
                     status=status
                 )
+                # [추가 로직: 3번 타입 하락 후 상승 종목 전용 방어막] #####
+                if this_buy_type == 3:
+                    # 90선 아래인 것을 알고 샀으므로 90선 이탈 알람은 무조건 무시
+                    if is_sell_signal and "90선" in sell_reason:
+                        is_sell_signal = False
+                        sell_reason = ""
 
+                    # 매수 후 6봉(3시간) 유예 기간 동안은 40선 이탈도 무시
+                    if this_elapsed_bars < 6:
+                        if is_sell_signal and "40선" in sell_reason:
+                            is_sell_signal = False
+                            sell_reason = ""
+                    
+                    # 단, 가격이 평단가 대비 -3% 아래로 내려가면 즉시 매도 신호 생성
+                    if this_profit <= -3.0:
+                        is_sell_signal = True
+                        sell_reason = "📉 [3번] 매수가 대비 -3% 절대 손절선 도달"
+                        
                 # 0순위 급등/절대익절 판정
                 if status == 'KEEP' and is_sell_signal and "0순위" in sell_reason:
                     is_sell_final = True
