@@ -525,21 +525,30 @@ async def sell_monitor_task(app):
                 )
                 # [추가 로직: 3번 타입 하락 후 상승 종목 전용 방어막] #####
                 if this_buy_type == 3:
-                    # 90선 아래인 것을 알고 샀으므로 90선 이탈 알람은 무조건 무시
-                    if is_sell_signal and "90선" in sell_reason:
-                        is_sell_signal = False
-                        sell_reason = ""
-
-                    # 매수 후 6봉(3시간) 유예 기간 동안은 40선 이탈도 무시
-                    if this_elapsed_bars < 6:
-                        if is_sell_signal and "40선" in sell_reason:
-                            is_sell_signal = False
-                            sell_reason = ""
-                    
-                    # 단, 가격이 평단가 대비 -3% 아래로 내려가면 즉시 매도 신호 생성
+                    # [1순위] 절대 손절선 감시 (6봉 여부와 상관없이 항상 작동)
                     if this_profit <= -3.0:
                         is_sell_signal = True
-                        sell_reason = "📉 [3번] 매수가 대비 -3% 절대 손절선 도달"
+                        sell_reason = "📉 [3번-절대손절] 매수가 대비 -3% 도달"
+                    
+                    # [2순위] 유예 기간 및 40선 감시
+                    else:
+                        # A. 90선 관련 신호는 3번 타입에선 항상 무시
+                        if is_sell_signal and "90선" in sell_reason:
+                            is_sell_signal = False
+                            sell_reason = ""
+
+                        # B. 6봉(3시간) 이전일 때
+                        if this_elapsed_bars < 6:
+                            # 40선 이탈 신호가 오더라도 무조건 False로 꺾어서 버팀
+                            if is_sell_signal and "40선" in sell_reason:
+                                is_sell_signal = False
+                                sell_reason = ""
+                        
+                        # C. 6봉 이후일 때
+                        else:
+                            # 40선 이탈 신호가 오면 그대로 수용 (is_sell_signal 유지)
+                            if is_sell_signal and "40선" in sell_reason:
+                                sell_reason = "⚠️ [3번-유예종료] 6봉 경과 후 40선 이탈"
 
                 # 0순위 급등/절대익절 판정
                 if status == 'KEEP' and is_sell_signal and "0순위" in sell_reason:
