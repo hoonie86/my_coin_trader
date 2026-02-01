@@ -423,7 +423,7 @@ async def sell_monitor_task(app):
             report_lines = []
             symbol_buttons = []
 
-            for symbol, data in assets.items():
+            for symbol, data in list(assets.items()):
                 # 0단계: 기본 데이터 수집
                 ticker = await asyncio.to_thread(exchange.fetch_ticker, symbol)
                 this_curr_p = float(ticker.get('last') or ticker.get('close') or 0)
@@ -459,12 +459,6 @@ async def sell_monitor_task(app):
                         this_elapsed_bars = 0 # 에러 시 0으로 초기화하여 유예 적용
                 else:
                     this_elapsed_bars = 999
-
-                # 추가 로직: 매수 초기(6봉 미만) 90선 이탈 신호 강제 무시
-                if is_sell_signal and this_elapsed_bars < 6:
-                    if "90선" in sell_reason or "40선" in sell_reason:
-                        is_sell_signal = False
-                        sell_reason = ""
 
                 # 인벤토리에서 매수 당시 결정된 타입(1, 2, 3)을 가져옵니다.
                 this_buy_type = inv_item.get('buy_type', 1)
@@ -530,6 +524,13 @@ async def sell_monitor_task(app):
                     symbol_inventory_age=this_elapsed_bars,
                     status=status
                 )
+
+                # 추가 로직: 매수 초기(6봉 미만) 90선 이탈 신호 강제 무시
+                if is_sell_signal and this_elapsed_bars < 6:
+                    if "90선" in sell_reason or "40선" in sell_reason:
+                        is_sell_signal = False
+                        sell_reason = ""
+
                 # [추가 로직: 3번 타입 하락 후 상승 종목 전용 방어막] #####
                 if this_buy_type == 3:
                     # [1순위] 절대 손절선 감시 (6봉 여부와 상관없이 항상 작동)
@@ -661,12 +662,29 @@ async def sell_monitor_task(app):
                                 except Exception:
                                     pass
                             order_result = await asyncio.to_thread(exchange.create_market_sell_order, symbol, sell_qty)
+                            ######### [신규 추가 시작: 매도 성공 시 중복 알람 차단 로직] #########
+                            # 1. 주문 성공 여부 확인 (id가 있으면 성공)
+                            if order_result and 'id' in order_result:
+                                
+                                # 2. 감시 목록(assets)에서 즉시 제거 (이게 있어야 아래쪽 알람이 안 뜸)
+                                if symbol in assets:
+                                    del assets[symbol]
+                                    logger.info(f"✅ {symbol} 매도 성공 확인: assets에서 제거됨")
+
+                                # 3. 매도 성공 알림 (기존에 아래 있던 메시지 코드를 이 안으로 이동)
+                                await app.bot.send_message(config.CHAT_ID, f"🔴 [매도 집행]\n{symbol} | 사유: {sell_reason}")
+
+                                # 4. 이번 종목 처리는 끝났으니 즉시 다음 종목으로 (아래쪽 '긴급 권고' 로직 스킵)
+                                continue 
+
+                            else:
+                                # 매도 주문이 실패했을 경우의 로그 (선택 사항)
+                                logger.error(f"❌ {symbol} 매도 주문 실패 또는 응답 없음: {order_result}")
                             exec_price = float(order_result.get('average') or order_result.get('price') or this_curr_p)
                             if this_profit < 0 and this_avg_p and this_avg_p > 0:
                                 target_stop = this_avg_p * 0.98
                                 slippage_pct = (exec_price - target_stop) / target_stop * 100
                                 analyzer.record_loss_review(symbol, exec_price, target_stop, slippage_pct, last_1m_open, last_1m_close)
-                            await app.bot.send_message(config.CHAT_ID, f"🔴 [매도 집행]\n{symbol} | 사유: {sell_reason}")
                             if symbol in pending_approvals: del pending_approvals[symbol]
                     else:
                         limit = pending_approvals.get(symbol, {}).get('wait_limit', 30)
