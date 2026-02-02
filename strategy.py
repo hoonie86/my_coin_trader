@@ -653,26 +653,38 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
     if status == 'KEEP':
         return False, "유지 중"
 
-    # 일반 매도 로직 (90선 최종 이탈 및 3% 익절 보전)
-    if curr_p < curr['ma90']:
-        return True, "📉 90선 최종 이탈 매도"
-    # [수정] high_candle 정의 및 에러 방지 로직 
-    # 1. 최근 20봉 중 최고가 데이터를 안전하게 가져옴 (NameError 방지)
+    # [변수 체크 1] 고점 추적 (최근 20봉)
     try:
         recent_df = df.iloc[-20:]
         high_price = recent_df['high'].max()
     except Exception:
-        # 데이터가 부족할 경우 현재가를 고점으로 가정하여 에러 방지
-        high_price = curr_p
+        high_price = curr_p  # 데이터 부족 시 현재가를 고점으로 간주
 
-    # 최고점 대비 일정 비율 하락 시 익절/손절 (추가 필터)
-    # 3% 수익이 깨지기 전, 고점 대비 3% 하락 시 즉시 대응
-    if profit_rate_pct >= 1.0 and curr_p < high_price * 0.97:
-        return True, "🚨 고점 대비 3% 하락 (수익 보전)"
-    # 3% 수익이 생기고 40선 이탈 시 익절
+    # [매도 1순위] 고점 대비 3% 하락 (Trailing Stop)
+    # 20봉 이내 최고가 대비 3% 밀리면 수익 구간 상관없이 즉시 매도
+    if high_price > 0:
+        drop_from_peak = (high_price - curr_p) / high_price * 100
+        if drop_from_peak >= 3.0:
+            return True, f"📉 [고점하락] 최근 20봉 고점({high_price:,.0f}) 대비 3% 하락 매도", False
+
+    # [매도 2순위] 지지선 이탈 (사용자님 제안: support_price 기준)
+    # 현재가가 계산된 지지선(기울기 완만했던 ma40)을 하향 돌파할 때
+    if curr_p < support_price:
+        # 지지선이 현재가 대비 너무 아래(-5% 이하)에 있다면 신뢰도가 낮음
+        disparity_support = (curr_p - support_price) / support_price * 100 if support_price > 0 else 0
+        
+        if disparity_support < -5.0:
+            # 지지선이 너무 멀면 90일선을 최종 마지노선으로 확인 (중복 제거 통합)
+            if curr_p < curr['ma90']:
+                return True, "📉 [최종이탈] 지지선 이격 과다로 90선 최종 이탈 매도", False
+        else:
+            # 일반적인 지지선 하향 이탈
+            return True, f"📉 [지지선이탈] 설정 지지선({support_price:,.0f}) 하향 이탈", False
+
+    # [매도 3순위] 수익 보전 (수익률 3% 이상 시 지지선 근접하면 미리 익절)
+    # support_price의 1.01배(1% 위)까지 내려오면 수익을 지키기 위해 매도
     if profit_rate_pct >= 3.0 and curr_p < support_price * 1.01:
-        return True, "✅ 3% 수익 보전 익절"
-
+        return True, "✅ [익절보전] 3% 수익권 내 지지선 근접 매도", False
 
     return False, "안전"
 

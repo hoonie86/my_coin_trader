@@ -635,28 +635,39 @@ async def sell_monitor_task(app):
 
                 elapsed_min = 0
                 if is_sell_signal:
-                    if "0순위" in sell_reason or "절대익절" in sell_reason:
+                    # [1] 긴급 매도(is_urgent) 확인
+                    # strategy.py에서 True로 넘어온 경우 유예 없이 바로 True 처리
+                    if is_urgent:
                         is_sell_final = True
-                        # [추가] 0순위나 절대익절도 유예 시스템에 등록 (10분 적용)
-                        if symbol not in pending_approvals:
-                            pending_approvals[symbol] = {
-                                'status': 'NOTIFIED',
-                                'start_time': datetime.now(),
-                                'entry_profit': this_profit,
-                                'reason': sell_reason,
-                                'wait_limit': 10
-                            }
+                        # 긴급 매도는 유예 리스트에 넣지 않고 즉시 로직 아래에서 처리되게 합니다.
+                        
+                    # [2] 일반 매도 (유예 시스템 작동)
                     elif symbol not in pending_approvals:
-                        # [기존 로직] 사유별 유예 시간 차등 (10분 vs 30분)
-                        wait_limit = 10 if ("1순위" in sell_reason or "2음봉" in sell_reason) else 30
+                        # 모든 일반 매도 사유에 대해 유예 시간을 10분으로 통합
+                        wait_limit = 10 
+                        
+                        # 텔레그램 알림 아이콘 설정 (긴박함을 알리기 위해 🚨 사용)
+                        icon = "🚨" 
+                        
+                        # 유예 리스트 등록
+                        pending_approvals[symbol] = {
+                            'status': 'NOTIFIED',
+                            'start_time': datetime.now(),
+                            'entry_profit': this_profit,
+                            'reason': sell_reason,
+                            'wait_limit': wait_limit
+                        }
+                        
+                        # 텔레그램 알림 발송
                         kb = telegram_ui.get_sell_signal_kb(symbol, wait_limit)
-                        icon = "🚨" if wait_limit == 10 else "🔵"
-
-                        await app.bot.send_message(config.CHAT_ID,
-                                                   f"{icon} [{wait_limit}분 유예 시작] {symbol}\n"
-                                                   f"사유: {sell_reason}\n"
-                                                   f"현재수익률: {this_profit:+.2f}% | 현재가: {this_curr_p:,.0f}원\n"
-                                                   f"⏱ 대응 선택 대기", reply_markup=kb)
+                        await app.bot.send_message(
+                            config.CHAT_ID,
+                            f"{icon} [{wait_limit}분 유예 시작] {symbol}\n"
+                            f"사유: {sell_reason}\n"
+                            f"현재수익률: {this_profit:+.2f}% | 현재가: {this_curr_p:,.0f}원\n"
+                            f"⏱ 대응 선택 대기 (10분 뒤 자동 매도)", 
+                            reply_markup=kb
+                        )
 
                         pending_approvals[symbol] = {
                             'status': 'NOTIFIED',
