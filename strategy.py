@@ -344,6 +344,18 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
                 df['ma40'].iloc[-i] > df['ma185'].iloc[-i]:
             gold_index = len(df) - i
             break
+    ################################################################################
+    ######### [신규: 구간 폭등 피로도 필터 - BTR 사례 방지] #########
+    ################################################################################
+    # 최근 20봉 구간의 '찐 바닥' 대비 '찐 고점'의 폭을 봅니다.
+    window_low = lookback_window['low'].min()
+    window_high = lookback_window['high'].max()
+    max_rise_in_window = ((window_high - window_low) / window_low * 100) if window_low > 0 else 0
+
+    # 저점 대비 5% 이상 변동성이 있었던 종목은 "이미 에너지를 소진했다"고 판단
+    if max_rise_in_window >= 5.0:
+        return False, f"🚫 [제외] 구간 변동성 과다({max_rise_in_window:.1f}% >= 5%)", "B", data_dict
+    ################################################################################
 
     bars_since_gold = len(df) - gold_index if gold_index != -1 else -1
     data_dict['bars_since_gold'] = bars_since_gold
