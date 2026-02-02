@@ -329,10 +329,14 @@ async def buy_scan_task(app):
                         else:
                             success, msg = await safe_market_buy(symbol, buy_cost, "S")
                             if success:
+                                display_grade = "A급" if "[A]" in reason or "A급" in reason else "S급"
+
                                 await app.bot.send_message(
                                     config.CHAT_ID,
-                                    f"🤖 [S급 즉시매수 완료] {symbol}\n💡 사유: {reason}\n💰 투입: {buy_cost:,.0f}원"
-                                )
+                                        f"🤖 [{display_grade} 즉시매수 완료] {symbol}\n"
+                                        f"💡 사유: {reason}\n"
+                                        f"💰 투입: {buy_cost:,.0f}원"
+                                    )
                                 if symbol in pending_s_buys: del pending_s_buys[symbol]
                     else:
                         status_tag = "💎 [매수포착 - A급]" if not is_s_class else "🔥 [S급 포착/수동대기]"
@@ -545,7 +549,8 @@ async def sell_monitor_task(app):
                 # 밤이면 무조건 AUTO로 동작하게 함
                 status = 'AUTO' if is_night else m_status
 
-                is_sell_signal, sell_reason = await strategy.check_sell_signal(
+                # [수정] urgent_flag를 함께 받을 수 있도록 호출부 수정
+                res = await strategy.check_sell_signal(
                     exchange=exchange,
                     df=df,
                     symbol=symbol,
@@ -553,6 +558,41 @@ async def sell_monitor_task(app):
                     symbol_inventory_age=this_elapsed_bars,
                     status=status
                 )
+                
+                # 리턴값 분해 (is_sell, reason, [urgent])
+                is_sell_signal = res[0]
+                sell_reason = res[1]
+                is_urgent = res[2] if len(res) > 2 else False
+
+                ############################################################################
+                ######### [신규: 급등주 즉시 매도 비상구] #########
+                ############################################################################
+                if is_sell_signal and is_urgent:
+                    logger.info(f"🚨🚨🚨 {symbol} 긴급 매도 신호 감지! 유예 없이 즉시 집행: {sell_reason}")
+                    
+                    # 1. 즉시 시장가 매도 실행 (유예 리스트 등록 과정 생략)
+                    balance = await asyncio.to_thread(exchange.fetch_balance)
+                    base = symbol.split('/')[0]
+                    free_qty = float(balance['free'].get(base, 0))
+                    sell_qty = min(this_qty, free_qty)
+                    
+                    if sell_qty > 0:
+                        order_result = await asyncio.to_thread(exchange.create_market_sell_order, symbol, sell_qty)
+                        
+                        if order_result and 'id' in order_result:
+                            # 2. 자산 목록에서 즉시 제거 및 알림
+                            if symbol in assets: del assets[symbol]
+                            if symbol in pending_approvals: del pending_approvals[symbol]
+                            
+                            await app.bot.send_message(
+                                config.CHAT_ID, 
+                                f"🔥 [긴급 즉시 매도 완료]\n종목: {symbol}\n사유: {sell_reason}\n현재수익: {this_profit:+.2f}%"
+                            )
+                            logger.info(f"✅ {symbol} 긴급 매도 성공")
+                            continue # 다음 종목으로 점프
+                    else:
+                        logger.error(f"❌ {symbol} 긴급 매도 실패: 잔고 부족")
+                ############################################################################
 
                 # 추가 로직: 매수 초기(6봉 미만) 90선 이탈 신호 강제 무시
                 if is_sell_signal and this_elapsed_bars < 6:

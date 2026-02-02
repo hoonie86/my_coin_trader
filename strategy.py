@@ -523,7 +523,47 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
 
     ma40_val = curr['ma40']
     ma185_val = curr['ma185'] if not pd.isna(curr['ma185']) else 0
+    ################################################################################
+    ######### [신규: 30분봉 시가 기준 급등 즉시 처단 시스템] #########
+    ################################################################################
+    # 변수를 건드리지 않고, 30분봉 시가 대비 상승폭만 따로 계산합니다.
+    soaring_rate = (curr_p - curr['open']) / curr['open'] * 100
 
+    if soaring_rate >= 3.0:
+        try:
+            # 3분봉 데이터 호출 (정밀 분석용)
+            ohlcv_3m = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '3m', limit=50)
+            df_3m = pd.DataFrame(ohlcv_3m, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
+            
+            # 최근 10개 3분봉 고점 추적
+            high_10_3m = df_3m['high'].tail(10).max()
+            curr_3m_p = df_3m['close'].iloc[-1]
+
+            # (A) 세력 이탈 감지: 2음봉 + 고점 거래량 10% 이상 (3분봉 기준)
+            is_2_neg_3m, reason_2_neg_3m = check_2_negative_candles(df_3m)
+            if is_2_neg_3m:
+                high_idx_3m = df_3m['high'].tail(10).argmax()
+                high_vol_3m = df_3m['vol'].iloc[len(df_3m) - 10 + high_idx_3m]
+                curr_vol_3m = df_3m['vol'].iloc[-1] + df_3m['vol'].iloc[-2]
+                if curr_vol_3m > (high_vol_3m * 0.1):
+                    return True, f"🚨[급등-세력이탈] 2음봉 & 거래량폭발", True
+
+            # (B) 캔들 위치별 차등 낙폭
+            if soaring_rate >= 10.0:
+                if curr_3m_p < high_10_3m * 0.97:
+                    return True, f"🚨[급등-강력] 고점대비 3% 하락 (위치:{soaring_rate:.1f}%)", True
+            else:
+                if curr_3m_p < high_10_3m * 0.98:
+                    return True, f"🚨[급등-초기] 고점대비 2% 하락 (위치:{soaring_rate:.1f}%)", True
+
+            # (C) 수익률 마지노선 사수 (14% -> 13% 사수)
+            if profit_rate_pct >= 13.0:
+                if curr_3m_p < purchase_price * 1.13:
+                    return True, "🚨[마지노선] 수익률 13% 사수 매도", True
+
+        except Exception as e:
+            logger.error(f"급등 정밀 분석 에러: {e}")
+    ################################################################################
     # 0순위: 긴급 감시 스위치 작동
     if has_rsi_spike:
         if not emergency_mode.get(symbol, False):
