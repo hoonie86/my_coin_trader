@@ -534,6 +534,11 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
 
     ma40_val = curr['ma40']
     ma185_val = curr['ma185'] if not pd.isna(curr['ma185']) else 0
+    ####### [추가] TYPE3 예외 처리: 30분봉 지표(90선/지지선) 로직 진입 차단 #######
+    if status == 'TYPE3':
+        # -3% 손절선만 공통으로 체크하고, 나머지는 3분봉 로직으로 넘깁니다.
+        if profit_rate_pct <= -3.0:
+            return True, f"🚨 [TYPE3-긴급손절] -3% 도달 ({profit_rate_pct:.2f}%)", True
     ################################################################################
     ######### [신규: 30분봉 시가 기준 급등 즉시 처단 시스템] #########
     ################################################################################
@@ -596,19 +601,19 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
             # A. 3분봉 기준 2음봉 세력 이탈 감지
             is_2_neg, reason_2_neg = check_2_negative_candles(df_3m)
             if is_2_neg:
-                return True, f"🚀 [비상-3m] 세력 이탈: {reason_2_neg}"
+                return True, f"🚀 [비상-3m] 세력 이탈: {reason_2_neg}", True
             
             # B. 3분봉 기준 40선 이탈 (천장 대책 - 익절)
             if curr_3m['close'] < curr_3m['ma40']:
-                return True, f"💰 [비상-3m] 3분봉 40선 이탈 (익절)"
+                return True, f"💰 [비상-3m] 3분봉 40선 이탈 (익절)", True
 
             # C. 3분봉 기준 고점 대비 3% 하락 (수익 보전)
             high_3m = df_3m['high'].tail(15).max()
             if curr_3m['close'] < high_3m * 0.97:
-                return True, f"🚨 [비상-3m] 고점 대비 3% 하락"
+                return True, f"🚨 [비상-3m] 고점 대비 3% 하락", True
 
             # 급등 상황이면 아래 30분봉 일반 로직은 건너뛰고 홀딩
-            return False, "🚀 급등 모드 유지 (3분봉 추적 중)"
+            return False, "🚀 급등 모드 유지 (3분봉 추적 중)", False
         except Exception as e:
             logger.error(f"3분봉 분석 에러: {e}")
             # 에러 시에는 안전하게 기존 30분봉 로직으로 흐르게 둡니다.
@@ -621,7 +626,7 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
     if is_surging:
         is_2_neg, reason_2_neg = check_2_negative_candles(df)
         if is_2_neg:
-            return True, f"🚀 단기 급등 후 세력 이탈: {reason_2_neg}"
+            return True, f"🚀 단기 급등 후 세력 이탈: {reason_2_neg}", True
 
     # ---------------------------------------------------------
     # [정비 2] 40 지지선 및 S+급 보호 (상향->평행->상향 로직)
@@ -638,7 +643,7 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
     if curr_p < support_price:
         # 상승 초입 눌림목(지지선의 98%)은 유예해줌
         if not (is_early_stage and curr_p >= support_price * 0.98):
-            return True, f"📉 40선 지지선({support_price:,.0f}) 이탈"
+            return True, f"📉 40선 지지선({support_price:,.0f}) 이탈", False
 
     # ---------------------------------------------------------
     # [정비 4] 기존 유예 로직 및 기타 매도
@@ -647,11 +652,11 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
     if ma185_val > 0:
         is_ma40_above_ma185 = ma40_val > ma185_val
         if curr_p > ma40_val and is_ma40_above_ma185 and profit_rate_pct >= 10.0:
-            return False, "급등 진행 중(매도 유예)"
+            return False, "급등 진행 중(매도 유예)", False
 
     # 상태 유지(KEEP) 중일 때 긴급 매도 외 일반 매도 차단
     if status == 'KEEP':
-        return False, "유지 중"
+        return False, "유지 중", False
 
     # [변수 체크 1] 고점 추적 (최근 20봉)
     try:
@@ -686,11 +691,12 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
     if profit_rate_pct >= 3.0 and curr_p < support_price * 1.01:
         return True, "✅ [익절보전] 3% 수익권 내 지지선 근접 매도", False
 
-    return False, "안전"
+    return False, "안전", False
 
 
 def get_report_visuals(this_profit, is_sell_signal, this_curr_p, ma40_val, sell_reason, symbol, pending_approvals):
     from datetime import datetime
+    grade_head = f"[{grade}] "
     wait_data = pending_approvals.get(symbol)
     
     # [1] 유예 및 긴급 상태 (파랑/🚨)
@@ -703,16 +709,16 @@ def get_report_visuals(this_profit, is_sell_signal, this_curr_p, ma40_val, sell_
         is_urgent = ("🚨" in wait_data.get('last_icon', '') or "급등" in sell_reason or "2음봉" in sell_reason)
         icon = "🚨" if is_urgent else "🔵"
         msg = "긴급매도유예" if is_urgent else "일반매도유예"
-        return icon, f"⏳ {remains}m 후 {msg}"
+        return icon, f"{grade_head}⏳ {remains}m 후 {msg}"
 
     # [2] 매도 신호 발생 (빨강 - 위험 신호)
     if is_sell_signal:
-        return "🔴", f"⚠️ 매도신호({sell_reason})"
+        return "🔴", f"{grade_head}⚠️ 매도신호({sell_reason})"
 
     # [3] 40선 하단 (노랑 - 주의 단계)
     if this_curr_p < ma40_val:
-        return "🟡", "⚠️ 40선 하단(주의)"
+        return "🟡", f"{grade_head}⚠️ 40선 하단(주의)"
 
     # [4] 차트 양호 (초록 - 홀딩/안전 신호)
     # 매도 신호가 없고 40선 위라면 수익률과 관계없이 초록색으로 표시
-    return "🟢", "✅ 차트양호(홀딩)"
+    return "🟢", f"{grade_head}✅ 차트양호(홀딩)"

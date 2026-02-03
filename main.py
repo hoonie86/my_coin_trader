@@ -339,7 +339,7 @@ async def buy_scan_task(app):
                                     )
                                 if symbol in pending_s_buys: del pending_s_buys[symbol]
                     else:
-                        status_tag = "💎 [매수포착 - A급]" if not is_s_class else "🔥 [S급 포착/수동대기]"
+                        status_tag = "💎 [매수포착 - A급]" if not is_s_class_check else "🔥 [S급 포착/수동대기]"
                         is_auto_btn = (indiv_mode == 'AUTO')
                         await app.bot.send_message(
                             config.CHAT_ID,
@@ -423,7 +423,7 @@ async def execute_sell(app, symbol, reason):
         # [2] 텔레그램 알림
         await app.bot.send_message(
             config.CHAT_ID, 
-            f"💰 [매도 완료] {symbol}\n사유: {reason}"
+            f"💰 [매도 완료] {symbol}\n사유: {reason} | 📊 최종 수익률: {this_profit:+.2f}%"
         )
         
         # [3] 유예 목록에서 제거
@@ -752,7 +752,7 @@ async def sell_monitor_task(app):
                                     logger.info(f"✅ {symbol} 매도 성공 확인: assets에서 제거됨")
 
                                 # 3. 매도 성공 알림 (기존에 아래 있던 메시지 코드를 이 안으로 이동)
-                                await app.bot.send_message(config.CHAT_ID, f"🔴 [매도 집행]\n{symbol} | 사유: {sell_reason}")
+                                await app.bot.send_message(config.CHAT_ID, f"🔴 [매도 집행]\n{symbol} | 사유: {sell_reason} | 📊 최종 수익률: {this_profit:+.2f}%")
 
                                 # 4. 이번 종목 처리는 끝났으니 즉시 다음 종목으로 (아래쪽 '긴급 권고' 로직 스킵)
                                 continue 
@@ -1097,10 +1097,15 @@ async def process_report_logic(update, context, query=None):
             ohlcv = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '30m', limit=100)
             df = pd.DataFrame(ohlcv, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
             ma40_line = df['close'].rolling(40).mean().iloc[-1]
-
+            
+            symbol_wo_quote = symbol.split('/')[0]
+            asset_info = assets.get(symbol_wo_quote, {})
+            purchase_price = float(asset_info.get('avg_buy_price', 0)) # 여기서 변수 정의!
+            
             # 전략 엔진 호출
-            is_sell_signal, sell_reason = await strategy.check_sell_signal(
-                exchange, df, symbol, this_avg_p, this_elapsed_bars, status
+            is_sell_signal, sell_reason, is_urgent = await strategy.check_sell_signal(
+                exchange, df, symbol, purchase_price, symbol_inventory_age if 'symbol_inventory_age' in locals() else 0, # 있으면 쓰고 없으면 0
+                status if 'status' in locals() else 'NORMAL' # 있으면 쓰고 없으면 NORMAL
             )
             # [추가: 3번 타입 방어 로직 - 정기 리포트와 동일하게 맞춤] #####
             
