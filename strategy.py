@@ -696,7 +696,6 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
 
 def get_report_visuals(this_profit, is_sell_signal, this_curr_p, ma40_val, sell_reason, symbol, pending_approvals):
     from datetime import datetime
-    grade_head = f"[{grade}] "
     wait_data = pending_approvals.get(symbol)
     
     # [1] 유예 및 긴급 상태 (파랑/🚨)
@@ -709,16 +708,16 @@ def get_report_visuals(this_profit, is_sell_signal, this_curr_p, ma40_val, sell_
         is_urgent = ("🚨" in wait_data.get('last_icon', '') or "급등" in sell_reason or "2음봉" in sell_reason)
         icon = "🚨" if is_urgent else "🔵"
         msg = "긴급매도유예" if is_urgent else "일반매도유예"
-        return icon, f"{grade_head}⏳ {remains}m 후 {msg}"
+        return icon, f"⏳ {remains}m 후 {msg}"
 
     # [2] 매도 신호 발생 (빨강 - 위험 신호)
     if is_sell_signal:
-        return "🔴", f"{grade_head}⚠️ 매도신호({sell_reason})"
+        return "🔴", f"⚠️ 매도신호({sell_reason})"
 
     # [3] 40선 하단 (노랑 - 주의 단계)
     if this_curr_p < ma40_val:
-        return "🟡", f"{grade_head}⚠️ 40선 하단(주의)"
+        return "🟡", f"⚠️ 40선 하단(주의)"
 
     # [4] 차트 양호 (초록 - 홀딩/안전 신호)
     # 매도 신호가 없고 40선 위라면 수익률과 관계없이 초록색으로 표시
-    return "🟢", f"{grade_head}✅ 차트양호(홀딩)"
+    return "🟢", f"✅ 차트양호(홀딩)"
