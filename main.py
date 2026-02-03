@@ -390,7 +390,7 @@ async def buy_scan_task(app):
                     if sym in pending_s_buys: del pending_s_buys[sym]
 
             print(f"\n✅ 스캔 완료 | {datetime.now().strftime('%H:%M:%S')}")
-            await asyncio.sleep(600)
+            await asyncio.sleep(300)
 
         except Exception as e:
             logger.error(f"Buy Task Error: {e}")
@@ -432,6 +432,26 @@ async def execute_sell(app, symbol, reason):
             
     except Exception as e:
         logger.error(f"❌ {symbol} 매도 집행 중 에러: {e}")
+
+async def monitor_sell_loop(exchange):
+    """들고 있는 종목들을 매수 루프와 상관없이 실시간으로 감시해서 팝니다."""
+    logger.info("📡 [실시간 매도 감시 루프 가동]")
+    while True:
+        try:
+            # 1. 현재 잔고 확인 (들고 있는 종목만 추출)
+            balances = await asyncio.to_thread(exchange.fetch_balance)
+            positions = [b for b in balances['total'] if balances['total'][b] > 0] # 실제 포지션 로직에 맞게 수정
+            
+            for symbol in positions:
+                # 2. 각 종목별 strategy.check_sell_signal 호출
+                # 여기서 strategy.py에 수정한 3분봉/30분봉 로직이 돌아갑니다.
+                # (생략: 기존 매도 처리 로직 이식)
+                pass
+                
+            await asyncio.sleep(20) # 20초마다 매도 신호 감시
+        except Exception as e:
+            logger.error(f"매도 감시 루프 에러: {e}")
+            await asyncio.sleep(1)
 
 async def sell_monitor_task(app):
     """[최종 복구] 기존 유예/취소/0순위 로직 완전 유지 + 수익률 & 야간 모드 보정"""
@@ -808,11 +828,11 @@ async def sell_monitor_task(app):
                     await app.bot.send_message(config.CHAT_ID, msg_text, reply_markup=InlineKeyboardMarkup(final_rows))
                 last_report_time = datetime.now()
 
-            await asyncio.sleep(wait_time)  # [변경] 매도 감시 주기 1분 -> 3분
+            await asyncio.sleep(15)  # [변경] 매도 감시 주기 15초
         except Exception as e:
             import traceback
             logger.error(f"Sell Monitor Error: {e}\n{traceback.format_exc()}")
-            await asyncio.sleep(180)  # [변경] 에러 발생 시에도 3분 대기
+            await asyncio.sleep(15)  # [변경] 에러 발생 시에도 15초 대기
 
 
 async def handle_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1271,21 +1291,34 @@ def get_current_grade(symbol, df):
 
 async def main():
     print("🚀 가상화폐 자동 매매 시스템 가동...")
+    
+    # 텔레그램 봇 설정
     app = Application.builder().token(config.TELEGRAM_TOKEN).build()
     app.add_handler(CallbackQueryHandler(handle_interaction))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_interaction))
 
-    asyncio.create_task(buy_scan_task(app))
-    asyncio.create_task(sell_monitor_task(app))
+    # [핵심] 매수 스캔과 매도 감시를 각각 독립된 비동기 타스크로 실행
+    # 이제 buy_scan_task가 내부에서 3분을 쉬어도(await asyncio.sleep), 
+    # sell_monitor_task는 전혀 방해받지 않고 자기 할 일을 합니다.
+    buy_task = asyncio.create_task(buy_scan_task(app))
+    sell_task = asyncio.create_task(sell_monitor_task(app))
 
+    # 텔레그램 인터페이스 시작
     await app.initialize()
     await app.start()
     await app.bot.send_message(config.CHAT_ID, "🚀 시스템 가동 시작", reply_markup=telegram_ui.get_main_keyboard())
     await app.updater.start_polling()
 
-    while True:
-        await asyncio.sleep(1)
-
+    try:
+        # 두 타스크가 종료될 때까지 대기 (사실상 무한 루프)
+        await asyncio.gather(buy_task, sell_task)
+    except Exception as e:
+        logger.error(f"시스템 루프 에러 발생: {e}")
+    finally:
+        # 종료 시 안전하게 텔레그램 봇 정지
+        await app.updater.stop()
+        await app.stop()
+        await app.shutdown()
 
 if __name__ == "__main__":
     try:

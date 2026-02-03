@@ -479,33 +479,23 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
     return False, reason, "", data_dict
 
 
-# [사용자 원본] 정밀 2음봉 로직
-def check_2_negative_candles(df):
-    # [수정] 탐색 범위를 15봉에서 30봉으로 확대하여 안정성 확보
-    if len(df) < 30: return False, ""
-    window = df.iloc[-30:-3]
-    high_idx = window['vol'].idxmax()
-    high_candle = window.loc[high_idx]
+def check_3_2_negative_candles(target_df):
+    if len(target_df) < 4: return False, ""
+    recent_3 = target_df.tail(3)
+    # 최근 10봉 중 최대 거래량의 10%를 이탈 기준으로 설정
+    high_vol_threshold = target_df['vol'].tail(10).max() * 0.1
     
-    if high_candle['close'] <= high_candle['open']: return False, ""
+    neg_count = 0
+    reasons = []
+    for i in range(3):
+        candle = recent_3.iloc[i]
+        # 음봉이면서 기준 거래량 이상 터졌을 때만 '찐 음봉' 인정
+        if candle['close'] < candle['open'] and candle['vol'] > high_vol_threshold:
+            neg_count += 1
+            reasons.append(f"{3-i}번전음봉")
     
-    # [유지] 사용자 원본 기준: 거래량 10%
-    high_volume = high_candle['vol']
-    threshold_vol = high_volume * 0.10
-    
-    curr_p = df.iloc[-1]['close']
-    # [유지] 사용자 원본 기준: 고점 대비 90% 영역
-    is_high_price_zone = curr_p >= (high_candle['high'] * 0.90)
-    
-    post_candles = df.iloc[-3:]
-    negative_count = 0
-    for _, candle in post_candles.iterrows():
-        if (candle['close'] < candle['open']) and (candle['vol'] >= threshold_vol):
-            negative_count += 1
-            
-    if negative_count >= 2 and is_high_price_zone:
-        return True, f"🚨 고점({high_candle['high']:,.0f}) 부근 세력 이탈(2음봉)"
-    
+    if neg_count >= 2:
+        return True, ", ".join(reasons)
     return False, ""
 
 
@@ -513,7 +503,7 @@ def check_2_negative_candles(df):
 # ---------------------------------------------------------
 # [복구 및 추가] 매도 감시 메인 함수 (ERROR 방지 핵심)
 # ---------------------------------------------------------
-async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_inventory_age=99, status=None):
+aasync def check_sell_signal(exchange, df, symbol, purchase_price, symbol_inventory_age=99, status=None):
     global emergency_mode
     
     # [유지] 지표 계산
@@ -539,6 +529,16 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
         # -3% 손절선만 공통으로 체크하고, 나머지는 3분봉 로직으로 넘깁니다.
         if profit_rate_pct <= -3.0:
             return True, f"🚨 [TYPE3-긴급손절] -3% 도달 ({profit_rate_pct:.2f}%)", True
+
+        ######## [추가 라인] TYPE3 전용 3분봉 날카로운 대응 ########
+        try:
+            ohlcv_3m = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '3m', limit=50)
+            df_3m = pd.DataFrame(ohlcv_3m, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
+            is_3_2_neg_3m, r_3m = check_3_2_negative_candles(df_3m)
+            if is_3_2_neg_3m:
+                return True, f"🚨 [TYPE3-3m] 3중 2음봉 이탈: {r_3m}", True
+        except Exception as e:
+            logger.error(f"TYPE3 3분봉 분석 에러: {e}")
     ################################################################################
     ######### [신규: 30분봉 시가 기준 급등 즉시 처단 시스템] #########
     ################################################################################
@@ -556,7 +556,7 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
             curr_3m_p = df_3m['close'].iloc[-1]
 
             # (A) 세력 이탈 감지: 2음봉 + 고점 거래량 10% 이상 (3분봉 기준)
-            is_2_neg_3m, reason_2_neg_3m = check_2_negative_candles(df_3m)
+            is_2_neg_3m, reason_2_neg_3m = check_3_2_negative_candles(df_3m)
             if is_2_neg_3m:
                 high_idx_3m = df_3m['high'].tail(10).argmax()
                 high_vol_3m = df_3m['vol'].iloc[len(df_3m) - 10 + high_idx_3m]
@@ -599,7 +599,7 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
             curr_3m = df_3m.iloc[-1]
 
             # A. 3분봉 기준 2음봉 세력 이탈 감지
-            is_2_neg, reason_2_neg = check_2_negative_candles(df_3m)
+            is_2_neg, reason_2_neg = check_3_2_negative_candles(df_3m)
             if is_2_neg:
                 return True, f"🚀 [비상-3m] 세력 이탈: {reason_2_neg}", True
             
@@ -617,6 +617,11 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
         except Exception as e:
             logger.error(f"3분봉 분석 에러: {e}")
             # 에러 시에는 안전하게 기존 30분봉 로직으로 흐르게 둡니다.
+
+    # ######## [신규 추가] 평시 상황: 30분봉 기준 3중 2음봉 체크 ########
+    is_3_2_neg_30m, reason_30m = check_3_2_negative_candles(df)
+    if is_3_2_neg_30m:
+        return True, f"📉 [평시-30m] 30분봉 3중 2음봉 포착: {reason_30m}", False
     # ---------------------------------------------------------
     # [정비 1 & 3] 급등 제어 및 2음봉 감시 (3분/5분 내 5% 폭등 시에만)
     # ---------------------------------------------------------
@@ -624,7 +629,7 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
     is_surging = (curr_p - prev['open']) / prev['open'] >= 0.05
     
     if is_surging:
-        is_2_neg, reason_2_neg = check_2_negative_candles(df)
+        is_2_neg, reason_2_neg = check_3_2_negative_candles(df)
         if is_2_neg:
             return True, f"🚀 단기 급등 후 세력 이탈: {reason_2_neg}", True
 
