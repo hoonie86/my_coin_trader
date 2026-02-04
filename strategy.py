@@ -349,6 +349,11 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
         data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
         return False, reason, "", data_dict
 
+    if curr['ma40'] < curr['ma185'] and rsi_val <= 45:
+        if slope_rate > -0.05 and diff_185 > -0.5:
+            data_dict = _fill_data_dict_full(df, curr, prev, curr_price, symbol)
+            return True, "🔵 [Type 3] 역배열 과매도 반등 진입", "A", data_dict
+
     gold_index = -1
     for i in range(1, 97):
         if df['ma40'].iloc[-i - 1] < df['ma185'].iloc[-i - 1] and \
@@ -522,6 +527,12 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
     profit_rate = (curr_p - purchase_price) / purchase_price if purchase_price > 0 else 0
     profit_rate_pct = profit_rate * 100
 
+    ###### [신규 추가] 매수 후 6캔들 유예: 진입 초기 휩소 방지 (단, -3% 손절은 즉시 집행)
+    if symbol_inventory_age < 6:
+        if profit_rate_pct <= -3.0:
+            return True, f"🚨 [긴급손절] 진입초기 -3% 도달", True
+        return False, f"진입 초기 유예({symbol_inventory_age}봉)", False
+
     ma40_val = curr['ma40']
     ma185_val = curr['ma185'] if not pd.isna(curr['ma185']) else 0
     ####### [추가] TYPE3 예외 처리: 30분봉 지표(90선/지지선) 로직 진입 차단 #######
@@ -618,10 +629,11 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
             logger.error(f"3분봉 분석 에러: {e}")
             # 에러 시에는 안전하게 기존 30분봉 로직으로 흐르게 둡니다.
 
-    # ######## [신규 추가] 평시 상황: 30분봉 기준 3중 2음봉 체크 ########
-    is_3_2_neg_30m, reason_30m = check_3_2_negative_candles(df)
-    if is_3_2_neg_30m:
-        return True, f"📉 [평시-30m] 30분봉 3중 2음봉 포착: {reason_30m}", False
+        # ######## [신규 추가] 평시 상황: 30분봉 기준 3중 2음봉 체크 ########
+        if soaring_rate >= 3.0:
+            is_3_2_neg_30m, reason_30m = check_3_2_negative_candles(df)
+            if is_3_2_neg_30m:
+                return True, f"📉 [급등후-30m] 30분봉 3중 2음봉 포착: {reason_30m}", False
     # ---------------------------------------------------------
     # [정비 1 & 3] 급등 제어 및 2음봉 감시 (3분/5분 내 5% 폭등 시에만)
     # ---------------------------------------------------------
