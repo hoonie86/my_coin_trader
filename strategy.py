@@ -349,10 +349,22 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
         data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
         return False, reason, "", data_dict
 
-    if curr['ma40'] < curr['ma185'] and rsi_val <= 45:
-        if slope_rate > -0.05 and diff_185 > -0.5:
-            data_dict = _fill_data_dict_full(df, curr, prev, curr_price, symbol)
-            return True, "🔵 [Type 3] 역배열 과매도 반등 진입", "A", data_dict
+    ###### [수정안] 5일선 이격도 중심의 바닥 낚시 (TYPE3) ######
+    # 1. 5일선과 185일선의 이격도 계산 (평균 -8.5% 이하 타겟)
+    ma5_val = float(curr['ma5']) if not pd.isna(curr['ma5']) else curr_price
+    disparity_5_185 = (ma5_val - ma185_val) / ma185_val * 100 if ma185_val > 0 else 0
+    
+    # 2. 새끼 양봉 계산 (시가 대비 +0.5% ~ +2.0% 사이만 허용)
+    candle_body_pct = ((curr_price - curr['open']) / curr['open'] * 100) if curr['open'] > 0 else 0
+
+    # [수정] 40선이 185선 아래여야 하며, 5일선이 확실히 바닥(-8.5%)에 처박혔을 때만 진입
+    if ma40_val < ma185_val and rsi_val <= 40:
+        # 가드 A: 5일선 이격도가 -8.5% 이하일 것 (고점 매수 원천 차단)
+        # 가드 B: 너무 급등하지 않은 '새끼 양봉'일 것 (0.5% ~ 2.0%)
+        if disparity_5_185 <= -8.5 and 0.5 <= candle_body_pct <= 2.0:
+            if slope_rate > -0.05: # 185선이 투매 수준으로 꺾이지 않았을 때
+                data_dict = _fill_data_dict_full(df, curr, prev, curr_price, symbol)
+                return True, f"💎 [Type 3] 바닥낚시(이격:{disparity_5_185:.1f}% / 양봉:{candle_body_pct:.1f}%)", "A", data_dict
 
     gold_index = -1
     for i in range(1, 97):
@@ -526,7 +538,9 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
     
     profit_rate = (curr_p - purchase_price) / purchase_price if purchase_price > 0 else 0
     profit_rate_pct = profit_rate * 100
-
+    
+    ###### [출력] 유예 로직 통과 여부 확인 ######
+    print(f"DEBUG: {symbol} | age: {symbol_inventory_age} | profit: {profit_rate_pct:.2f}%")
     ###### [신규 추가] 매수 후 6캔들 유예: 진입 초기 휩소 방지 (단, -3% 손절은 즉시 집행)
     if symbol_inventory_age < 6:
         if profit_rate_pct <= -3.0:

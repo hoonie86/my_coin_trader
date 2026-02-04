@@ -532,7 +532,8 @@ async def sell_monitor_task(app):
                         this_elapsed_bars = 0 # 에러 시 0으로 초기화하여 유예 적용
                 else:
                     this_elapsed_bars = 999
-
+                ###### [출력] 시간 계산 디버깅 ######
+                print(f"DEBUG: {symbol} | buy_time: {buy_time_str} | calc_age: {this_elapsed_bars}")
                 # 인벤토리에서 매수 당시 결정된 타입(1, 2, 3)을 가져옵니다.
                 this_buy_type = inv_item.get('buy_type', 1)
 
