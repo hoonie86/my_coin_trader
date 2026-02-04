@@ -503,7 +503,7 @@ def check_3_2_negative_candles(target_df):
 # ---------------------------------------------------------
 # [복구 및 추가] 매도 감시 메인 함수 (ERROR 방지 핵심)
 # ---------------------------------------------------------
-aasync def check_sell_signal(exchange, df, symbol, purchase_price, symbol_inventory_age=99, status=None):
+async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_inventory_age=99, status=None, realtime_p=None):
     global emergency_mode
     
     # [유지] 지표 계산
@@ -513,7 +513,7 @@ aasync def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invent
 
     curr = df.iloc[-1]
     prev = df.iloc[-2] # [추가] 급등 감지용
-    curr_p = curr['close']
+    curr_p = realtime_p if realtime_p is not None else curr['close']
 
     # [보정] RSI 및 수익률 계산
     rsi_series = calculate_rsi(df)

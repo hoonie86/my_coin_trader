@@ -101,7 +101,7 @@ async def safe_market_buy(symbol, cost, grade="A", buy_type=1):
         print(f"🛒 [매수집행] {symbol} | 금액: {safe_cost} | 수량: {amount} | 등급: {grade}")
 
         # 3. 시장가 매수 실행 (cost 파라미터로 주문 금액 상한 전달)
-        await asyncio.to_thread(
+        order = await asyncio.to_thread(
             exchange.create_order,
             symbol,
             'market',
@@ -110,12 +110,26 @@ async def safe_market_buy(symbol, cost, grade="A", buy_type=1):
             None,
             {'cost': safe_cost}
         )
+        if not order or 'average' not in order or order['average'] is None:
+            for _ in range(3):
+                await asyncio.sleep(1)
+                try:
+                    order = await asyncio.to_thread(exchange.fetch_order, order['id'], symbol)
+                    if order and 'average' in order and order['average']:
+                        break
+                except Exception as e:
+                    logger.error(f"Fetch order retry failed: {e}")
+
+        ###### [추가] 실 체결가 적용 (실패 시 curr_p 사용)
+        real_price = order.get('average') if order and order.get('average') else curr_p
 
         # 4. 인벤토리 저장 로직 (기존 유지 + grade 인자 추가)
         inv = load_inventory()
         old = inv.get(symbol, {"avg_price": 0, "total_quantity": 0})
         old_p, old_q = float(old['avg_price']), float(old['total_quantity'])
-        final_avg = ((old_p * old_q) + (curr_p * amount)) / (old_q + amount)
+        
+        ###### [수정] curr_p(현재가) 대신 real_price(실체결가) 적용
+        final_avg = ((old_p * old_q) + (real_price * amount)) / (old_q + amount)
 
         # [수정] 보강된 save_inventory를 호출하여 등급까지 저장
         save_inventory(symbol, final_avg, old_q + amount, grade, buy_type)
@@ -193,8 +207,8 @@ async def get_buy_cost():
         target_cost = config.DEFAULT_TEST_BUY
 
         # [수정] 수수료 및 호가 변동 대비 여유율을 95%로 상향
-        # 잔액이 설정 금액보다 적을 경우, 잔액의 95%만 주문하여 '초과 오류' 방지
-        actual_cost = min(target_cost, free_krw * 0.95)
+        ###### [수정] 잦은 잔고 초과 에러 방지를 위해 95% -> 90%로 조정
+        actual_cost = min(target_cost, free_krw * 0.90)
 
         # 빗썸 최소 주문 금액은 1,000원임
         if actual_cost < 1000:
@@ -418,7 +432,14 @@ async def execute_sell(app, symbol, reason):
         order_result = await asyncio.to_thread(exchange.create_market_sell_order, symbol, quantity)
         
         logger.info(f"💰 {symbol} 매도 집행 완료: {reason} | 수량: {quantity}")
-
+        # [수정] 실제 체결가 가져오기
+        # 거래소마다 다르지만 보통 'price'나 'average'에 담깁니다.
+        sell_price = float(order_result.get('average') or order_result.get('price') or 0)
+        
+        # [추가] 수익률 계산 (평단가가 있을 때만)
+        this_profit = 0.0
+        if avg_buy_price > 0 and sell_price > 0:
+            this_profit = ((sell_price - avg_buy_price) / avg_buy_price) * 100
         
         # [2] 텔레그램 알림
         await app.bot.send_message(
@@ -459,7 +480,7 @@ async def sell_monitor_task(app):
     while True:
         try:
             # 기본 대기 시간 3분
-            wait_time = 180
+            wait_time = 1
             # [추가] 서버 실시간 확인용 시간
             now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
@@ -569,6 +590,10 @@ async def sell_monitor_task(app):
                 # 밤이면 무조건 AUTO로 동작하게 함
                 status = 'AUTO' if is_night else m_status
 
+                ticker = await asyncio.to_thread(exchange.fetch_ticker, symbol)
+                this_curr_p = float(ticker.get('last') or ticker.get('close') or 0)
+                realtime_price = this_curr_p  # 실시간 현재가 긁기
+                
                 # [수정] urgent_flag를 함께 받을 수 있도록 호출부 수정
                 res = await strategy.check_sell_signal(
                     exchange=exchange,
@@ -576,7 +601,7 @@ async def sell_monitor_task(app):
                     symbol=symbol,
                     purchase_price=this_avg_p,
                     symbol_inventory_age=this_elapsed_bars,
-                    status=status
+                    status=status, realtime_p=realtime_price
                 )
                 
                 # 리턴값 분해 (is_sell, reason, [urgent])
@@ -819,7 +844,7 @@ async def sell_monitor_task(app):
                         f"━━━━━━━━━━━━\n"
                         + "\n".join(final_text_lines)
                     )
-                    final_rows = [symbol_buttons[i:i + 4] for i in range(0, len(symbol_buttons), 4)]
+                    final_rows = [sorted_buttons[i:i + 4] for i in range(0, len(sorted_buttons), 4)]
                     is_all_auto = all(sell_mute_status.get(s) == 'AUTO' for s in assets.keys()) if assets else False
                     report_kb = telegram_ui.get_report_inline_kb(is_all_auto)
                     if report_kb and hasattr(report_kb, 'inline_keyboard'):
