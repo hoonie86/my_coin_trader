@@ -205,13 +205,6 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
     if len(df) < 185:
         return False, "데이터부족", "", data_dict
 
-    # [중요] 에러 방지용 변수 선언 최상단 배치
-    # 최근 21봉 구간의 '찐 바닥' 대비 '찐 고점'의 폭을 먼저 계산합니다.
-    lookback_window = df.iloc[-21:]
-    window_low = lookback_window['low'].min()
-    window_high = lookback_window['high'].max()
-    max_rise_in_window = ((window_high - window_low) / window_low * 100) if window_low > 0 else 0
-    
     # [기존 유지] 40/185일선 + RSI
     df['ma40'] = df['close'].rolling(40).mean()
     df['ma185'] = df['close'].rolling(185).mean()
@@ -372,6 +365,24 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
                 df['ma40'].iloc[-i] > df['ma185'].iloc[-i]:
             gold_index = len(df) - i
             break
+        
+    # [수정] 골든크로스 여부 확인 후 '구간 변동성' 체크 수행
+    if gold_index != -1:
+        # 검사 시작점: 골든크로스 시점으로부터 20봉 전 (단, 인덱스 0보다 작으면 0)
+        check_start_idx = max(0, gold_index - 20)
+        
+        # 동적 구간 설정: check_start_idx ~ 현재(-1)까지
+        dynamic_window = df.iloc[check_start_idx:]
+        
+        win_low = dynamic_window['low'].min()
+        win_high = dynamic_window['high'].max()
+        
+        # 구간 내 변동폭 계산
+        dynamic_rise = ((win_high - win_low) / win_low * 100) if win_low > 0 else 0
+        
+        # 5% 이상 급등락이 있었으면 탈락
+        if dynamic_rise >= 5.0:
+             return False, f"🚫 [제외] 골크 전후 변동성 과다({dynamic_rise:.1f}% >= 5%)", "B", data_dict
 
     bars_since_gold = len(df) - gold_index if gold_index != -1 else -1
     data_dict['bars_since_gold'] = bars_since_gold
