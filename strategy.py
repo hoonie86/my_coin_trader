@@ -483,6 +483,8 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
     if curr_price <= curr['ma40'] and data_dict.get('grade') in ['S+', 'S', 'A+']:
          data_dict['grade'] = 'A' # 등급 하향
          # 기존 reason 뒤에 하락세 경고 문구 추가
+    if 'grade' in data_dict and data_dict['grade'] in ['S', 'S+', 'A', 'A+', 'B']:
+        print(f"🎯 [추천성공] {symbol} | 등급:{data_dict['grade']} | 구간Low:{window_low:,.0f} | 구간High:{window_high:,.0f} | 변동:{max_rise_in_window:.2f}%")
     
     if curr_price <= curr['ma40']:
         reason = f"현재가({curr_price:,.0f}) ≤ 40일선({ma40_val:,.0f}, 이격도:{disparity_40_pct:.2f}%)"

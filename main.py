@@ -91,7 +91,33 @@ async def safe_market_buy(symbol, cost, grade="A", buy_type=1):
             return False, "현재가 조회 실패"
 
         curr_p = float(curr_p)
+        ###### [수정] 호가(Orderbook) 기반 매수 조건 체크 (1호가 < 현재가 * 1.003) 및 재시도 로직
+        try:
+            # 1차 호가 조회
+            orderbook = await asyncio.to_thread(exchange.fetch_order_book, symbol)
+            asks = orderbook.get('asks', [])
+            best_ask = float(asks[0][0]) if asks else curr_p
 
+            # 조건 체크: 1호가가 현재가 대비 0.3% 이상 높으면 재시도
+            if best_ask >= curr_p * 1.003:
+                logger.info(f"⏳ {symbol} 1차 진입 유보: 호가 갭 과다 (1호가:{best_ask} >= 현재가:{curr_p}*1.003) -> 5초 대기")
+                await asyncio.sleep(5)
+
+                # 재시도: 호가 및 현재가 다시 조회 (완전히 새로 갱신)
+                ticker = await asyncio.to_thread(exchange.fetch_ticker, symbol)
+                curr_p = float(ticker.get('last') or ticker.get('close') or 0)
+                orderbook = await asyncio.to_thread(exchange.fetch_order_book, symbol)
+                asks = orderbook.get('asks', [])
+                best_ask = float(asks[0][0]) if asks else curr_p
+
+                # 2차 조건 체크
+                if best_ask >= curr_p * 1.003:
+                    logger.warning(f"❌ {symbol} 매수 포기: 호가 갭 지속 (1호가:{best_ask}, 현재가:{curr_p})")
+                    return False, "호가 갭 과다로 매수 포기"
+                    
+        except Exception as e:
+            logger.error(f"⚠️ 호가 체크 중 오류 발생 (매수 중단): {e}")
+            return False, f"호가 체크 오류: {e}"
         # 수량 계산 (소수점 4자리 절사). 실제 체결금액이 safe_cost를 넘지 않도록 금액 기준으로 역산
         import math
         amount = math.floor((safe_cost / curr_p) * 10000) / 10000
