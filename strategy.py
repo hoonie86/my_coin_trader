@@ -219,10 +219,7 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
     prev = df.iloc[-2]
     curr_price = float(curr['close'])
 
-    # 저점 대비 5% 이상 변동성이 있었던 종목은 "이미 에너지를 소진했다"고 판단
-    if max_rise_in_window >= 5.0:
-        return False, f"🚫 [제외] 구간 변동성 과다({max_rise_in_window:.1f}% >= 5%)", "B", data_dict
-
+    
     # [가격 필터] 10원 미만 또는 10,000원 이상 → BTC 마켓 동전주/비정상 차단
     if curr_price < 10 or curr_price >= 10000:
         return False, "가격필터(BTC마켓)", "", data_dict
@@ -230,6 +227,26 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
     # [유의 종목] 수급 돌파(S/S+) 포함 모든 매수 신호에서 투자유의 종목 제외 (먼저 검사)
     if symbol.split('/')[0] in warning_list:
         return False, "투자유의", "F", data_dict
+
+    ###### [신규 추가] 스테이블 코인 및 185일선 고점(상위 30%) 원천 차단 ######
+    # 1. 스테이블 코인 필터링 (USDC, USDT, DAI 등 차트 왜곡 종목)
+    exclude_symbols = ['USDC', 'USDT', 'DAI', 'BUSD']
+    if symbol.split('/')[0] in exclude_symbols:
+        return False, "제외종목(스테이블)", "", data_dict
+
+    # 2. 185일선 상대적 위치 확인 (최근 200봉 기준 상위 30% 구간에 있으면 '이미 뜬 종목'으로 간주)
+    # 밥그릇 패턴은 185선이 바닥에 깔려있어야 하므로, 고공행진 중인 185선은 무조건 거릅니다.
+    lookback_range = 200
+    recent_185 = df['ma185'].iloc[-lookback_range:] if len(df) >= lookback_range else df['ma185']
+    min_185 = recent_185.min()
+    max_185 = recent_185.max()
+    curr_185 = float(curr['ma185']) if not pd.isna(curr['ma185']) else 0
+
+    if max_185 > min_185 > 0:
+        pos_185 = (curr_185 - min_185) / (max_185 - min_185)
+        # 상위 30% (0.7 이상) 위치에 있다면 밥그릇 바닥이 아님
+        if pos_185 >= 0.7:
+            return False, f"🚫 [제외] 185선 고점 구간({pos_185*100:.1f}%)", "B", data_dict
 
     # ---------- [개선] 수급 돌파: 1분봉 기준 (RSI 과열 및 고점 추격 방지 추가) ----------
     if df_1m is not None and len(df_1m) >= 21:
@@ -365,7 +382,7 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
                 df['ma40'].iloc[-i] > df['ma185'].iloc[-i]:
             gold_index = len(df) - i
             break
-        
+
     # [수정] 골든크로스 여부 확인 후 '구간 변동성' 체크 수행
     if gold_index != -1:
         # 검사 시작점: 골든크로스 시점으로부터 20봉 전 (단, 인덱스 0보다 작으면 0)
@@ -445,10 +462,6 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
                     # 최근 50개 캔들의 최고점 대비 낙폭을 계산하여 가짜 바닥 필터링
                     recent_max = df['high'].rolling(window=50).max().iloc[-1]
                     drop_rate = ((recent_max - curr_price) / recent_max) * 100
-                    
-                    if drop_rate < 10: # 낙폭이 10% 미만이면 고점 눌림목으로 간주
-                        data_dict['grade'] = 'A'
-                        return True, f"📉 [A] {symbol} 고점 눌림목 (추가 하락 주의)", "A", data_dict
                     data_dict['grade'] = 'S+'
                     return True, "💎 [S+] 밥그릇 바닥 완전 수렴", "S+", data_dict
                 if slope_rate >= -0.01:
@@ -495,7 +508,7 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
          data_dict['grade'] = 'A' # 등급 하향
          # 기존 reason 뒤에 하락세 경고 문구 추가
     if 'grade' in data_dict and data_dict['grade'] in ['S', 'S+', 'A', 'A+', 'B']:
-        print(f"🎯 [추천성공] {symbol} | 등급:{data_dict['grade']} | 구간Low:{window_low:,.0f} | 구간High:{window_high:,.0f} | 변동:{max_rise_in_window:.2f}%")
+        print(f"🎯 [추천성공] {symbol} | 등급:{data_dict['grade']} | 구간Low:{window_low:,.0f} | 구간High:{window_high:,.0f} | 변동:{dynamic_rise:.2f}%")
     
     if curr_price <= curr['ma40']:
         reason = f"현재가({curr_price:,.0f}) ≤ 40일선({ma40_val:,.0f}, 이격도:{disparity_40_pct:.2f}%)"
