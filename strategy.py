@@ -608,14 +608,22 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
             curr_3m_data = df_3m.iloc[-1] # [추가] 현재 봉 상세 데이터
 
             # 최근 10개 봉 중 거래량이 가장 컸던 고점 봉을 찾음
-            peak_idx = df_3m['vol'].tail(10).argmax()
-            peak_candle = df_3m.iloc[len(df_3m) - 10 + peak_idx]
-            if peak_candle['close'] >= peak_candle['open']: # 고점이 양봉/도지일 때
-                mid_point = (peak_candle['open'] + peak_candle['close']) / 2
-                # 현재 봉의 저가(low)가 고점 몸통의 50%를 뚫고, 현재 거래량이 고점보다 클 때
-                if curr_3m_data['vol'] > peak_candle['vol'] and curr_3m_data['low'] < mid_point:
-                    if curr_3m_data['close'] < curr_3m_data['open']: # 음봉 확정 시
-                        return True, f"🚨[50%이탈] 고점({peak_candle['close']:,.0f}) 몸통 50% 저가 이탈", True
+            abs_peak_idx = len(df_3m) - 10 + df_3m['vol'].tail(10).argmax()
+            peak_candle = df_3m.iloc[abs_peak_idx]
+
+            # 고점(peak)이 음봉이 아니고, 그 직전 봉(index-1)이 존재할 때만 가동
+            if peak_candle['close'] >= peak_candle['open'] and abs_peak_idx > 0:
+                prev_peak_candle = df_3m.iloc[abs_peak_idx - 1]
+                # 고점의 '직전 봉' 몸통 50% 선 계산
+                prev_mid_point = (prev_peak_candle['open'] + prev_peak_candle['close']) / 2
+                
+                # [실시간 긴급 조건]
+                # 1. 현재 저가(low)가 직전봉 허리를 깼는가?
+                # 2. 현재 거래량이 고점 거래량을 이미 넘어섰는가?
+                # 3. 현재 캔들이 음봉 상태(시가 > 현재가)인가?
+                if curr_3m_data['low'] < prev_mid_point and curr_3m_data['vol'] > peak_candle['vol']:
+                    if curr_3m_data['close'] < curr_3m_data['open']: # 실시간 음봉 상태면 즉시 리턴
+                        return True, f"🚨[50%긴급] 실시간 음봉 전환 및 고점직전봉 허리({prev_mid_point:,.0f}) 이탈", True
 
             # (A) 세력 이탈 감지: 2음봉 + 고점 거래량 10% 이상 (3분봉 기준)
             is_2_neg_3m, reason_2_neg_3m = check_3_2_negative_candles(df_3m)
@@ -657,7 +665,7 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
             ###### [ADD START] 3분봉 모드 가동 콘솔 출력 ######
             mode_reason = "수익률 10%↑" if profit_rate_pct >= 10.0 else "RSI 과열"
             print(f"🔥 [3분봉 엔진 가동] {symbol} | 사유: {mode_reason} | 현재가: {curr_p:,.0f}")
-            
+
             # 3분봉 데이터 호출 (노이즈 방지를 위해 여기서 직접 fetch)
             ohlcv_3m = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '3m', limit=50)
             df_3m = pd.DataFrame(ohlcv_3m, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
