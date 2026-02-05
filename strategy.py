@@ -227,7 +227,12 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
     # [유의 종목] 수급 돌파(S/S+) 포함 모든 매수 신호에서 투자유의 종목 제외 (먼저 검사)
     if symbol.split('/')[0] in warning_list:
         return False, "투자유의", "F", data_dict
-
+    # 현재가(close) 대비 고가(high)의 순수 물리적 거리를 계산 (양봉 기준)
+    upper_wick_dist_pct = (curr['high'] - curr_price) / curr_price * 100
+    
+    if upper_wick_dist_pct >= 2.0:
+        return False, f"🚫 [저항과다] 윗꼬리(현재가대비):{upper_wick_dist_pct:.2f}%", "F", data_dict
+        
     ###### [신규 추가] 스테이블 코인 및 185일선 고점(상위 30%) 원천 차단 ######
     # 1. 스테이블 코인 필터링 (USDC, USDT, DAI 등 차트 왜곡 종목)
     exclude_symbols = ['USDC', 'USDT', 'DAI', 'BUSD']

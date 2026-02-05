@@ -186,7 +186,7 @@ async def get_my_assets():
             # [교정 1순위] 로컬 인벤토리(inventory.json) 무조건 우선!
             # 사용자님이 직접 입력한 값이 있다면 API가 뭐라든 이 값을 씁니다.
             local_item = inv.get(symbol) or inv.get(coin) or {}
-            avg_p = float(local_item.get('avg_price') or local_item.get('avg_buy_price') or 0)
+            avg_p = float(local_item.get('purchase_price') or local_item.get('avg_price') or local_item.get('avg_buy_price') or 0)
 
             # [교정 2순위] 로컬에 데이터가 없을 때만 API를 뒤집니다.
             if avg_p == 0:
@@ -214,7 +214,9 @@ async def get_my_assets():
                 'avg_price': avg_p,
                 'total': total,
                 # 수정: purchase_time으로 키 명칭 통일
-                'purchase_time': local_item.get('purchase_time') or local_item.get('buy_time') or datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                'purchase_time': local_item.get('purchase_time') or local_item.get('buy_time') or datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'grade': local_item.get('grade', 'B'),    # 등급 추가
+                'buy_type': local_item.get('buy_type', 1) # 타입 추가
             }
 
         return assets
@@ -505,8 +507,8 @@ async def sell_monitor_task(app):
     global last_report_time, sell_mute_status, pending_approvals, profit_alerts, emergency_mode
     while True:
         try:
-            # 기본 대기 시간 3분
-            wait_time = 1
+            # 기본 대기 시간 1분
+            current_loop_wait_time = 60
             # [추가] 서버 실시간 확인용 시간
             now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
@@ -542,7 +544,7 @@ async def sell_monitor_task(app):
                 # 종목들을 훑다가 한 놈이라도 급등(10%↑) 중이면 
                 # 이 루프가 끝난 뒤 잠드는 시간을 30초로 줄입니다.
                 if this_profit >= 10.0 or emergency_mode.get(symbol, False):
-                    wait_time = min(wait_time, 30) 
+                    current_loop_sleep = 30
                 ##############################################
                 this_profit_krw = (this_curr_p - this_avg_p) * this_qty
 
@@ -910,11 +912,11 @@ async def sell_monitor_task(app):
                     await app.bot.send_message(config.CHAT_ID, msg_text, reply_markup=InlineKeyboardMarkup(final_rows))
                 last_report_time = datetime.now()
 
-            await asyncio.sleep(15)  # [변경] 매도 감시 주기 15초
+            await asyncio.sleep(current_loop_sleep)  # [변경] 매도 감시 주기 current_loop_sleep
         except Exception as e:
             import traceback
             logger.error(f"Sell Monitor Error: {e}\n{traceback.format_exc()}")
-            await asyncio.sleep(15)  # [변경] 에러 발생 시에도 15초 대기
+            await asyncio.sleep(60)  # [변경] 에러 발생 시에도 1분 대기
 
 # main.py 상단 적당한 위치
 def save_trade_log(symbol, grade, buy_p, sell_p, profit, reason):
