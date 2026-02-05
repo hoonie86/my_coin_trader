@@ -291,7 +291,7 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
         volume_300 = (avg_vol_5 > 0 and float(curr['vol']) >= avg_vol_5 * 3)
         
         price_3bars_ago = float(df.iloc[-4]['close']) if len(df) >= 4 else 0
-        price_surge_3pct = (price_3bars_ago > 0 and (curr_price - price_3bars_ago) / price_3bars_ago >= 0.03)
+        price_surge_3pct = (price_3bars_ago > 0 and (curr_price - price_3bars_ago) / price_3bars_ago >= 0.02)
         
         # 30분봉 기준 과열 판단
         rsi_val = data_dict.get('rsi', 50) if data_dict else calculate_rsi(df).iloc[-1]
@@ -605,6 +605,17 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
             # 최근 10개 3분봉 고점 추적
             high_10_3m = df_3m['high'].tail(10).max()
             curr_3m_p = df_3m['close'].iloc[-1]
+            curr_3m_data = df_3m.iloc[-1] # [추가] 현재 봉 상세 데이터
+
+            # 최근 10개 봉 중 거래량이 가장 컸던 고점 봉을 찾음
+            peak_idx = df_3m['vol'].tail(10).argmax()
+            peak_candle = df_3m.iloc[len(df_3m) - 10 + peak_idx]
+            if peak_candle['close'] >= peak_candle['open']: # 고점이 양봉/도지일 때
+                mid_point = (peak_candle['open'] + peak_candle['close']) / 2
+                # 현재 봉의 저가(low)가 고점 몸통의 50%를 뚫고, 현재 거래량이 고점보다 클 때
+                if curr_3m_data['vol'] > peak_candle['vol'] and curr_3m_data['low'] < mid_point:
+                    if curr_3m_data['close'] < curr_3m_data['open']: # 음봉 확정 시
+                        return True, f"🚨[50%이탈] 고점({peak_candle['close']:,.0f}) 몸통 50% 저가 이탈", True
 
             # (A) 세력 이탈 감지: 2음봉 + 고점 거래량 10% 이상 (3분봉 기준)
             is_2_neg_3m, reason_2_neg_3m = check_3_2_negative_candles(df_3m)
@@ -692,6 +703,12 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
     parallel_window = df.iloc[-20:]
     support_idx = (parallel_window['ma40'].diff().abs()).idxmin()
     support_price = df.loc[support_idx, 'ma40']
+
+    ###### [ADD START] 90선 독립 마지노선 (40선 지지선 부재 시) ######
+    # 40선 지지선이 현재가보다 5% 이상 멀리 있다면 신뢰할 수 없으므로 90선을 즉시 체크
+    disparity_40 = (curr_p - support_price) / support_price * 100 if support_price > 0 else -99
+    if (support_price == 0 or disparity_40 < -5.0) and curr_p < curr['ma90']:
+        return True, f"📉 [90선이탈] 지지선 부재 또는 이격 과다로 90선 최종 이탈", False
 
     # S+ 상승 초입(-2% ~ +5%) 보호
     is_early_stage = -2.0 < profit_rate_pct < 5.0

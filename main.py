@@ -531,6 +531,9 @@ async def sell_monitor_task(app):
                     data.get('avg_price') or 0
                 )
 
+                if this_avg_p == 0:
+                    this_avg_p = float(inv_item.get('purchase_price', 0))
+
                 this_qty = float(data.get('total') or inv_item.get('total_quantity') or 0)
 
                 # 수익률 계산 (보정된 평단가 사용)
