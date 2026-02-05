@@ -654,6 +654,10 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
     # 수익 10% 이상이거나 RSI 80 이상이면 3분봉 정밀 감시 가동
     if profit_rate_pct >= 10.0 or emergency_mode.get(symbol, False):
         try:
+            ###### [ADD START] 3분봉 모드 가동 콘솔 출력 ######
+            mode_reason = "수익률 10%↑" if profit_rate_pct >= 10.0 else "RSI 과열"
+            print(f"🔥 [3분봉 엔진 가동] {symbol} | 사유: {mode_reason} | 현재가: {curr_p:,.0f}")
+            
             # 3분봉 데이터 호출 (노이즈 방지를 위해 여기서 직접 fetch)
             ohlcv_3m = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '3m', limit=50)
             df_3m = pd.DataFrame(ohlcv_3m, columns=['time', 'open', 'high', 'low', 'close', 'vol'])

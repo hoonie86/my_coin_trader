@@ -655,6 +655,7 @@ async def sell_monitor_task(app):
                         order_result = await asyncio.to_thread(exchange.create_market_sell_order, symbol, sell_qty)
                         
                         if order_result and 'id' in order_result:
+                            save_trade_log(symbol, this_grade, this_avg_p, this_curr_p, this_profit, f"[긴급]{sell_reason}")
                             # 2. 자산 목록에서 즉시 제거 및 알림
                             if symbol in assets: del assets[symbol]
                             if symbol in pending_approvals: del pending_approvals[symbol]
@@ -765,6 +766,20 @@ async def sell_monitor_task(app):
                                 # [추가] 자동 모드일 경우 여기서 직접 매도 호출
                                 if sell_mute_status.get(symbol) == 'AUTO':
                                     await execute_sell(app, symbol, f"무응답 자동 매도 ({int(elapsed_min)}분 경과)")
+                                    ###### [ADD START] 매도 결과 알림 및 CSV 기록 ######
+                                    sell_final_p = this_curr_p  # 시장가 매도이므로 현재가 기준
+                                    final_reason = wait_data.get('reason') or "유예 종료 자동 매도"
+                                    save_trade_log(symbol, this_grade, this_avg_p, sell_final_p, this_profit, final_reason)
+                                    
+                                    finish_msg = (
+                                        f"✅ **[자동 매도 완료]**\n"
+                                        f"종목: {symbol} (등급: {this_grade})\n"
+                                        f"사유: {wait_data.get('reason', '유예 종료')}\n"
+                                        f"최종수익률: **{this_profit:+.2f}%**\n"
+                                        f"결과가 CSV에 기록되었습니다."
+                                    )
+                                    await app.bot.send_message(config.CHAT_ID, finish_msg, parse_mode='Markdown')
+                                    ###### [ADD END] ######
                                     if symbol in pending_approvals: del pending_approvals[symbol]
                                     continue
 
@@ -820,7 +835,19 @@ async def sell_monitor_task(app):
                             ######### [신규 추가 시작: 매도 성공 시 중복 알람 차단 로직] #########
                             # 1. 주문 성공 여부 확인 (id가 있으면 성공)
                             if order_result and 'id' in order_result:
+                                # [추가] 실제 체결 가격 확인 (없으면 현재가)
+                                exec_price = float(order_result.get('average') or order_result.get('price') or this_curr_p)
                                 
+                                # [추가] CSV 기록 및 최종 알림
+                                save_trade_log(symbol, this_grade, this_avg_p, exec_price, this_profit, sell_reason)
+                                
+                                finish_msg = (
+                                    f"🔴 **[매도 완료]**\n"
+                                    f"종목: {symbol} (등급: {this_grade})\n"
+                                    f"사유: {sell_reason}\n"
+                                    f"수익률: **{this_profit:+.2f}%** | 매도가: {exec_price:,.0f}원"
+                                )
+                                await app.bot.send_message(config.CHAT_ID, finish_msg, parse_mode='Markdown')
                                 # 2. 감시 목록(assets)에서 즉시 제거 (이게 있어야 아래쪽 알람이 안 뜸)
                                 if symbol in assets:
                                     del assets[symbol]
@@ -889,6 +916,27 @@ async def sell_monitor_task(app):
             logger.error(f"Sell Monitor Error: {e}\n{traceback.format_exc()}")
             await asyncio.sleep(15)  # [변경] 에러 발생 시에도 15초 대기
 
+# main.py 상단 적당한 위치
+def save_trade_log(symbol, grade, buy_p, sell_p, profit, reason):
+    """매도 결과를 CSV 파일에 기록하여 사후 분석 및 통계용으로 사용"""
+    log_file = "trade_history.csv"
+    try:
+        log_data = {
+            'date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'symbol': symbol,
+            'grade': grade,
+            'buy_price': buy_p,
+            'sell_price': sell_p,
+            'profit_pct': round(profit, 2),
+            'reason': reason
+        }
+        df_log = pd.DataFrame([log_data])
+        if not os.path.exists(log_file):
+            df_log.to_csv(log_file, index=False, encoding='utf-8-sig')
+        else:
+            df_log.to_csv(log_file, mode='a', header=False, index=False, encoding='utf-8-sig')
+    except Exception as e:
+        logger.error(f"로그 기록 실패: {e}")
 
 async def handle_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """텔레그램 상호작용 (최종 반영: S급 자동매수 추적 해제 로직 추가)"""
