@@ -185,24 +185,42 @@ async def get_my_assets():
 
             symbol = f"{coin}/KRW"
 
-            # [교정 1순위] 로컬 인벤토리(inventory.json) 무조건 우선!
-            # 사용자님이 직접 입력한 값이 있다면 API가 뭐라든 이 값을 씁니다.
-            local_item = inv.get(symbol) or inv.get(coin) or {}
-            avg_p = float(local_item.get('purchase_price') or local_item.get('avg_price') or local_item.get('avg_buy_price') or 0)
+            # 1단계: 거래소 API 평단가 먼저 시도 (추가매수 반영 및 최신 데이터 우선)
+            coin_info = raw_info.get(coin, {})
+            try:
+                avg_p = float(
+                    coin_info.get('avg_buy_price') or
+                    coin_info.get('avg_buy_price_all') or
+                    coin_info.get('average_price') or
+                    0
+                )
+            except:
+                avg_p = 0
 
-            # [교정 2순위] 로컬에 데이터가 없을 때만 API를 뒤집니다.
+            # 2단계: 거래소 데이터가 없거나 0일 때만 로컬 인벤토리(inventory.json) 참조
+            local_item = inv.get(symbol) or inv.get(coin) or {}
             if avg_p == 0:
-                coin_info = raw_info.get(coin, {})
+                local_avg = float(local_item.get('purchase_price') or local_item.get('avg_price') or local_item.get('avg_buy_price') or 0)
+                
+                # [개선] 매수 초기(10분 이내)에만 괴리율 검사 수행
                 try:
-                    # 빗썸 API의 여러 평단가 필드 검색
-                    avg_p = float(
-                        coin_info.get('avg_buy_price') or
-                        coin_info.get('avg_buy_price_all') or
-                        coin_info.get('average_price') or
-                        0
-                    )
+                    buy_time_str = local_item.get('purchase_time') or local_item.get('buy_time')
+                    if buy_time_str:
+                        buy_time = datetime.strptime(buy_time_str, '%Y-%m-%d %H:%M:%S')
+                        age_minutes = (datetime.now() - buy_time).total_seconds() / 60
+                        
+                        # 10분 이내인데 3% 이상 괴리가 나면 '기록 오류'로 간주하여 방어
+                        if age_minutes < 10:
+                            ticker = await asyncio.to_thread(exchange.fetch_ticker, symbol)
+                            curr_p = float(ticker.get('last') or 0)
+                            if curr_p > 0 and local_avg > 0:
+                                diff = abs(curr_p - local_avg) / local_avg
+                                if diff > 0.01: # 1% 이상 괴리 발생 시 방어
+                                    logger.warning(f"⚠️ {symbol} 진입 초기 괴리 감지 -> 평단가 임시 보정")
+                                    local_avg = curr_p
                 except:
-                    avg_p = 0
+                    pass
+                avg_p = local_avg
 
             # [교정 3순위] 그래도 0이면 -100% 방지를 위해 '마지막 거래가' 참조
             if avg_p == 0:
