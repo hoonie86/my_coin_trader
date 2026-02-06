@@ -586,6 +586,17 @@ async def sell_monitor_task(app):
                 ######### [수정: 루프 주기 단축 결정] #########
                 # 종목들을 훑다가 한 놈이라도 급등(10%↑) 중이면 
                 # 이 루프가 끝난 뒤 잠드는 시간을 30초로 줄입니다.
+                # 인벤토리에서 기존 고점 가져오기 (없으면 현재가로 시작)
+                current_max_p = float(inv_item.get('max_price', this_curr_p))
+                
+                # 현재가가 기존 고점보다 높으면 실시간 갱신 (4.2% 등 수익 보전용)
+                if this_curr_p > current_max_p:
+                    inv_item['max_price'] = this_curr_p
+                    current_max_p = this_curr_p
+                    # 인벤토리 파일에 실시간 고점 즉시 반영
+                    inv_data[symbol] = inv_item
+                    save_inventory(inv_data) # 고점 갱신 시 저장
+                    
                 if this_profit >= 10.0 or emergency_mode.get(symbol, False):
                     current_loop_sleep = 30
                 ##############################################
