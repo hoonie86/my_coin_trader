@@ -723,6 +723,15 @@ async def sell_monitor_task(app):
                             # 갭 0.3% 미만이면 1호가, 이상이면 현재가 -1호가
                             sell_price = top_bid_p if gap_ratio < 0.003 else get_tick_size(this_curr_p, direction='down')
                             order_result = await asyncio.to_thread(exchange.create_limit_sell_order, symbol, sell_qty, sell_price)
+                            # 10초간 체결 대기 후 미체결 시 시장가 전환
+                            await asyncio.sleep(10) 
+                            order_info = await asyncio.to_thread(exchange.fetch_order, order_result['id'], symbol)
+                            
+                            if order_info['status'] == 'open':
+                                # 아직 안 팔렸다면 주문 취소 후 시장가로 즉시 투척
+                                await asyncio.to_thread(exchange.cancel_order, order_result['id'], symbol)
+                                print(f"⚠️ [RETRY] {symbol} 지정가 미체결 -> 시장가 강제 매도 전환")
+                                await asyncio.to_thread(exchange.create_market_sell_order, symbol, order_info['remaining'])
                         else:
                             order_result = await asyncio.to_thread(exchange.create_market_sell_order, symbol, sell_qty)
                         
@@ -847,6 +856,15 @@ async def sell_monitor_task(app):
                                     
                                     # execute_sell 내부가 시장가라면, 여기서 직접 limit으로 쏘거나 execute_sell을 수정해야 함
                                     await asyncio.to_thread(exchange.create_limit_sell_order, symbol, this_qty, sell_price)
+                                    # 10초간 체결 대기 후 미체결 시 시장가 전환
+                                    await asyncio.sleep(10) 
+                                    order_info = await asyncio.to_thread(exchange.fetch_order, order_result['id'], symbol)
+                                    
+                                    if order_info['status'] == 'open':
+                                        # 아직 안 팔렸다면 주문 취소 후 시장가로 즉시 투척
+                                        await asyncio.to_thread(exchange.cancel_order, order_result['id'], symbol)
+                                        print(f"⚠️ [RETRY] {symbol} 지정가 미체결 -> 시장가 강제 매도 전환")
+                                        await asyncio.to_thread(exchange.create_market_sell_order, symbol, order_info['remaining'])
                                     ###### [ADD START] 매도 결과 알림 및 CSV 기록 ######
                                     sell_final_p = this_curr_p  # 시장가 매도이므로 현재가 기준
                                     final_reason = wait_data.get('reason') or "유예 종료 자동 매도"
@@ -919,6 +937,15 @@ async def sell_monitor_task(app):
                                 gap_ratio = abs(this_curr_p - top_bid_p) / this_curr_p
                                 sell_price = top_bid_p if gap_ratio < 0.003 else get_tick_size(this_curr_p, direction='down')
                                 order_result = await asyncio.to_thread(exchange.create_limit_sell_order, symbol, sell_qty, sell_price)
+                                # 10초간 체결 대기 후 미체결 시 시장가 전환
+                                await asyncio.sleep(10) 
+                                order_info = await asyncio.to_thread(exchange.fetch_order, order_result['id'], symbol)
+                                
+                                if order_info['status'] == 'open':
+                                    # 아직 안 팔렸다면 주문 취소 후 시장가로 즉시 투척
+                                    await asyncio.to_thread(exchange.cancel_order, order_result['id'], symbol)
+                                    print(f"⚠️ [RETRY] {symbol} 지정가 미체결 -> 시장가 강제 매도 전환")
+                                    await asyncio.to_thread(exchange.create_market_sell_order, symbol, order_info['remaining'])
                             else:
                                 order_result = await asyncio.to_thread(exchange.create_market_sell_order, symbol, sell_qty)
                             ######### [신규 추가 시작: 매도 성공 시 중복 알람 차단 로직] #########
