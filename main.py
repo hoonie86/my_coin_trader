@@ -568,18 +568,24 @@ async def sell_monitor_task(app):
                 ticker = await asyncio.to_thread(exchange.fetch_ticker, symbol)
                 this_curr_p = float(ticker.get('last') or ticker.get('close') or 0)
                 # 인벤토리 데이터 미리 로드 (평단가 보충 및 등급 확인용)
+                # 인벤토리 데이터 미리 로드
                 inv_item = inv_data.get(symbol) or inv_data.get(symbol.split('/')[0]) or {}
-                this_avg_p = float(
-                    inv_item.get('price') or 
-                    inv_item.get('purchase_price') or 
-                    inv_item.get('avg_price') or 
-                    data.get('avg_price') or 0
-                )
-
-                if this_avg_p == 0:
-                    this_avg_p = float(inv_item.get('purchase_price', 0))
-
+                
+                # [데이터 출처 추적]
+                p_inv = inv_item.get('price') or inv_item.get('purchase_price') or inv_item.get('avg_price')
+                p_exch = data.get('avg_price')
+                
+                # 1순위: 우리 인벤토리 기록, 2순위: 거래소 데이터
+                this_avg_p = float(p_inv or p_exch or 0)
                 this_qty = float(data.get('total') or inv_item.get('total_quantity') or 0)
+
+                # [분석용 로그] 사자마자 팔리는 원인을 잡기 위해 무조건 출력
+                print(f"🔍 [MONITOR] {symbol} | 현재가: {this_curr_p:,.0f} | 평단가: {this_avg_p:,.0f} (기록:{p_inv} / 거래소:{p_exch})")
+
+                if this_avg_p <= 0:
+                    # 평단가가 없으면 일단 '현재가'를 평단가로 가정해서 수익률을 0%로 만듦 (강제 매도 방지)
+                    print(f"⚠️ [WARN] {symbol} 평단가 0원 -> 현재가({this_curr_p:,.0f})로 임시 대체")
+                    this_avg_p = this_curr_p
 
                 # 수익률 계산 (보정된 평단가 사용)
                 this_profit = ((this_curr_p - this_avg_p) / this_avg_p * 100) if this_avg_p > 0 else 0
@@ -595,8 +601,8 @@ async def sell_monitor_task(app):
                     current_max_p = this_curr_p
                     # 인벤토리 파일에 실시간 고점 즉시 반영
                     inv_data[symbol] = inv_item
-                    save_inventory(inv_data) # 고점 갱신 시 저장
-                    
+                    save_inventory(symbol, this_avg_p, this_qty) # 고점 갱신 시 저장
+
                 if this_profit >= 10.0 or emergency_mode.get(symbol, False):
                     current_loop_sleep = 30
                 ##############################################
@@ -708,7 +714,17 @@ async def sell_monitor_task(app):
                     sell_qty = min(this_qty, free_qty)
                     
                     if sell_qty > 0:
-                        order_result = await asyncio.to_thread(exchange.create_market_sell_order, symbol, sell_qty)
+                        # 호가창 분석 후 가격 결정
+                        orderbook = await asyncio.to_thread(exchange.fetch_order_book, symbol)
+                        bids = orderbook.get('bids', [])
+                        if len(bids) >= 3:
+                            top_bid_p = float(bids[0][0])
+                            gap_ratio = abs(this_curr_p - top_bid_p) / this_curr_p
+                            # 갭 0.3% 미만이면 1호가, 이상이면 현재가 -1호가
+                            sell_price = top_bid_p if gap_ratio < 0.003 else get_tick_size(this_curr_p, direction='down')
+                            order_result = await asyncio.to_thread(exchange.create_limit_sell_order, symbol, sell_qty, sell_price)
+                        else:
+                            order_result = await asyncio.to_thread(exchange.create_market_sell_order, symbol, sell_qty)
                         
                         if order_result and 'id' in order_result:
                             save_trade_log(symbol, this_grade, this_avg_p, this_curr_p, this_profit, f"[긴급]{sell_reason}")
@@ -821,7 +837,16 @@ async def sell_monitor_task(app):
                                 is_sell_final = True
                                 # [추가] 자동 모드일 경우 여기서 직접 매도 호출
                                 if sell_mute_status.get(symbol) == 'AUTO':
-                                    await execute_sell(app, symbol, f"무응답 자동 매도 ({int(elapsed_min)}분 경과)")
+                                    orderbook = await asyncio.to_thread(exchange.fetch_order_book, symbol)
+                                    bids = orderbook.get('bids', [])
+                                    sell_price = this_curr_p # 기본값
+                                    if len(bids) >= 3:
+                                        top_bid_p = float(bids[0][0])
+                                        gap_ratio = abs(this_curr_p - top_bid_p) / this_curr_p
+                                        sell_price = top_bid_p if gap_ratio < 0.003 else get_tick_size(this_curr_p, direction='down')
+                                    
+                                    # execute_sell 내부가 시장가라면, 여기서 직접 limit으로 쏘거나 execute_sell을 수정해야 함
+                                    await asyncio.to_thread(exchange.create_limit_sell_order, symbol, this_qty, sell_price)
                                     ###### [ADD START] 매도 결과 알림 및 CSV 기록 ######
                                     sell_final_p = this_curr_p  # 시장가 매도이므로 현재가 기준
                                     final_reason = wait_data.get('reason') or "유예 종료 자동 매도"
@@ -887,7 +912,15 @@ async def sell_monitor_task(app):
                                         last_1m_close = float(ohlcv_1m[-2][4])
                                 except Exception:
                                     pass
-                            order_result = await asyncio.to_thread(exchange.create_market_sell_order, symbol, sell_qty)
+                            orderbook = await asyncio.to_thread(exchange.fetch_order_book, symbol)
+                            bids = orderbook.get('bids', [])
+                            if len(bids) >= 3:
+                                top_bid_p = float(bids[0][0])
+                                gap_ratio = abs(this_curr_p - top_bid_p) / this_curr_p
+                                sell_price = top_bid_p if gap_ratio < 0.003 else get_tick_size(this_curr_p, direction='down')
+                                order_result = await asyncio.to_thread(exchange.create_limit_sell_order, symbol, sell_qty, sell_price)
+                            else:
+                                order_result = await asyncio.to_thread(exchange.create_market_sell_order, symbol, sell_qty)
                             ######### [신규 추가 시작: 매도 성공 시 중복 알람 차단 로직] #########
                             # 1. 주문 성공 여부 확인 (id가 있으면 성공)
                             if order_result and 'id' in order_result:

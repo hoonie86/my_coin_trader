@@ -776,8 +776,10 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
         return False, "유지 중", False
 
     drop_from_peak = ((high_price - curr_p) / high_price * 100) if high_price > 0 else 0
-
-    # 1. 1% 이상 1.2% 미만: 본절 방어 (손해 안 보게 최소 수익에서 매도)
+    # [0순위] 절대 손절 (최우선 생존 로직)
+    if profit_rate_pct <= -3.0:
+        return True, f"🚨 [절대손절] 진입가 대비 -3% 도달", True
+    # [1순위] 1. 1% 이상 1.2% 미만: 본절 방어 (손해 안 보게 최소 수익에서 매도)
     if 1.0 <= profit_rate_pct < 1.2:
         if curr_p <= purchase_price * 1.005: # 수수료 고려 약 0.5% 수익 지점 터치 시
             return True, f"🛡️ [본절방어] 최소수익금 터치 매도 ({profit_rate_pct:.2f}%)", False
@@ -796,7 +798,11 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
     elif profit_rate_pct >= 3.5:
         if drop_from_peak >= 2.0:
             return True, f"💰 [익절-C] 3.5%구간 고점대비 2.0% 하락 매도", False
-
+            
+    # [2순위] 지지선 이탈 로직 (수익이 안정화된 후 큰 추세를 먹기 위한 용도)
+    if 'support_price' in locals() and curr_p < support_price:
+        if profit_rate_pct > 0: # 수익권일 때만 지지선 이탈 적용 등 조건 추가 가능
+            return True, f"📉 [추세매도] 지지선 이탈", False
     # [매도 2순위] 지지선 이탈 (사용자님 제안: support_price 기준)
     # 현재가가 계산된 지지선(기울기 완만했던 ma40)을 하향 돌파할 때
     if curr_p < support_price:
