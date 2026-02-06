@@ -388,7 +388,15 @@ async def buy_scan_task(app):
                         if free_krw < 1000:
                             await app.bot.send_message(config.CHAT_ID, f"❌ [S급 자동매수 실패] {symbol}\n사유: 잔액 부족")
                         else:
-                            success, msg = await safe_market_buy(symbol, buy_cost, "S")
+                            # buy_cost와 잔액의 99% 중 작은 값을 선택하여 수수료 에러 방지
+                            final_buy_cost = min(buy_cost, free_krw * 0.99)
+                            
+                            if final_buy_cost < 5000: # 빗썸 최소 주문액 미달 시
+                                print(f"⚠️ [잔액부족] {symbol} 매수 스킵 (가용:{free_krw:,.0f}원)")
+                                continue
+
+                            # 수정된 final_buy_cost로 매수 집행
+                            success, msg = await safe_market_buy(symbol, final_buy_cost, current_grade)
                             if success:
                                 display_grade = "A급" if "[A]" in reason or "A급" in reason else "S급"
 

@@ -224,7 +224,7 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
     global is_buy_locked, market_ref_rate
     if is_buy_locked:
         return False, f"🚫 [시장잠금] Panic Filter 작동 중 (기준:{market_ref_rate:.2f}%)", "", {}
-        
+
     # 기본 data_dict 초기화 (조건 탈락 여부와 관계없이 끝까지 계산해 빈칸 채움)
     data_dict = {}
     
@@ -607,7 +607,7 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
     ma40_val = curr['ma40']
     ma185_val = curr['ma185'] if not pd.isna(curr['ma185']) else 0
     ####### [추가] TYPE3 예외 처리: 30분봉 지표(90선/지지선) 로직 진입 차단 #######
-    if status == 'TYPE3' or grade == 'S':
+    if status == 'TYPE3':
         # -3% 손절선만 공통으로 체크하고, 나머지는 3분봉 로직으로 넘깁니다.
         if profit_rate_pct <= -3.0:
             return True, f"🚨 [TYPE3-긴급손절] -3% 도달 ({profit_rate_pct:.2f}%)", True
