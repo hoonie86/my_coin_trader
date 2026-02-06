@@ -53,12 +53,14 @@ def save_inventory(symbol, avg_price, quantity, grade="A", buy_type=1):
         # [수정] buy_time을 기록하여 strategy의 '6봉 유예' 로직과 연동
         # [추가] grade를 기록하여 실시간 리포트에서 진입 당시 등급 확인 가능
         inv[symbol] = {
-            "purchase_price": avg_price,
+            "avg_price": avg_price,      # 신규 로직용
+            "purchase_price": avg_price, # 기존 호출부 호환용 (절대 삭제 금지)
             "total_quantity": quantity,
-            "grade": grade,  # 진입 등급 저장 추가
+            "max_price": avg_price,      # 비상모드(고점관리) 초기값 자동 생성
+            "grade": grade,
+            "buy_type": buy_type,
             "last_update": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            "purchase_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            "buy_type": buy_type
+            "purchase_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
         with open(INV_FILE, "w") as f:
             json.dump(inv, f, indent=4)
@@ -152,10 +154,10 @@ async def safe_market_buy(symbol, cost, grade="A", buy_type=1):
         # 4. 인벤토리 저장 로직 (기존 유지 + grade 인자 추가)
         inv = load_inventory()
         old = inv.get(symbol, {"avg_price": 0, "total_quantity": 0})
-        old_p, old_q = float(old['avg_price']), float(old['total_quantity'])
+        old_p = float(old.get('avg_price', old.get('purchase_price', 0)))
+        old_q = float(old.get('total_quantity', 0))
         
-        ###### [수정] curr_p(현재가) 대신 real_price(실체결가) 적용
-        final_avg = ((old_p * old_q) + (real_price * amount)) / (old_q + amount)
+        final_avg = ((old_p * old_q) + (float(real_price) * amount)) / (old_q + amount)
 
         # [수정] 보강된 save_inventory를 호출하여 등급까지 저장
         save_inventory(symbol, final_avg, old_q + amount, grade, buy_type)
@@ -266,7 +268,20 @@ async def buy_scan_task(app):
                    and m['symbol'].split('/')[0] not in w_list
                    and m['symbol'] not in owned_symbols
             ]
-
+            # 1. 시장 전체 종목 등락률 수집 및 Panic Filter 상태 업데이트
+            all_tickers = await asyncio.to_thread(exchange.fetch_tickers)
+            market_rates = [float(all_tickers[m['symbol']]['percentage']) for m in krw_filtered 
+                            if m['symbol'] in all_tickers and all_tickers[m['symbol']].get('percentage') is not None]
+            
+            if market_rates:
+                current_market_avg = sum(market_rates) / len(market_rates)
+                await strategy.update_market_panic_status(current_market_avg)
+                
+                # 시장 현황 보고 (사용자 확인용)
+                lock_status = "🚨 [LOCK]" if strategy.is_buy_locked else "✅ [NORMAL]"
+                print(f"\n📊 [시장 현황] {lock_status} | 현재평균: {current_market_avg:+.2f}% | 기준점: {strategy.market_ref_rate:+.2f}%")
+                if strategy.is_buy_locked:
+                    print(f"   💡 해제까지: {current_market_avg:+.2f}% -> {strategy.market_ref_rate + 2.0:+.2f}% 필요")
             # [사후분석] 60분 경과한 미지 기록 종목 수익률 로그 업데이트 (기존 로직과 겹치지 않도록 먼저 처리)
             now = datetime.now()
             for sym in list(missed_60m_tracker.keys()):
@@ -353,15 +368,19 @@ async def buy_scan_task(app):
                     #########################################################
                     # [수정] 등급 판정 및 타입별 자동 매수 필터링
                     # S+, S는 'S'로 / A+, A는 'A'로 통합 판정
-                    current_grade = "S" if ((grade and grade.startswith("S")) or "S급" in reason) else ("A" if "A" in (grade or reason) else "B")
+                    # reason 문자열을 분석하여 실시간 등급(current_grade) 확정
+                    if any(x in reason for x in ["S급", "[S]", "TYPE3", "Type 3"]):
+                        current_grade = "S"
+                    elif "A" in (grade or reason):
+                        current_grade = "A"
+                    else:
+                        current_grade = "B"
 
                     can_auto_buy = False
                     if curr_mode == "AUTO":
                         if buy_type == 1:
-                            # 타입 1: A급, S급 모두 자동 매수
                             if current_grade in ["S", "A"]: can_auto_buy = True
                         elif buy_type in [2, 3]:
-                            # 타입 2, 3: 오직 S급만 자동 매수
                             if current_grade == "S": can_auto_buy = True
 
                     if can_auto_buy:
@@ -460,8 +479,17 @@ async def execute_sell(app, symbol, reason):
         order_result = await asyncio.to_thread(exchange.create_market_sell_order, symbol, quantity)
         
         logger.info(f"💰 {symbol} 매도 집행 완료: {reason} | 수량: {quantity}")
-        # [수정] 실제 체결가 가져오기
-        # 거래소마다 다르지만 보통 'price'나 'average'에 담깁니다.
+
+        inv = load_inventory()
+        item = inv.get(symbol, {})
+        avg_buy_price = float(item.get('avg_price', item.get('purchase_price', 0)))
+
+        # 상위 3호가 중 최고가 및 0.3% 편차 확인 로직
+        orderbook = await asyncio.to_thread(exchange.fetch_order_book, symbol)
+        best_ask = max([float(a[0]) for a in orderbook['asks'][:3]])
+        curr_p = float(orderbook['bids'][0][0])
+        final_p = curr_p if (best_ask - curr_p) / curr_p >= 0.003 else best_ask
+
         sell_price = float(order_result.get('average') or order_result.get('price') or 0)
         
         # [추가] 수익률 계산 (평단가가 있을 때만)
@@ -492,9 +520,15 @@ async def monitor_sell_loop(exchange):
             positions = [b for b in balances['total'] if balances['total'][b] > 0] # 실제 포지션 로직에 맞게 수정
             
             for symbol in positions:
-                # 2. 각 종목별 strategy.check_sell_signal 호출
-                # 여기서 strategy.py에 수정한 3분봉/30분봉 로직이 돌아갑니다.
-                # (생략: 기존 매도 처리 로직 이식)
+                inv_data = load_inventory().get(symbol)
+                if not inv_data: continue
+
+                p_time = datetime.strptime(inv_data['purchase_time'], '%Y-%m-%d %H:%M:%S')
+                is_emergency = "S" in inv_data.get('grade', '') or "TYPE3" in inv_data.get('grade', '')
+                if (datetime.now() - p_time).total_seconds() < 10800 and not is_emergency: continue
+
+                tf = '3m' if is_emergency else '30m'
+                ohlcv = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, tf, limit=50)
                 pass
                 
             await asyncio.sleep(20) # 20초마다 매도 신호 감시
@@ -509,6 +543,7 @@ async def sell_monitor_task(app):
         try:
             # 기본 대기 시간 1분
             current_loop_wait_time = 60
+            current_loop_sleep = current_loop_wait_time
             # [추가] 서버 실시간 확인용 시간
             now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
@@ -673,8 +708,8 @@ async def sell_monitor_task(app):
                 ############################################################################
 
                 # 추가 로직: 매수 초기(6봉 미만) 90선 이탈 신호 강제 무시
-                if is_sell_signal and this_elapsed_bars < 6:
-                    if "90선" in sell_reason or "40선" in sell_reason:
+                if is_sell_signal and (this_grade == 'S' or this_buy_type == 3):
+                    if any(x in sell_reason for x in ["90선", "40선", "지지선"]) and this_profit < 3.0:
                         is_sell_signal = False
                         sell_reason = ""
 

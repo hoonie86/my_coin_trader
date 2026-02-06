@@ -5,6 +5,27 @@ import requests
 from datetime import datetime
 from config import logger
 
+market_ref_rate = 0.0
+is_buy_locked = False
+
+async def update_market_panic_status(current_avg):
+    global market_ref_rate, is_buy_locked
+    # 1. 최초 잠금: -3% 돌파 시
+    if not is_buy_locked and current_avg <= -3.0:
+        is_buy_locked = True
+        market_ref_rate = current_avg
+    # 2. 잠금 상태일 때 (해제 또는 바닥 갱신)
+    elif is_buy_locked:
+        if current_avg >= market_ref_rate + 2.0:
+            is_buy_locked = False
+            market_ref_rate = current_avg
+        elif current_avg <= market_ref_rate - 2.0:
+            market_ref_rate = current_avg
+    # 3. 해제 상태일 때 (재잠금/데드캣 방지)
+    else:
+        if current_avg <= market_ref_rate - 2.0:
+            is_buy_locked = True
+            market_ref_rate = current_avg
 
 def get_bithumb_tick_size(price):
     if price < 10: return 0.001
@@ -199,6 +220,11 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
     Returns:
         tuple: (is_buy: bool, reason: str, grade: str, data_dict: dict)
     """
+    # [시장 방어막 체크]
+    global is_buy_locked, market_ref_rate
+    if is_buy_locked:
+        return False, f"🚫 [시장잠금] Panic Filter 작동 중 (기준:{market_ref_rate:.2f}%)", "", {}
+        
     # 기본 data_dict 초기화 (조건 탈락 여부와 관계없이 끝까지 계산해 빈칸 채움)
     data_dict = {}
     
@@ -262,14 +288,14 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
         vol_avg_20 = df_1m['vol'].tail(20).mean()
         vol_cur = float(df_1m.iloc[-1]['vol'])
         price_3bars_ago_1m = float(df_1m.iloc[-4]['close']) if len(df_1m) >= 4 else 0
-        surge_3pct_1m = (price_3bars_ago_1m > 0 and (curr_price - price_3bars_ago_1m) / price_3bars_ago_1m >= 0.03)
+        surge_3pct_1m = (price_3bars_ago_1m > 0 and (curr_price - price_3bars_ago_1m) / price_3bars_ago_1m >= 0.02)
         
         # [핵심 필터 추가]
         rsi_1m = calculate_rsi(df_1m).iloc[-1] # 1분봉 RSI 계산
         day_low = df['low'].min() # 당일 저점
         up_from_low = (curr_price - day_low) / day_low if day_low > 0 else 0
 
-        # 조건: 거래량 300% + 3분 내 3% + RSI 70미만 + 당일 저점대비 7%이내 상승
+        # 조건: 거래량 300% + 3분 내 2% + RSI 70미만 + 당일 저점대비 7%이내 상승
         if vol_avg_20 > 0 and vol_cur >= vol_avg_20 * 3 and surge_3pct_1m:
             if rsi_1m < 70 and up_from_low < 0.07:
                 data_dict = _fill_data_dict_full(df, curr, prev, curr_price, symbol)
@@ -551,9 +577,9 @@ def check_3_2_negative_candles(target_df):
 # ---------------------------------------------------------
 # [복구 및 추가] 매도 감시 메인 함수 (ERROR 방지 핵심)
 # ---------------------------------------------------------
-async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_inventory_age=99, status=None, realtime_p=None):
+async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, grade='A', symbol_inventory_age=99, status=None, realtime_p=None):
     global emergency_mode
-    
+    high_price = max(max_price, df['high'].tail(20).max())
     # [유지] 지표 계산
     df['ma40'] = df['close'].rolling(40).mean()
     df['ma90'] = df['close'].rolling(90).mean()
@@ -581,7 +607,7 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
     ma40_val = curr['ma40']
     ma185_val = curr['ma185'] if not pd.isna(curr['ma185']) else 0
     ####### [추가] TYPE3 예외 처리: 30분봉 지표(90선/지지선) 로직 진입 차단 #######
-    if status == 'TYPE3':
+    if status == 'TYPE3' or grade == 'S':
         # -3% 손절선만 공통으로 체크하고, 나머지는 3분봉 로직으로 넘깁니다.
         if profit_rate_pct <= -3.0:
             return True, f"🚨 [TYPE3-긴급손절] -3% 도달 ({profit_rate_pct:.2f}%)", True
@@ -749,19 +775,27 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, symbol_invento
     if status == 'KEEP':
         return False, "유지 중", False
 
-    # [변수 체크 1] 고점 추적 (최근 20봉)
-    try:
-        recent_df = df.iloc[-20:]
-        high_price = recent_df['high'].max()
-    except Exception:
-        high_price = curr_p  # 데이터 부족 시 현재가를 고점으로 간주
+    drop_from_peak = ((high_price - curr_p) / high_price * 100) if high_price > 0 else 0
 
-    # [매도 1순위] 고점 대비 3% 하락 (Trailing Stop)
-    # 20봉 이내 최고가 대비 3% 밀리면 수익 구간 상관없이 즉시 매도
-    if high_price > 0:
-        drop_from_peak = (high_price - curr_p) / high_price * 100
+    # 1. 1% 이상 1.2% 미만: 본절 방어 (손해 안 보게 최소 수익에서 매도)
+    if 1.0 <= profit_rate_pct < 1.2:
+        if curr_p <= purchase_price * 1.005: # 수수료 고려 약 0.5% 수익 지점 터치 시
+            return True, f"🛡️ [본절방어] 최소수익금 터치 매도 ({profit_rate_pct:.2f}%)", False
+
+    # 2. 1.2% 이상 2% 미만: 고점 대비 1% 하락 시 매도
+    elif 1.2 <= profit_rate_pct < 2.0:
+        if drop_from_peak >= 1.0:
+            return True, f"💰 [익절-A] 1.2%구간 고점대비 1% 하락 매도", False
+
+    # 3. 2% 이상 3.5% 미만: 고점 대비 1.5% 하락 시 매도
+    elif 2.0 <= profit_rate_pct < 3.5:
+        if drop_from_peak >= 1.5:
+            return True, f"💰 [익절-B] 2%구간 고점대비 1.5% 하락 매도", False
+
+    # 4. 3.5% 이상: 고점 대비 3% 하락 시 매도
+    elif profit_rate_pct >= 3.5:
         if drop_from_peak >= 3.0:
-            return True, f"📉 [고점하락] 최근 20봉 고점({high_price:,.0f}) 대비 3% 하락 매도", False
+            return True, f"💰 [익절-C] 3.5%구간 고점대비 3% 하락 매도", False
 
     # [매도 2순위] 지지선 이탈 (사용자님 제안: support_price 기준)
     # 현재가가 계산된 지지선(기울기 완만했던 ma40)을 하향 돌파할 때
