@@ -794,8 +794,8 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
 
     # 4. 3.5% 이상: 고점 대비 3% 하락 시 매도
     elif profit_rate_pct >= 3.5:
-        if drop_from_peak >= 3.0:
-            return True, f"💰 [익절-C] 3.5%구간 고점대비 3% 하락 매도", False
+        if drop_from_peak >= 2.0:
+            return True, f"💰 [익절-C] 3.5%구간 고점대비 2.0% 하락 매도", False
 
     # [매도 2순위] 지지선 이탈 (사용자님 제안: support_price 기준)
     # 현재가가 계산된 지지선(기울기 완만했던 ma40)을 하향 돌파할 때
