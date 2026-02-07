@@ -241,7 +241,9 @@ async def get_my_assets():
 
         return assets
     except Exception as e:
-        logger.error(f"Asset Fetch Error: {e}")
+        # 정확한 에러 내용(인증 실패, IP 차단 등)을 로그에 찍습니다.
+        config.logger.error(f"❌ Asset Fetch Error 상세: {str(e)}")
+        # 만약 인증 에러(Authentication) 문구가 포함되어 있다면 키 설정을 의심해야 합니다.
         return {}
 
 
@@ -418,7 +420,7 @@ async def buy_scan_task(app):
                             
                             # 잔액 부족 에러 발생 시 재시도 로직
                             if not success and ("사용가능 KRW을 초과" in str(msg) or "잔액" in str(msg)):
-                                retry_cost = int(final_buy_cost * 0.95) # 5% 더 감액
+                                retry_cost = int(final_buy_cost * 0.9) # 10% 더 감액
                                 if retry_cost >= 5000:
                                     print(f"🔄 [재시도] {symbol} 잔액 초과로 금액 조정: {final_buy_cost:,.0f} -> {retry_cost:,.0f}")
                                     success, msg = await safe_market_buy(symbol, retry_cost, current_grade)
@@ -1295,14 +1297,14 @@ async def handle_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def process_report_logic(update, context, query=None):
     """[최종 복구] 실시간 리포트 - 11개 전 종목 노출 + 수익률 정상화 + 흰색 제거"""
-    global pending_approvals, sell_mute_status
+    global pending_approvals, sell_mute_status, buy_mute_mode
 
     try:
         # [원본 로직] 자산 및 인벤토리 로드
         assets = await get_my_assets()
         inv_data = load_inventory()
         is_night = config.is_sleeping_time()
-
+        is_manual_auto = (globals().get('buy_mute_mode') == 'AUTO')
         ##### [수정] 정렬과 집계를 위해 딕셔너리 구조 리스트로 변경 #####
         report_data_list = []
         urgent_count = 0
@@ -1358,8 +1360,8 @@ async def process_report_logic(update, context, query=None):
 
             # 야간 모드 및 모드 아이콘 판정
             raw_status = sell_mute_status.get(symbol, 'WATCH')
-            is_global_auto = (locals().get('buy_mute_mode') == 'AUTO' or globals().get('buy_mute_mode') == 'AUTO')
-            status = 'AUTO' if (is_night or is_global_auto) else raw_status
+            is_global_auto = is_night or is_manual_auto
+            status = 'AUTO' if is_global_auto else raw_status
 
             ohlcv = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '30m', limit=100)
             df = pd.DataFrame(ohlcv, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
@@ -1455,8 +1457,14 @@ async def process_report_logic(update, context, query=None):
             final_rows.extend(report_kb.inline_keyboard)
 
         # 최종 메시지 조립
-        night_tag = " (야간 AUTO)" if is_night else ""
-        msg_text = f"📊 [실시간 리포트]{night_tag}\n{summary}" + ("━━━━━━━━━━━━\n" + "\n".join(final_text_lines) if final_text_lines else "보유 종목 없음")
+        if is_night:
+            mode_tag = " (야간 AUTO)"
+        elif is_manual_auto:
+            mode_tag = " (수동 AUTO)"
+        else:
+            mode_tag = ""
+
+        msg_text = f"📊 [실시간 리포트]{mode_tag}\n{summary}" + ("━━━━━━━━━━━━\n" + "\n".join(final_text_lines) if final_text_lines else "보유 종목 없음")
 
         # 전송 방식 분기 (수정 vs 신규)
         if query:
