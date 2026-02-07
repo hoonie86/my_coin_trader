@@ -452,9 +452,9 @@ async def buy_scan_task(app):
 
                 elapsed = (datetime.now() - info['start_time']).total_seconds() / 60
 
-                # 지표 재확인
-                current_mark = int(elapsed // 10) * 10
-                if 0 < current_mark < 30 and current_mark > info['last_check_min']:
+                # 지표 재확인 (3분)
+                current_mark = int(elapsed // 3) * 3
+                if 0 < current_mark < 10 and current_mark > info['last_check_min']:
                     ohlcv_now = await asyncio.to_thread(exchange.fetch_ohlcv, sym, '30m', limit=200)
                     df_now = pd.DataFrame(ohlcv_now, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
                     still_buy, now_reason, now_grade, now_data_dict = strategy.check_buy_signal(df_now, sym, w_list)
@@ -467,8 +467,8 @@ async def buy_scan_task(app):
                         if sym in pending_s_buys: del pending_s_buys[sym]
                         continue
 
-                # 30분 강제 집행
-                if elapsed >= 30:
+                # 10분 강제 집행
+                if elapsed >= 10:
                     ohlcv_final = await asyncio.to_thread(exchange.fetch_ohlcv, sym, '30m', limit=200)
                     df_final = pd.DataFrame(ohlcv_final, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
                     is_still_good, final_reason, final_grade, final_data_dict = strategy.check_buy_signal(df_final, sym, w_list)
@@ -477,11 +477,11 @@ async def buy_scan_task(app):
                         success, msg = await safe_market_buy(sym, info['cost'], "S")
                         if success:
                             logger.info(f"REPORT_DATA|{sym}|S|{info['cost']}")
-                            await app.bot.send_message(config.CHAT_ID, f"🤖 [S급 강제집행] 30분 경과 및 지표 유지로 자동 매수 완료: {sym}")
+                            await app.bot.send_message(config.CHAT_ID, f"🤖 [S급 강제집행] 10분 경과 및 지표 유지로 자동 매수 완료: {sym}")
                         else:
                             await app.bot.send_message(config.CHAT_ID, f"❌ [강제집행 실패] {sym} 사유: {msg}")
                     else:
-                        await app.bot.send_message(config.CHAT_ID, f"⚠️ [S급 취소] 30분 경과 시점 지표 부적합으로 취소합니다.")
+                        await app.bot.send_message(config.CHAT_ID, f"⚠️ [S급 취소] 10분 경과 시점 지표 부적합으로 취소합니다.")
 
                     if sym in pending_s_buys: del pending_s_buys[sym]
 
