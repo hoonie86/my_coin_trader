@@ -331,8 +331,8 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
             # [수정] RSI 조건에 '고점 대비 5% 이탈 방지' 필터 결합
             if rsi_val < 70 and curr_price >= max_peak_price * 0.95:
                 data_dict = _fill_data_dict_full(df, curr, prev, curr_price, symbol)
-                data_dict['grade'] = 'S+'
-                return True, f"🔥 [S+급] 수급 급등(안전권 진입) - 세력 매집 의심", "S+", data_dict
+                data_dict['grade'] = 'B'
+                return True, f"🔥 [B] 수급 급등(안전권 진입) - 세력 매집 의심", "B", data_dict
                 
     # ---------- [공통] data_dict 전체 수치 채우기 (조건 탈락 여부와 관계없이) ----------
     ma40_val = float(curr['ma40']) if not pd.isna(curr['ma40']) else 0
@@ -390,7 +390,7 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
         data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
         return False, reason, "", data_dict
 
-    ###### [수정안] 5일선 이격도 중심의 바닥 낚시 (TYPE3) ######
+    ###################  TYPE3 ###################
     # 1. 5일선과 185일선의 이격도 계산 (평균 -8.5% 이하 타겟)
     ma5_val = float(curr['ma5']) if not pd.isna(curr['ma5']) else curr_price
     disparity_5_185 = (ma5_val - ma185_val) / ma185_val * 100 if ma185_val > 0 else 0
@@ -406,7 +406,8 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
             if slope_rate > -0.05: # 185선이 투매 수준으로 꺾이지 않았을 때
                 data_dict = _fill_data_dict_full(df, curr, prev, curr_price, symbol)
                 return True, f"💎 [Type 3] 바닥낚시(이격:{disparity_5_185:.1f}% / 양봉:{candle_body_pct:.1f}%)", "A", data_dict
-
+    ###################  TYPE3 ###################
+    
     gold_index = -1
     for i in range(1, 97):
         if df['ma40'].iloc[-i - 1] < df['ma185'].iloc[-i - 1] and \

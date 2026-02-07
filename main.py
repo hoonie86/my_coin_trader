@@ -10,7 +10,6 @@ from telegram.ext import Application, CallbackQueryHandler, ContextTypes, Messag
 from config import logger, exchange
 
 # [전역 상태 관리] - 기존 로직 100% 유지 + 신규 토글 상태 반영
-buy_mute_mode = None
 sell_mute_status = {}  # [기능 19] 'AUTO' | 'WATCH'
 buy_individual_status = {}  # 종목별 매수 개별 상태
 pending_approvals = {}  # [기능 17] 무응답 자동 대응용
@@ -78,11 +77,17 @@ async def safe_market_buy(symbol, cost, grade="A", buy_type=1):
     try:
         balance = await asyncio.to_thread(exchange.fetch_balance)
         free_krw = float(balance['free'].get('KRW', 0))
-        # [KRW 초과 방지] 수수료·슬리피지·호가 반올림 대비 85% 한도 (bithumb 주문량 초과 오류 방지)
-        safe_cost = min(cost, int(free_krw * 0.85))
-        if safe_cost < 1000:
-            return False, "잔액 부족"
-
+        # [추가] 최소 잔고 방어선: 6,000원 미만이면 매수 시도 자체를 안 함
+        if free_krw < 6000:
+            config.logger.warning(f"⚠️ 잔고 부족으로 {symbol} 매수 취소 (가용: {free_krw:,.0f}원)")
+            return False, "잔고 부족 (6,000원 미만)"
+        # [KRW 초과 방지] 수수료·슬리피지·호가 반올림 대비 95% 한도 (bithumb 주문량 초과 오류 방지)
+        safe_cost = min(cost, int(free_krw * 0.95))
+        config.logger.info(f"🚨 [ORDER CHECK] {symbol} | 요청금액: {cost:,.0f} | 실제가용잔액: {free_krw:,.0f}")
+        if safe_cost < 5500:
+            config.logger.warning(f"⚠️ 가용 한도({safe_cost:,.0f}원)가 최소 주문금액(5,000원) 미달로 {symbol} 매수 취소")
+            return False, "주문 가능 한액 부족"
+        config.logger.info(f"🚨 [ORDER CHECK] {symbol} | 요청금액: {cost:,.0f} | 실제가용잔액: {free_krw:,.0f}")
         # [수정 부분] Ticker 정보가 None인 경우를 대비한 방어 로직
         ticker = await asyncio.to_thread(exchange.fetch_ticker, symbol)
 
@@ -128,38 +133,41 @@ async def safe_market_buy(symbol, cost, grade="A", buy_type=1):
 
         print(f"🛒 [매수집행] {symbol} | 금액: {safe_cost} | 수량: {amount} | 등급: {grade}")
 
-        # 3. 시장가 매수 실행 (cost 파라미터로 주문 금액 상한 전달)
+        # 3. 시장가 매수 실행 (기존 코드 유지)
         order = await asyncio.to_thread(
-            exchange.create_order,
-            symbol,
-            'market',
-            'buy',
-            amount,
-            None,
-            {'cost': safe_cost}
+            exchange.create_order, symbol, 'market', 'buy', amount, None, {'cost': safe_cost}
         )
-        if not order or 'average' not in order or order['average'] is None:
+
+        # [필수] 실체결가(average)가 올 때까지 최대 3초 대기 (1,492원 기록 방지 핵심)
+        real_price = order.get('average')
+        if not real_price:
             for _ in range(3):
                 await asyncio.sleep(1)
                 try:
                     order = await asyncio.to_thread(exchange.fetch_order, order['id'], symbol)
-                    if order and 'average' in order and order['average']:
+                    if order.get('average'):
+                        real_price = order['average']
                         break
-                except Exception as e:
-                    logger.error(f"Fetch order retry failed: {e}")
+                except: continue
 
-        ###### [추가] 실 체결가 적용 (실패 시 curr_p 사용)
-        real_price = order.get('average') if order and order.get('average') else curr_p
+        # [방어] 끝까지 안 오면 '주문 전 현재가' 대신 '주문 후 현재가'를 재조회해서 보정
+        if not real_price:
+            ticker_post = await asyncio.to_thread(exchange.fetch_ticker, symbol)
+            real_price = ticker_post.get('last') or curr_p
+            config.logger.warning(f"⚠️ {symbol} 실체결가 미획득 -> 체결 후 현재가({real_price})로 대체")
 
-        # 4. 인벤토리 저장 로직 (기존 유지 + grade 인자 추가)
+        real_price = float(real_price)
+
+        # 4. 인벤토리 저장 로직 (실제 가격 real_price 반영)
         inv = load_inventory()
         old = inv.get(symbol, {"avg_price": 0, "total_quantity": 0})
-        old_p = float(old.get('avg_price', old.get('purchase_price', 0)))
+        old_p = float(old.get('avg_price', 0))
         old_q = float(old.get('total_quantity', 0))
         
-        final_avg = ((old_p * old_q) + (float(real_price) * amount)) / (old_q + amount)
+        # [교정] 실제 체결가(1,596원) 기반으로 평단가 산출
+        final_avg = ((old_p * old_q) + (real_price * amount)) / (old_q + amount)
 
-        # [수정] 보강된 save_inventory를 호출하여 등급까지 저장
+        # 최종 기록 (반드시 real_price가 반영된 final_avg 전달)
         save_inventory(symbol, final_avg, old_q + amount, grade, buy_type)
 
         return True, "성공"
@@ -272,7 +280,7 @@ async def get_buy_cost():
 
 async def buy_scan_task(app):
     """매수 스캔 태스크: 들여쓰기 교정 및 S급 추적 로직 정상화 + 1분봉 수급/미지패턴/60분수익률 연동"""
-    global buy_mute_mode, notified_symbols, buy_individual_status, pending_s_buys, missed_60m_tracker
+    global notified_symbols, buy_individual_status, pending_s_buys, missed_60m_tracker
     while True:
         try:
             assets = await get_my_assets()
@@ -280,7 +288,8 @@ async def buy_scan_task(app):
             is_night = config.is_sleeping_time()
             w_list = strategy.get_warning_list()
             markets = await asyncio.to_thread(exchange.fetch_markets)
-            current_display_mode = "AUTO (야간)" if is_night else (buy_mute_mode or "WATCH")
+            current_buy_mode = getattr(config, 'buy_mute_mode', 'WATCH')
+            current_display_mode = "AUTO (야간)" if is_night else current_buy_mode
 
             krw_filtered = [
                 m for m in markets
@@ -365,7 +374,7 @@ async def buy_scan_task(app):
                     # [개선] grade 값 우선 사용, 없으면 reason에서 추출
                     is_s_class_check = (grade and grade.startswith("S")) or any(x in reason for x in ["S급", "[S]", "[S+]"])
                     indiv_mode_check = buy_individual_status.get(symbol)
-                    curr_mode_check = indiv_mode_check if indiv_mode_check else ("AUTO" if is_night else buy_mute_mode)
+                    curr_mode_check = indiv_mode_check if indiv_mode_check else ("AUTO" if is_night else config.buy_mute_mode)
 
                     # [S급 추적 등록]
                     if is_s_class_check and curr_mode_check == "AUTO":
@@ -384,7 +393,7 @@ async def buy_scan_task(app):
 
                     # [매수 집행/알림 로직]
                     indiv_mode = buy_individual_status.get(symbol)
-                    curr_mode = indiv_mode if indiv_mode else ("AUTO" if is_night else buy_mute_mode)
+                    curr_mode = indiv_mode if indiv_mode else ("AUTO" if is_night else config.buy_mute_mode)
                     #########################################################
                     # [수정] 등급 판정 및 타입별 자동 매수 필터링
                     # S+, S는 'S'로 / A+, A는 'A'로 통합 판정
@@ -420,7 +429,7 @@ async def buy_scan_task(app):
                             
                             # 잔액 부족 에러 발생 시 재시도 로직
                             if not success and ("사용가능 KRW을 초과" in str(msg) or "잔액" in str(msg)):
-                                retry_cost = int(final_buy_cost * 0.9) # 10% 더 감액
+                                retry_cost = int(final_buy_cost * 0.9) # 30% 더 감액
                                 if retry_cost >= 5000:
                                     print(f"🔄 [재시도] {symbol} 잔액 초과로 금액 조정: {final_buy_cost:,.0f} -> {retry_cost:,.0f}")
                                     success, msg = await safe_market_buy(symbol, retry_cost, current_grade)
@@ -1040,8 +1049,19 @@ async def sell_monitor_task(app):
                         f"🟡:{sum(1 for l in final_text_lines if '🟡' in l)} | "
                         f"🔴:{sum(1 for l in final_text_lines if '🔴' in l)}"
                     )
+                    # 1. 수동 AUTO 상태 판정 (config 참조)
+                    is_manual_auto = (getattr(config, 'buy_mute_mode', 'MANUAL') == 'AUTO')
+                    
+                    # 2. 태그 결정
+                    mode_tag = ""
+                    if is_night:
+                        mode_tag = " (야간 AUTO)"
+                    elif is_manual_auto:
+                        mode_tag = " (AUTO)"
+
+                    # 3. 메시지 조립
                     msg_text = (
-                        f"📊 [정기 리포트] ({now_str}){' (야간 AUTO)' if is_night else ''}\n"
+                        f"📊 [정기 리포트] ({now_str}){mode_tag}\n"
                         f"{summary}\n"
                         f"━━━━━━━━━━━━\n"
                         + "\n".join(final_text_lines)
@@ -1085,7 +1105,7 @@ def save_trade_log(symbol, grade, buy_p, sell_p, profit, reason):
 
 async def handle_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """텔레그램 상호작용 (최종 반영: S급 자동매수 추적 해제 로직 추가)"""
-    global buy_mute_mode, sell_mute_status, buy_individual_status, pending_s_buys
+    global sell_mute_status, buy_individual_status, pending_s_buys
     msg = update.message.text if update.message else ""
 
     if update.callback_query:
@@ -1280,13 +1300,14 @@ async def handle_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE)
             except:
                 pass
         elif msg == "🤖 자동 매매":
-            buy_mute_mode = 'AUTO'
+            config.buy_mute_mode = 'AUTO'
+            print(f"✅ [DEBUG] 시스템 모드 변경: {config.buy_mute_mode}")
             await update.message.reply_text("🚀 [전체 제어] 자동 매매 활성화")
         elif msg == "⏳ 감시 모드":
-            buy_mute_mode = 'WATCH'
+            config.buy_mute_mode = 'WATCH'
             await update.message.reply_text("🔍 [전체 제어] 감시 모드 활성화")
         elif msg == "🔄 모드 초기화":
-            buy_mute_mode = None
+            config.buy_mute_mode = None
             sell_mute_status.clear();
             buy_individual_status.clear()
             await update.message.reply_text("🔄 시스템 상태가 초기화되었습니다.")
@@ -1297,14 +1318,15 @@ async def handle_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def process_report_logic(update, context, query=None):
     """[최종 복구] 실시간 리포트 - 11개 전 종목 노출 + 수익률 정상화 + 흰색 제거"""
-    global pending_approvals, sell_mute_status, buy_mute_mode
-
+    current_mode = getattr(config, 'buy_mute_mode', 'MANUAL')
+    is_manual_auto = (current_mode == 'AUTO')
+    print(f"🔍 [DEBUG] 현재 메모리상의 buy_mute_mode 상태: {current_mode}")
     try:
         # [원본 로직] 자산 및 인벤토리 로드
         assets = await get_my_assets()
         inv_data = load_inventory()
         is_night = config.is_sleeping_time()
-        is_manual_auto = (globals().get('buy_mute_mode') == 'AUTO')
+        is_manual_auto = (getattr(config, 'buy_mute_mode', 'MANUAL') == 'AUTO')
         ##### [수정] 정렬과 집계를 위해 딕셔너리 구조 리스트로 변경 #####
         report_data_list = []
         urgent_count = 0
@@ -1460,7 +1482,7 @@ async def process_report_logic(update, context, query=None):
         if is_night:
             mode_tag = " (야간 AUTO)"
         elif is_manual_auto:
-            mode_tag = " (수동 AUTO)"
+            mode_tag = " (AUTO)"
         else:
             mode_tag = ""
 
