@@ -353,7 +353,7 @@ async def buy_scan_task(app):
                 except Exception:
                     pass
                 is_buy, reason, grade, data_dict = strategy.check_buy_signal(df, symbol, w_list, df_1m)
-                
+                extracted_type = "TYPE1" if "T1" in reason else ("TYPE2" if "T2" in reason else ("TYPE3" if "Type 3" in reason else "TYPE1"))
                 # [분석 봇] 매수하지 않더라도 탈락 사유·패턴태그·등급 포함 상세 수치 기록 (조건 1개라도 만족/3분 내 3% 급등 포함)
                 current_price = float(df.iloc[-1]['close'])
                 if not is_buy and reason:
@@ -425,14 +425,14 @@ async def buy_scan_task(app):
                                 continue
 
                            # [수정] 1차 매수 시도 후 실패 시 금액 깎아서 재시도
-                            success, msg = await safe_market_buy(symbol, final_buy_cost, current_grade)
+                            success, msg = await safe_market_buy(symbol, final_buy_cost, current_grade, extracted_type)
                             
                             # 잔액 부족 에러 발생 시 재시도 로직
                             if not success and ("사용가능 KRW을 초과" in str(msg) or "잔액" in str(msg)):
                                 retry_cost = int(final_buy_cost * 0.9) # 30% 더 감액
                                 if retry_cost >= 5000:
                                     print(f"🔄 [재시도] {symbol} 잔액 초과로 금액 조정: {final_buy_cost:,.0f} -> {retry_cost:,.0f}")
-                                    success, msg = await safe_market_buy(symbol, retry_cost, current_grade)
+                                    success, msg = await safe_market_buy(symbol, retry_cost, current_grade, extracted_type)
                                     if success:
                                         final_buy_cost = retry_cost # 성공 시 표시 금액 갱신
                             if success:
@@ -483,9 +483,9 @@ async def buy_scan_task(app):
                     ohlcv_final = await asyncio.to_thread(exchange.fetch_ohlcv, sym, '30m', limit=200)
                     df_final = pd.DataFrame(ohlcv_final, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
                     is_still_good, final_reason, final_grade, final_data_dict = strategy.check_buy_signal(df_final, sym, w_list)
-
+                    extracted_type = "TYPE1" if "T1" in reason else ("TYPE2" if "T2" in reason else ("TYPE3" if "Type 3" in reason else "TYPE1"))
                     if is_still_good:
-                        success, msg = await safe_market_buy(sym, info['cost'], "S")
+                        success, msg = await safe_market_buy(sym, info['cost'], "S", extracted_type)
                         if success:
                             logger.info(f"REPORT_DATA|{sym}|S|{info['cost']}")
                             await app.bot.send_message(config.CHAT_ID, f"🤖 [S급 강제집행] 10분 경과 및 지표 유지로 자동 매수 완료: {sym}")

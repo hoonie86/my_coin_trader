@@ -483,7 +483,7 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
     
     data_dict['vol_ratio'] = vol_ratio
     data_dict['has_volume_surge'] = has_volume_surge
-data_dict['max_vol_ratio'] = max_vol_ratio
+    data_dict['max_vol_ratio'] = max_vol_ratio
 
     # ==========================================================================
     # [TYPE 1: 밥그릇 바닥 탈출 및 변곡점 포착]
@@ -498,21 +498,21 @@ data_dict['max_vol_ratio'] = max_vol_ratio
                 recent_max = df['high'].rolling(window=50).max().iloc[-1]
                 drop_rate = ((recent_max - curr_price) / recent_max) * 100
                 data_dict['grade'] = 'S+'
-                return True, "💎 [T1-S+] 밥그릇 바닥 완전 수렴", "S+", data_dict
+                return True, "💎 [TYPE 1-S+] 밥그릇 바닥 완전 수렴", "S+", data_dict
             
             # [S] 밥그릇 바닥 탈출 (변곡점 확인)
             if slope_rate >= -0.01 and disparity_gold <= 0.015:
                 data_dict['grade'] = 'S'
-                return True, "⭐ [T1-S] 밥그릇 바닥 탈출(변곡점)", "S", data_dict
+                return True, "⭐ [TYPE 1-S] 밥그릇 바닥 탈출(변곡점)", "S", data_dict
 
             # [A+] 185선 평행/우상향 전환 초기
             if slope_rate >= -0.01:
                 data_dict['grade'] = 'A+'
-                return True, "🚀 [T1-A+] 185선 평행/우상향 전환", "A+", data_dict
+                return True, "🚀 [TYPE 1-A+] 185선 평행/우상향 전환", "A+", data_dict
             
             # [A] 상승 대기 (골드 안착)
             data_dict['grade'] = 'A'
-            return True, "🚀 [T1-A] 상승대기(골드안착)", "A", data_dict
+            return True, "🚀 [TYPE 1-A] 상승대기(골드안착)", "A", data_dict
 
     # ==========================================================================
     # [TYPE 2: 눌림목 및 40선 지지 (에너지 응축)]
@@ -525,7 +525,7 @@ data_dict['max_vol_ratio'] = max_vol_ratio
         negative_candles = len(recent_3_candles[recent_3_candles['close'] < recent_3_candles['open']])
         
         if is_falling_now or negative_candles >= 2:
-            reason = "📉 [T2-탈락] 40선 밀착했으나 하락 관성 강함 (폭락 주의)"
+            reason = "📉 [TYPE 2-탈락] 40선 밀착했으나 하락 관성 강함 (폭락 주의)"
             data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
             return False, reason, "", data_dict
         # --- [안전 가드 끝] ---
@@ -536,11 +536,11 @@ data_dict['max_vol_ratio'] = max_vol_ratio
             # [S] 에너지 응축 (40선/185선 동시 밀착 지지)
             if slope_rate >= -0.01 and disparity_gold <= 0.015:
                 data_dict['grade'] = 'S'
-                return True, "🔥 [T2-S] 에너지응축(40선/185선 동시지점)", "S", data_dict
+                return True, "🔥 [TYPE 2-S] 에너지응축(40선/185선 동시지점)", "S", data_dict
             
             # [S] 일반 40선 밀착 지지
             data_dict['grade'] = 'S'
-            return True, "✨ [T2-S] 40선 밀착 및 지지 확인", "S", data_dict
+            return True, "✨ [TYPE 2-S] 40선 밀착 및 지지 확인", "S", data_dict
 
     # [B등급] 급등 후 거래량이 줄어들며 20일선에서 지지받는 눌림목: 현재가가 ma20 근처이고 거래량 감소 시 B
     if ma20_val and base_avg_vol and curr_vol < base_avg_vol * 0.9 and abs(curr_price - ma20_val) / ma20_val <= 0.03:
