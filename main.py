@@ -413,8 +413,17 @@ async def buy_scan_task(app):
                                 print(f"⚠️ [잔액부족] {symbol} 매수 스킵 (가용:{free_krw:,.0f}원)")
                                 continue
 
-                            # 수정된 final_buy_cost로 매수 집행
+                           # [수정] 1차 매수 시도 후 실패 시 금액 깎아서 재시도
                             success, msg = await safe_market_buy(symbol, final_buy_cost, current_grade)
+                            
+                            # 잔액 부족 에러 발생 시 재시도 로직
+                            if not success and ("사용가능 KRW을 초과" in str(msg) or "잔액" in str(msg)):
+                                retry_cost = int(final_buy_cost * 0.97) # 3% 더 감액
+                                if retry_cost >= 5000:
+                                    print(f"🔄 [재시도] {symbol} 잔액 초과로 금액 조정: {final_buy_cost:,.0f} -> {retry_cost:,.0f}")
+                                    success, msg = await safe_market_buy(symbol, retry_cost, current_grade)
+                                    if success:
+                                        final_buy_cost = retry_cost # 성공 시 표시 금액 갱신
                             if success:
                                 display_grade = "A급" if "[A]" in reason or "A급" in reason else "S급"
 
