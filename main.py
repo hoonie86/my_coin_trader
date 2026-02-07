@@ -418,7 +418,7 @@ async def buy_scan_task(app):
                             
                             # 잔액 부족 에러 발생 시 재시도 로직
                             if not success and ("사용가능 KRW을 초과" in str(msg) or "잔액" in str(msg)):
-                                retry_cost = int(final_buy_cost * 0.97) # 3% 더 감액
+                                retry_cost = int(final_buy_cost * 0.95) # 5% 더 감액
                                 if retry_cost >= 5000:
                                     print(f"🔄 [재시도] {symbol} 잔액 초과로 금액 조정: {final_buy_cost:,.0f} -> {retry_cost:,.0f}")
                                     success, msg = await safe_market_buy(symbol, retry_cost, current_grade)
@@ -1358,7 +1358,8 @@ async def process_report_logic(update, context, query=None):
 
             # 야간 모드 및 모드 아이콘 판정
             raw_status = sell_mute_status.get(symbol, 'WATCH')
-            status = 'AUTO' if is_night else raw_status
+            is_global_auto = (locals().get('buy_mute_mode') == 'AUTO' or globals().get('buy_mute_mode') == 'AUTO')
+            status = 'AUTO' if (is_night or is_global_auto) else raw_status
 
             ohlcv = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '30m', limit=100)
             df = pd.DataFrame(ohlcv, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
