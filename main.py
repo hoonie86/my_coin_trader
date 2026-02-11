@@ -38,29 +38,48 @@ def load_inventory():
             return {}
     return {}
 
-def get_symbol_buy_type(symbol):
-    """인벤토리에서 해당 종목의 buy_type을 직접 조회"""
-    inv_data = load_inventory()  # 이미 main에 있는 함수 활용
+def get_symbol_buy_type(symbol, reason=""):
+    """
+    reason 문자열에서 TYPE1, 2, 3 존재 여부를 파악하여 타입 번호 리턴.
+    찾지 못할 경우 인벤토리를 확인하거나 기본값 1을 리턴.
+    """
+    # 1. reason 문자열에서 TYPE 확인
+    if "TYPE1" in reason:
+        return 1
+    elif "TYPE2" in reason:
+        return 2
+    elif "TYPE3" in reason:
+        return 3
+
+    # 2. reason에 정보가 없을 경우 기존 인벤토리 정보 참조
+    inv_data = load_inventory()
     sym_only = symbol.split('/')[0]
     inv_item = inv_data.get(symbol) or inv_data.get(sym_only) or {}
+    
     return inv_item.get('buy_type', 1)
 
-def save_inventory(symbol, avg_price, quantity, grade="A", buy_type=1):
+def save_inventory(symbol, avg_price, quantity, grade="A", buy_type=1, purchase_time=None):
     """평단가, 수량, 그리고 [진입 등급]을 로컬 파일에 안전하게 저장합니다."""
     try:
         inv = load_inventory()
+        if avg_price <= 0:
+            logger.error(f"❌ [저장실패] {symbol} 비정상 평단가: {avg_price}")
+            return
+        if purchase_time is None:
+            purchase_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         # [수정] buy_time을 기록하여 strategy의 '6봉 유예' 로직과 연동
         # [추가] grade를 기록하여 실시간 리포트에서 진입 당시 등급 확인 가능
         inv[symbol] = {
-            "avg_price": avg_price,      # 신규 로직용
-            "purchase_price": avg_price, # 기존 호출부 호환용 (절대 삭제 금지)
-            "total_quantity": quantity,
-            "max_price": avg_price,      # 비상모드(고점관리) 초기값 자동 생성
-            "grade": grade,
-            "buy_type": buy_type,
+            "avg_price": float(avg_price),      # 신규 로직용 (실수형 고정)
+            "purchase_price": float(avg_price), # 기존 호출부 호환용 (절대 삭제 금지)
+            "total_quantity": float(quantity),  # 수량 실수형 고정
+            "max_price": float(avg_price),      # 비상모드(고점관리) 초기값 자동 생성
+            "grade": str(grade),                # 등급 문자열 고정
+            "buy_type": buy_type,               # TYPE1, 2, 3 등 정보 저장
             "last_update": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            "purchase_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            "purchase_time": purchase_time
         }
+        
         with open(INV_FILE, "w") as f:
             json.dump(inv, f, indent=4)
         print(f"💾 [기록완료] {symbol} | 등급: {grade} | 평단: {avg_price:,.0f} | 수량: {quantity}")
@@ -131,7 +150,7 @@ async def safe_market_buy(symbol, cost, grade="A", buy_type=1):
         if amount <= 0:
             return False, "수량 계산 오류(금액/가격)"
 
-        print(f"🛒 [매수집행] {symbol} | 금액: {safe_cost} | 수량: {amount} | 등급: {grade}")
+        print(f"🛒 [매수집행] {symbol} | 금액: {safe_cost} | 수량: {amount} | 등급: {grade} | 타입: {buy_type}")
 
         # 3. 시장가 매수 실행 (기존 코드 유지)
         order = await asyncio.to_thread(
@@ -158,15 +177,33 @@ async def safe_market_buy(symbol, cost, grade="A", buy_type=1):
 
         real_price = float(real_price)
 
-        # 4. 인벤토리 저장 로직 (실제 가격 real_price 반영)
+        # 4. 인벤토리 저장 로직 (로컬 파일 대신 거래소 실시간 잔고 참조)
         inv = load_inventory()
-        old = inv.get(symbol, {"avg_price": 0, "total_quantity": 0})
-        old_p = float(old.get('avg_price', 0))
-        old_q = float(old.get('total_quantity', 0))
         
-        # [교정] 실제 체결가(1,596원) 기반으로 평단가 산출
-        final_avg = ((old_p * old_q) + (real_price * amount)) / (old_q + amount)
+        # [핵심] fetch_balance를 통해 거래소의 실제 평단가와 수량을 가져옴
+        balance_data = await asyncio.to_thread(exchange.fetch_balance)
+        curr_coin = symbol.split('/')[0]
+        coin_info = balance_data.get(curr_coin, {})
+        
+        # 거래소 실제 데이터 (없으면 0)
+        old_q = float(coin_info.get('total', 0)) - amount # 이번에 산 수량을 제외한 이전 수량
+        if old_q < 0: old_q = 0
+        
+        # 빗썸 API가 제공하는 평단가(info.avg_buy_price)가 있다면 최우선 활용
+        old_p = float(coin_info.get('info', {}).get('avg_buy_price', 0)) or real_price
+        
+        # [교정] 실시간 데이터 기반으로 최종 평단가 산출
+        final_avg = ((old_p * old_q) + (real_price * amount)) / (old_q + amount) if (old_q + amount) > 0 else real_price
 
+        # 1. 기존 수량이 거의 없는(먼지) 상태라면 신규 매수로 간주
+        if old_q < 0.0001:
+            final_avg = real_price
+            
+        # 2. 최종 계산된 평단이 실제 체결가와 5% 이상 차이 나면 계산 오류로 판단하고 실체결가로 보정
+        if abs((final_avg - real_price) / real_price) > 0.05:
+            config.logger.warning(f"⚠️ {symbol} 평단 괴리 감지 (계산:{final_avg:.2f} vs 실체결:{real_price:.2f}) -> 강제 보정")
+            final_avg = real_price
+            
         # 최종 기록 (반드시 real_price가 반영된 final_avg 전달)
         save_inventory(symbol, final_avg, old_q + amount, grade, buy_type)
 
@@ -295,7 +332,6 @@ async def buy_scan_task(app):
                 m for m in markets
                 if m['quote'] == 'KRW' and m['active']
                    and m['symbol'].split('/')[0] not in w_list
-                   and m['symbol'] not in owned_symbols
             ]
             # 1. 시장 전체 종목 등락률 수집 및 Panic Filter 상태 업데이트
             all_tickers = await asyncio.to_thread(exchange.fetch_tickers)
@@ -353,7 +389,7 @@ async def buy_scan_task(app):
                 except Exception:
                     pass
                 is_buy, reason, grade, data_dict = strategy.check_buy_signal(df, symbol, w_list, df_1m)
-                extracted_type = "TYPE1" if "T1" in reason else ("TYPE2" if "T2" in reason else ("TYPE3" if "Type 3" in reason else "TYPE1"))
+                extracted_type = "1" if "TYPE1" in reason else ("2" if "TYPE2" in reason else ("3" if "TYPE3" in reason else "1"))
                 # [분석 봇] 매수하지 않더라도 탈락 사유·패턴태그·등급 포함 상세 수치 기록 (조건 1개라도 만족/3분 내 3% 급등 포함)
                 current_price = float(df.iloc[-1]['close'])
                 if not is_buy and reason:
@@ -369,7 +405,7 @@ async def buy_scan_task(app):
                     balance = await asyncio.to_thread(exchange.fetch_balance)
                     free_krw = float(balance['free'].get('KRW', 0))
                     buy_cost = await get_buy_cost()
-                    buy_type = get_symbol_buy_type(symbol)
+                    buy_type = get_symbol_buy_type(symbol, reason)
 
                     # [개선] grade 값 우선 사용, 없으면 reason에서 추출
                     is_s_class_check = (grade and grade.startswith("S")) or any(x in reason for x in ["S급", "[S]", "[S+]"])
@@ -387,7 +423,7 @@ async def buy_scan_task(app):
                             }
                             await app.bot.send_message(
                                 config.CHAT_ID,
-                                f"🔔 [S급 포착] 30분 자동매수 추적 시작\n종목: {symbol}\n사유: {reason}\n\n※ 10분마다 지표 재확인 후 30분 뒤 강제 매수합니다.",
+                                f"🔔 [S급 포착] 10분 자동매수 추적 시작\n종목: {symbol}\n사유: {reason}\n\n※ 3분마다 지표 재확인 후 10분 뒤 강제 매수합니다.",
                                 reply_markup=telegram_ui.get_buy_inline_kb(symbol, buy_cost, False)
                             )
 
@@ -408,7 +444,8 @@ async def buy_scan_task(app):
                     can_auto_buy = False
                     if curr_mode == "AUTO":
                         if buy_type == 1:
-                            if current_grade in ["S", "A"]: can_auto_buy = True
+                            # if current_grade in ["S", "A"]: can_auto_buy = True
+                            if current_grade in ["S"]: can_auto_buy = True
                         elif buy_type in [2, 3]:
                             if current_grade == "S": can_auto_buy = True
 
@@ -436,8 +473,8 @@ async def buy_scan_task(app):
                                     if success:
                                         final_buy_cost = retry_cost # 성공 시 표시 금액 갱신
                             if success:
-                                display_grade = "A급" if "[A]" in reason or "A급" in reason else "S급"
-
+                                display_grade = "A급" if "[A]" in reason or "A급" in reason else ("S급" if "[S]" in reason or "S급" in reason else "B급")
+                    
                                 await app.bot.send_message(
                                     config.CHAT_ID,
                                         f"🤖 [{display_grade} 즉시매수 완료] {symbol}\n"
@@ -446,7 +483,10 @@ async def buy_scan_task(app):
                                     )
                                 if symbol in pending_s_buys: del pending_s_buys[symbol]
                     else:
-                        status_tag = "💎 [매수포착 - A급]" if not is_s_class_check else "🔥 [S급 포착/수동대기]"
+                        display_grade = "A급" if "[A]" in reason or "A급" in reason else ("S급" if "[S]" in reason or "S급" in reason else "B급")
+                        if display_grade == "B급":
+                            continue
+                        status_tag = f"💎 [매수포착 - {display_grade}]" if not is_s_class_check else "🔥 [S급 포착/수동대기]"
                         is_auto_btn = (indiv_mode == 'AUTO')
                         await app.bot.send_message(
                             config.CHAT_ID,
@@ -483,7 +523,7 @@ async def buy_scan_task(app):
                     ohlcv_final = await asyncio.to_thread(exchange.fetch_ohlcv, sym, '30m', limit=200)
                     df_final = pd.DataFrame(ohlcv_final, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
                     is_still_good, final_reason, final_grade, final_data_dict = strategy.check_buy_signal(df_final, sym, w_list)
-                    extracted_type = "TYPE1" if "T1" in reason else ("TYPE2" if "T2" in reason else ("TYPE3" if "Type 3" in reason else "TYPE1"))
+                    extracted_type = "1" if "TYPE1" in reason else ("2" if "TYPE2" in reason else ("3" if "TYPE3" in reason else "1"))
                     if is_still_good:
                         success, msg = await safe_market_buy(sym, info['cost'], "S", extracted_type)
                         if success:
@@ -523,8 +563,8 @@ async def execute_sell(app, symbol, reason):
         # 3. 실제 시장가 매도 주문 던지기
         # 주문이 완료될 때까지 await로 기다립니다.
         order_result = await asyncio.to_thread(exchange.create_market_sell_order, symbol, quantity)
-        
-        logger.info(f"💰 {symbol} 매도 집행 완료: {reason} | 수량: {quantity}")
+        logger.info(f"DEBUG: {symbol} | sell order_result: {order_result}")
+        logger.info(f"DEBUG: 💰 {symbol} 매도 집행 완료: {reason} | 수량: {quantity}")
 
         inv = load_inventory()
         item = inv.get(symbol, {})
@@ -537,6 +577,19 @@ async def execute_sell(app, symbol, reason):
         final_p = curr_p if (best_ask - curr_p) / curr_p >= 0.003 else best_ask
 
         sell_price = float(order_result.get('average') or order_result.get('price') or 0)
+        
+        # 빗썸 응답이 0(None)이면 fetch_order로 실제 체결가 재확인
+        if sell_price == 0 and order_result.get('id'):
+            try:
+                await asyncio.sleep(0.5)  # 빗썸 서버 반영 대기
+                updated_order = await asyncio.to_thread(exchange.fetch_order, order_result['id'], symbol)
+                sell_price = float(updated_order.get('average') or updated_order.get('price') or final_p)
+            except Exception as e:
+                logger.error(f"⚠️ 매도 재조회 실패: {e}")
+                sell_price = final_p  # 재조회 실패 시 위에서 계산한 호가 기준가 사용
+        
+        # 만약 여기까지 왔는데도 0이면 최후의 보루로 final_p 사용 (수익률 0% 방지)
+        if sell_price == 0: sell_price = final_p
         
         # [추가] 수익률 계산 (평단가가 있을 때만)
         this_profit = 0.0
@@ -612,11 +665,12 @@ async def sell_monitor_task(app):
                 # [데이터 출처 추적]
                 p_inv = inv_item.get('price') or inv_item.get('purchase_price') or inv_item.get('avg_price')
                 p_exch = data.get('avg_price')
-                
+                buy_type=inv_item.get('buy_type', 1)
                 # 1순위: 우리 인벤토리 기록, 2순위: 거래소 데이터
                 this_avg_p = float(p_inv or p_exch or 0)
                 this_qty = float(data.get('total') or inv_item.get('total_quantity') or 0)
-
+                this_grade = inv_item.get('grade')
+                this_purchase_time=inv_item.get('purchase_time')
                 # [분석용 로그] 사자마자 팔리는 원인을 잡기 위해 무조건 출력
                 print(f"🔍 [MONITOR] {symbol} | 현재가: {this_curr_p:,.0f} | 평단가: {this_avg_p:,.0f} (기록:{p_inv} / 거래소:{p_exch})")
 
@@ -639,10 +693,10 @@ async def sell_monitor_task(app):
                     current_max_p = this_curr_p
                     # 인벤토리 파일에 실시간 고점 즉시 반영
                     inv_data[symbol] = inv_item
-                    save_inventory(symbol, this_avg_p, this_qty) # 고점 갱신 시 저장
+                    save_inventory(symbol, this_avg_p, this_qty, this_grade, buy_type, this_purchase_time) # 고점 갱신 시 저장
 
                 if this_profit >= 10.0 or emergency_mode.get(symbol, False):
-                    current_loop_sleep = 30
+                    current_loop_sleep = 5      # 긴급 모드는 5초마다 조회
                 ##############################################
                 this_profit_krw = (this_curr_p - this_avg_p) * this_qty
 
@@ -731,7 +785,7 @@ async def sell_monitor_task(app):
                     symbol=symbol,
                     purchase_price=this_avg_p,
                     symbol_inventory_age=this_elapsed_bars,
-                    status=status, realtime_p=realtime_price
+                    status=status, realtime_p=realtime_price, buy_type=buy_type
                 )
                 
                 # 리턴값 분해 (is_sell, reason, [urgent])
@@ -757,6 +811,9 @@ async def sell_monitor_task(app):
                         bids = orderbook.get('bids', [])
                         if len(bids) >= 3:
                             top_bid_p = float(bids[0][0])
+                            if this_curr_p <= 0:
+                                config.logger.warning(f"⚠️ {symbol} 현재가 조회 실패(0)로 인한 모니터링 건너뜀")
+                                continue  # 혹은 return False 등 상황에 맞게 제어
                             gap_ratio = abs(this_curr_p - top_bid_p) / this_curr_p
                             # 갭 0.3% 미만이면 1호가, 이상이면 현재가 -1호가
                             sell_price = top_bid_p if gap_ratio < 0.003 else get_tick_size(this_curr_p, direction='down')
@@ -774,7 +831,23 @@ async def sell_monitor_task(app):
                             order_result = await asyncio.to_thread(exchange.create_market_sell_order, symbol, sell_qty)
                         
                         if order_result and 'id' in order_result:
-                            save_trade_log(symbol, this_grade, this_avg_p, this_curr_p, this_profit, f"[긴급]{sell_reason}")
+                            order_id = order_result['id']
+                            # 빗썸은 즉시 응답이 None인 경우가 많으므로 재조회 시도
+                            exec_price = order_result.get('average') or order_result.get('price')
+                            
+                            if exec_price is None:
+                                await asyncio.sleep(1) # 잠시 대기 후 재조회
+                                updated_order = await asyncio.to_thread(exchange.fetch_order, order_id, symbol)
+                                exec_price = updated_order.get('average') or updated_order.get('price') or this_curr_p
+                            
+                            exec_price = float(exec_price or 0)
+                            
+                            # 수익률 재계산 (정확한 로그용)
+                            if exec_price > 0 and this_avg_p > 0:
+                                this_profit = ((exec_price - this_avg_p) / this_avg_p * 100)
+
+                            # [추가] CSV 기록 및 최종 알림
+                            save_trade_log(symbol, this_grade, this_avg_p, exec_price, this_profit, f"[긴급]{sell_reason}")
                             # 2. 자산 목록에서 즉시 제거 및 알림
                             if symbol in assets: del assets[symbol]
                             if symbol in pending_approvals: del pending_approvals[symbol]
@@ -789,14 +862,8 @@ async def sell_monitor_task(app):
                         logger.error(f"❌ {symbol} 긴급 매도 실패: 잔고 부족")
                 ############################################################################
 
-                # 추가 로직: 매수 초기(6봉 미만) 90선 이탈 신호 강제 무시
-                if is_sell_signal and (this_grade == 'S' or this_buy_type == 3):
-                    if any(x in sell_reason for x in ["90선", "40선", "지지선"]) and this_profit < 3.0:
-                        is_sell_signal = False
-                        sell_reason = ""
-
                 # [추가 로직: 3번 타입 하락 후 상승 종목 전용 방어막] #####
-                if this_buy_type == 3:
+                if is_sell_signal and this_buy_type == 3:
                     # [1순위] 절대 손절선 감시 (6봉 여부와 상관없이 항상 작동)
                     if this_profit <= -3.0:
                         is_sell_signal = True
@@ -804,18 +871,10 @@ async def sell_monitor_task(app):
                     
                     # [2순위] 유예 기간 및 40선 감시
                     else:
-                        # A. 90선 관련 신호는 3번 타입에선 항상 무시
-                        if is_sell_signal and "90선" in sell_reason:
+                        # A. 40, 90선 관련 신호는 3번 타입에선 항상 무시 + 6봉(3시간) 이전 무시
+                        if "40선" in sell_reason or "90선" in sell_reason or this_elapsed_bars < 6:
                             is_sell_signal = False
                             sell_reason = ""
-
-                        # B. 6봉(3시간) 이전일 때
-                        if this_elapsed_bars < 6:
-                            # 40선 이탈 신호가 오더라도 무조건 False로 꺾어서 버팀
-                            if is_sell_signal and "40선" in sell_reason:
-                                is_sell_signal = False
-                                sell_reason = ""
-                        
                         # C. 6봉 이후일 때
                         else:
                             # 40선 이탈 신호가 오면 그대로 수용 (is_sell_signal 유지)
@@ -906,8 +965,8 @@ async def sell_monitor_task(app):
                                     ###### [ADD START] 매도 결과 알림 및 CSV 기록 ######
                                     sell_final_p = this_curr_p  # 시장가 매도이므로 현재가 기준
                                     final_reason = wait_data.get('reason') or "유예 종료 자동 매도"
-                                    save_trade_log(symbol, this_grade, this_avg_p, sell_final_p, this_profit, final_reason)
-                                    
+                                    save_trade_log(symbol, this_grade, this_avg_p, sell_final_p, this_profit, f"[유예 종료]{final_reason}")
+                                    logger.info(f"DEBUG: **[자동 매도 완료]** 종목: {symbol} | 등급: {this_grade}) | 사유: {wait_data.get('reason', '유예 종료')} | 최종수익률: **{this_profit:+.2f}%**")
                                     finish_msg = (
                                         f"✅ **[자동 매도 완료]**\n"
                                         f"종목: {symbol} (등급: {this_grade})\n"
@@ -989,11 +1048,23 @@ async def sell_monitor_task(app):
                             ######### [신규 추가 시작: 매도 성공 시 중복 알람 차단 로직] #########
                             # 1. 주문 성공 여부 확인 (id가 있으면 성공)
                             if order_result and 'id' in order_result:
-                                # [추가] 실제 체결 가격 확인 (없으면 현재가)
-                                exec_price = float(order_result.get('average') or order_result.get('price') or this_curr_p)
+                                order_id = order_result['id']
+                                # 빗썸은 즉시 응답이 None인 경우가 많으므로 재조회 시도
+                                exec_price = order_result.get('average') or order_result.get('price')
                                 
+                                if exec_price is None:
+                                    await asyncio.sleep(1) # 잠시 대기 후 재조회
+                                    updated_order = await asyncio.to_thread(exchange.fetch_order, order_id, symbol)
+                                    exec_price = updated_order.get('average') or updated_order.get('price') or this_curr_p
+                                
+                                exec_price = float(exec_price or 0)
+                                
+                                # 수익률 재계산 (정확한 로그용)
+                                if exec_price > 0 and this_avg_p > 0:
+                                    this_profit = ((exec_price - this_avg_p) / this_avg_p * 100)
+
                                 # [추가] CSV 기록 및 최종 알림
-                                save_trade_log(symbol, this_grade, this_avg_p, exec_price, this_profit, sell_reason)
+                                save_trade_log(symbol, this_grade, this_avg_p, exec_price, this_profit, f"[최종 집행]{sell_reason}")
                                 
                                 finish_msg = (
                                     f"🔴 **[매도 완료]**\n"
@@ -1158,13 +1229,14 @@ async def handle_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 from main import get_current_grade  # 참조 확인
                 current_grade = get_current_grade(symbol, df)
                 cost = config.DEFAULT_TEST_BUY if action == "buy_now" else 1000000
-
-                print(f"📍 [수동매수 시작] {symbol} | 등급: {current_grade} | 금액: {cost}")
+                reason = query.message.text if query.message and query.message.text else ""
+                buy_type = get_symbol_buy_type(symbol, reason)
+                logger.info(f"📍 [수동매수 시작] {symbol} | 등급: {current_grade} | 금액: {cost} | 타입: {buy_type}")
                 # 변수에 담긴 현재 등급을 전달
-                success, res_msg = await safe_market_buy(symbol, cost, current_grade)
+                success, res_msg = await safe_market_buy(symbol, cost, current_grade, buy_type)
 
                 if success:
-                    display_msg = f"🚀 [{symbol.split('/')[0]}] 매수 성공! (금액: {cost:,}원)"
+                    display_msg = f"🚀 [{symbol.split('/')[0]}] 매수 성공! | 타입: {buy_type} | 금액: {cost:,}원)"
                 else:
                     display_msg = f"❌ [{symbol.split('/')[0]}] 매수 실패\n사유: {res_msg}"
                 await query.edit_message_text(display_msg)
@@ -1295,7 +1367,8 @@ async def handle_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 curr_type = existing_item.get('buy_type', 1)
                 assets = await get_my_assets()
                 qty = assets.get(sym, {}).get('total_quantity', 0)
-                save_inventory(sym, price, qty, curr_grade, curr_type)
+                purchase_time=assets.get(sym, {}).get('purchase_time')
+                save_inventory(sym, price, qty, curr_grade, curr_type, purchase_time)
                 await update.message.reply_text(f"✅ {sym} 평단가 {price:,.0f}원 설정 완료")
             except:
                 pass
@@ -1370,6 +1443,7 @@ async def process_report_logic(update, context, query=None):
             # 실시간 경과 시간 추출
             this_elapsed_bars = 0
             buy_time_str = inv_item.get('purchase_time')
+            this_buy_type = inv_item.get('buy_type', 1)
             if buy_time_str:
                 try:
                     buy_time_dt = datetime.strptime(buy_time_str, '%Y-%m-%d %H:%M:%S')
@@ -1396,11 +1470,11 @@ async def process_report_logic(update, context, query=None):
             # 전략 엔진 호출
             is_sell_signal, sell_reason, is_urgent = await strategy.check_sell_signal(
                 exchange, df, symbol, purchase_price, symbol_inventory_age if 'symbol_inventory_age' in locals() else 0, # 있으면 쓰고 없으면 0
-                status if 'status' in locals() else 'NORMAL' # 있으면 쓰고 없으면 NORMAL
+                status if 'status' in locals() else 'NORMAL', # 있으면 쓰고 없으면 NORMAL
+                this_buy_type
             )
             # [추가: 3번 타입 방어 로직 - 정기 리포트와 동일하게 맞춤] #####
             
-            this_buy_type = inv_item.get('buy_type', 1)
             if this_buy_type == 3:
                 # [1순위] 절대 손절선 감시
                 if this_profit <= -3.0:
@@ -1579,6 +1653,7 @@ async def main():
     # sell_monitor_task는 전혀 방해받지 않고 자기 할 일을 합니다.
     buy_task = asyncio.create_task(buy_scan_task(app))
     sell_task = asyncio.create_task(sell_monitor_task(app))
+    urgent_sell_task = asyncio.create_task(monitor_sell_loop(app))
 
     # 텔레그램 인터페이스 시작
     await app.initialize()
@@ -1588,7 +1663,7 @@ async def main():
 
     try:
         # 두 타스크가 종료될 때까지 대기 (사실상 무한 루프)
-        await asyncio.gather(buy_task, sell_task)
+        await asyncio.gather(buy_task, sell_task, urgent_sell_task)
     except Exception as e:
         logger.error(f"시스템 루프 에러 발생: {e}")
     finally:

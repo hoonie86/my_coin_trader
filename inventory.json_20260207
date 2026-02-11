@@ -1,0 +1,1096 @@
+{
+    "LSK/KRW": {
+        "purchase_price": 228.0,
+        "total_quantity": 131.0043,
+        "grade": "A",
+        "last_update": "2026-02-02 00:06:02",
+        "purchase_time": "2026-02-02 00:06:02",
+        "buy_type": 1
+    },
+    "STORJ/KRW": {
+        "purchase_price": 167.0,
+        "total_quantity": 0,
+        "grade": "A",
+        "last_update": "2026-02-02 00:23:13",
+        "purchase_time": "2026-02-02 00:23:13",
+        "buy_type": 1
+    },
+    "ELF/KRW": {
+        "purchase_price": 128.0,
+        "total_quantity": 0,
+        "grade": "A",
+        "last_update": "2026-02-02 00:25:01",
+        "purchase_time": "2026-02-02 00:25:01",
+        "buy_type": 1
+    },
+    "MTL/KRW": {
+        "purchase_price": 462.7,
+        "total_quantity": 0,
+        "grade": "A",
+        "last_update": "2026-02-02 00:25:21",
+        "purchase_time": "2026-02-02 00:25:21",
+        "buy_type": 1
+    },
+    "AQT/KRW": {
+        "purchase_price": 768.9999999999999,
+        "total_quantity": 26.0078,
+        "grade": "S",
+        "last_update": "2026-02-02 05:52:51",
+        "purchase_time": "2026-02-02 05:52:51",
+        "buy_type": 1
+    },
+    "BFC/KRW": {
+        "purchase_price": 28.46,
+        "total_quantity": 702.7406,
+        "grade": "S",
+        "last_update": "2026-02-02 05:53:02",
+        "purchase_time": "2026-02-02 05:53:02",
+        "buy_type": 1
+    },
+    "AXS/KRW": {
+        "purchase_price": 2284.0,
+        "total_quantity": 0,
+        "grade": "S",
+        "last_update": "2026-02-05 16:09:43",
+        "purchase_time": "2026-02-05 16:09:43",
+        "buy_type": 1
+    },
+    "USDS/KRW": {
+        "purchase_price": 1471.0,
+        "total_quantity": 13.5961,
+        "grade": "S",
+        "last_update": "2026-02-02 05:53:21",
+        "purchase_time": "2026-02-02 05:53:21",
+        "buy_type": 1
+    },
+    "GAS/KRW": {
+        "avg_price": 1554.6357615894042,
+        "purchase_price": 1554.6357615894042,
+        "total_quantity": 12.0288,
+        "max_price": 1554.6357615894042,
+        "grade": "A",
+        "buy_type": 1,
+        "last_update": "2026-02-07 23:37:10",
+        "purchase_time": "2026-02-07 23:37:10"
+    },
+    "A8/KRW": {
+        "avg_price": 19.95970208378732,
+        "purchase_price": 19.95970208378732,
+        "total_quantity": 3513.7799,
+        "max_price": 19.95970208378732,
+        "grade": "A",
+        "buy_type": 1,
+        "last_update": "2026-02-07 01:41:50",
+        "purchase_time": "2026-02-07 01:41:50"
+    },
+    "IP/KRW": {
+        "purchase_price": 2075.0,
+        "total_quantity": 9.6385,
+        "grade": "S",
+        "last_update": "2026-02-02 05:57:20",
+        "purchase_time": "2026-02-02 05:57:20",
+        "buy_type": 1
+    },
+    "BTR/KRW": {
+        "purchase_price": 120.0,
+        "total_quantity": 0,
+        "grade": "S",
+        "last_update": "2026-02-06 10:45:13",
+        "purchase_time": "2026-02-06 10:45:13",
+        "buy_type": 1
+    },
+    "XPLA/KRW": {
+        "purchase_price": 28.11,
+        "total_quantity": 711.4905,
+        "grade": "S",
+        "last_update": "2026-02-02 07:31:38",
+        "purchase_time": "2026-02-02 07:31:38",
+        "buy_type": 1
+    },
+    "FXS/KRW": {
+        "purchase_price": 1252.0,
+        "total_quantity": 15.9744,
+        "grade": "S",
+        "last_update": "2026-02-02 07:31:51",
+        "purchase_time": "2026-02-02 07:31:51",
+        "buy_type": 1
+    },
+    "BOUNTY/KRW": {
+        "purchase_price": 31.040000000000003,
+        "total_quantity": 644.3298,
+        "grade": "S",
+        "last_update": "2026-02-02 07:34:27",
+        "purchase_time": "2026-02-02 07:34:27",
+        "buy_type": 1
+    },
+    "AERGO/KRW": {
+        "purchase_price": 84.27,
+        "total_quantity": 237.3323,
+        "grade": "S",
+        "last_update": "2026-02-02 09:33:12",
+        "purchase_time": "2026-02-02 09:33:12",
+        "buy_type": 1
+    },
+    "CTSI/KRW": {
+        "purchase_price": 40.86,
+        "total_quantity": 489.4762,
+        "grade": "S",
+        "last_update": "2026-02-02 09:33:42",
+        "purchase_time": "2026-02-02 09:33:42",
+        "buy_type": 1
+    },
+    "SOLV/KRW": {
+        "purchase_price": 13.88,
+        "total_quantity": 1440.9221,
+        "grade": "S",
+        "last_update": "2026-02-02 09:37:55",
+        "purchase_time": "2026-02-02 09:37:55",
+        "buy_type": 1
+    },
+    "BAT/KRW": {
+        "purchase_price": 188.00000000000003,
+        "total_quantity": 106.3829,
+        "grade": "S",
+        "last_update": "2026-02-02 09:50:26",
+        "purchase_time": "2026-02-02 09:50:26",
+        "buy_type": 1
+    },
+    "OXT/KRW": {
+        "avg_price": 27.838682935825197,
+        "purchase_price": 27.838682935825197,
+        "total_quantity": 1254.2259,
+        "max_price": 27.838682935825197,
+        "grade": "A",
+        "buy_type": 1,
+        "last_update": "2026-02-07 10:03:26",
+        "purchase_time": "2026-02-07 10:03:26"
+    },
+    "VIRTUAL/KRW": {
+        "purchase_price": 929.0,
+        "total_quantity": 21.5285,
+        "grade": "S",
+        "last_update": "2026-02-02 11:57:44",
+        "purchase_time": "2026-02-02 11:57:44",
+        "buy_type": 1
+    },
+    "DEXE/KRW": {
+        "purchase_price": 3683.0,
+        "total_quantity": 5.4303,
+        "grade": "S",
+        "last_update": "2026-02-02 11:59:27",
+        "purchase_time": "2026-02-02 11:59:27",
+        "buy_type": 1
+    },
+    "LISTA/KRW": {
+        "purchase_price": 170.0,
+        "total_quantity": 117.647,
+        "grade": "S",
+        "last_update": "2026-02-02 12:14:53",
+        "purchase_time": "2026-02-02 12:14:53",
+        "buy_type": 1
+    },
+    "1INCH/KRW": {
+        "purchase_price": 165.0,
+        "total_quantity": 121.2121,
+        "grade": "S",
+        "last_update": "2026-02-02 13:04:33",
+        "purchase_time": "2026-02-02 13:04:33",
+        "buy_type": 1
+    },
+    "PIEVERSE/KRW": {
+        "purchase_price": 621.0,
+        "total_quantity": 32.2061,
+        "grade": "S",
+        "last_update": "2026-02-02 14:02:21",
+        "purchase_time": "2026-02-02 14:02:21",
+        "buy_type": 1
+    },
+    "SPURS/KRW": {
+        "purchase_price": 325.0,
+        "total_quantity": 61.5384,
+        "grade": "S",
+        "last_update": "2026-02-02 14:16:10",
+        "purchase_time": "2026-02-02 14:16:10",
+        "buy_type": 1
+    },
+    "SOMI/KRW": {
+        "purchase_price": 320.0,
+        "total_quantity": 62.5,
+        "grade": "S",
+        "last_update": "2026-02-02 14:19:29",
+        "purchase_time": "2026-02-02 14:19:29",
+        "buy_type": 1
+    },
+    "WLFI/KRW": {
+        "purchase_price": 188.00000000000003,
+        "total_quantity": 106.3829,
+        "grade": "S",
+        "last_update": "2026-02-02 14:36:51",
+        "purchase_time": "2026-02-02 14:36:51",
+        "buy_type": 1
+    },
+    "YGG/KRW": {
+        "purchase_price": 68.49,
+        "total_quantity": 292.0134,
+        "grade": "S",
+        "last_update": "2026-02-02 15:43:26",
+        "purchase_time": "2026-02-02 15:43:26",
+        "buy_type": 1
+    },
+    "METIS/KRW": {
+        "purchase_price": 5765.0,
+        "total_quantity": 3.4692,
+        "grade": "S",
+        "last_update": "2026-02-02 16:01:02",
+        "purchase_time": "2026-02-02 16:01:02",
+        "buy_type": 1
+    },
+    "NOM/KRW": {
+        "purchase_price": 10.75,
+        "total_quantity": 1860.4651,
+        "grade": "S",
+        "last_update": "2026-02-02 16:22:09",
+        "purchase_time": "2026-02-02 16:22:09",
+        "buy_type": 1
+    },
+    "BRETT/KRW": {
+        "avg_price": 11.38,
+        "purchase_price": 11.38,
+        "total_quantity": 3521.1267,
+        "max_price": 11.38,
+        "grade": "A",
+        "buy_type": 1,
+        "last_update": "2026-02-07 01:40:11",
+        "purchase_time": "2026-02-07 01:40:11"
+    },
+    "S/KRW": {
+        "purchase_price": 74.82,
+        "total_quantity": 267.3082,
+        "grade": "S",
+        "last_update": "2026-02-02 17:57:45",
+        "purchase_time": "2026-02-02 17:57:45",
+        "buy_type": 1
+    },
+    "DEEP/KRW": {
+        "purchase_price": 40.39,
+        "total_quantity": 495.172,
+        "grade": "S",
+        "last_update": "2026-02-02 18:17:19",
+        "purchase_time": "2026-02-02 18:17:19",
+        "buy_type": 1
+    },
+    "FCT2/KRW": {
+        "purchase_price": 21.83,
+        "total_quantity": 916.1704,
+        "grade": "S",
+        "last_update": "2026-02-02 18:38:35",
+        "purchase_time": "2026-02-02 18:38:35",
+        "buy_type": 1
+    },
+    "BERA/KRW": {
+        "purchase_price": 682.0,
+        "total_quantity": 29.3255,
+        "grade": "S",
+        "last_update": "2026-02-02 19:22:42",
+        "purchase_time": "2026-02-02 19:22:42",
+        "buy_type": 1
+    },
+    "JTO/KRW": {
+        "purchase_price": 429.0,
+        "total_quantity": 46.62,
+        "grade": "S",
+        "last_update": "2026-02-02 19:38:40",
+        "purchase_time": "2026-02-02 19:38:40",
+        "buy_type": 1
+    },
+    "BICO/KRW": {
+        "purchase_price": 44.83,
+        "total_quantity": 446.1298,
+        "grade": "S",
+        "last_update": "2026-02-02 19:55:43",
+        "purchase_time": "2026-02-02 19:55:43",
+        "buy_type": 1
+    },
+    "KAIA/KRW": {
+        "purchase_price": 82.02000000000001,
+        "total_quantity": 243.8429,
+        "grade": "S",
+        "last_update": "2026-02-02 20:32:55",
+        "purchase_time": "2026-02-02 20:32:55",
+        "buy_type": 1
+    },
+    "MAGIC/KRW": {
+        "purchase_price": 101.0,
+        "total_quantity": 198.0198,
+        "grade": "S",
+        "last_update": "2026-02-02 21:45:11",
+        "purchase_time": "2026-02-02 21:45:11",
+        "buy_type": 1
+    },
+    "RAY/KRW": {
+        "purchase_price": 1052.0,
+        "total_quantity": 19.0114,
+        "grade": "S",
+        "last_update": "2026-02-02 21:46:19",
+        "purchase_time": "2026-02-02 21:46:19",
+        "buy_type": 1
+    },
+    "GRND/KRW": {
+        "purchase_price": 50.74,
+        "total_quantity": 394.1663,
+        "grade": "S",
+        "last_update": "2026-02-02 23:46:22",
+        "purchase_time": "2026-02-02 23:46:22",
+        "buy_type": 1
+    },
+    "ADA/KRW": {
+        "purchase_price": 445.0,
+        "total_quantity": 44.9438,
+        "grade": "S",
+        "last_update": "2026-02-03 05:04:21",
+        "purchase_time": "2026-02-03 05:04:21",
+        "buy_type": 1
+    },
+    "PCI/KRW": {
+        "purchase_price": 97.78999999999999,
+        "total_quantity": 204.5198,
+        "grade": "S",
+        "last_update": "2026-02-03 05:43:21",
+        "purchase_time": "2026-02-03 05:43:21",
+        "buy_type": 1
+    },
+    "NXPC/KRW": {
+        "purchase_price": 553.0,
+        "total_quantity": 36.1663,
+        "grade": "S",
+        "last_update": "2026-02-03 06:02:08",
+        "purchase_time": "2026-02-03 06:02:08",
+        "buy_type": 1
+    },
+    "WLD/KRW": {
+        "purchase_price": 604.0,
+        "total_quantity": 33.1125,
+        "grade": "S",
+        "last_update": "2026-02-03 09:45:31",
+        "purchase_time": "2026-02-03 09:45:31",
+        "buy_type": 1
+    },
+    "XRP/KRW": {
+        "purchase_price": 1937.0,
+        "total_quantity": 0,
+        "grade": "S",
+        "last_update": "2026-02-06 14:37:27",
+        "purchase_time": "2026-02-06 14:37:27",
+        "buy_type": 1
+    },
+    "BLUR/KRW": {
+        "purchase_price": 33.81,
+        "total_quantity": 591.5409,
+        "grade": "S",
+        "last_update": "2026-02-03 10:37:25",
+        "purchase_time": "2026-02-03 10:37:25",
+        "buy_type": 1
+    },
+    "YB/KRW": {
+        "purchase_price": 238.0,
+        "total_quantity": 84.0336,
+        "grade": "S",
+        "last_update": "2026-02-03 11:34:13",
+        "purchase_time": "2026-02-03 11:34:13",
+        "buy_type": 1
+    },
+    "SIX/KRW": {
+        "purchase_price": 15.43,
+        "total_quantity": 1296.1762,
+        "grade": "S",
+        "last_update": "2026-02-03 11:46:08",
+        "purchase_time": "2026-02-03 11:46:08",
+        "buy_type": 1
+    },
+    "JUP/KRW": {
+        "avg_price": 153.48958573160812,
+        "purchase_price": 153.48958573160812,
+        "total_quantity": 125.523,
+        "max_price": 153.48958573160812,
+        "grade": "A",
+        "buy_type": 1,
+        "last_update": "2026-02-07 23:37:52",
+        "purchase_time": "2026-02-07 23:37:52"
+    },
+    "XION/KRW": {
+        "purchase_price": 208.99999999999997,
+        "total_quantity": 95.6937,
+        "grade": "S",
+        "last_update": "2026-02-03 12:41:32",
+        "purchase_time": "2026-02-03 12:41:32",
+        "buy_type": 1
+    },
+    "MASK/KRW": {
+        "purchase_price": 780.0,
+        "total_quantity": 25.641,
+        "grade": "S",
+        "last_update": "2026-02-03 12:56:17",
+        "purchase_time": "2026-02-03 12:56:17",
+        "buy_type": 1
+    },
+    "BIGTIME/KRW": {
+        "purchase_price": 26.21,
+        "total_quantity": 763.0675,
+        "grade": "S",
+        "last_update": "2026-02-03 12:58:02",
+        "purchase_time": "2026-02-03 12:58:02",
+        "buy_type": 1
+    },
+    "GMT/KRW": {
+        "purchase_price": 20.61,
+        "total_quantity": 970.4027,
+        "grade": "S",
+        "last_update": "2026-02-03 13:14:13",
+        "purchase_time": "2026-02-03 13:14:13",
+        "buy_type": 1
+    },
+    "WOO/KRW": {
+        "purchase_price": 29.300000000000004,
+        "total_quantity": 682.5938,
+        "grade": "S",
+        "last_update": "2026-02-03 13:31:00",
+        "purchase_time": "2026-02-03 13:31:00",
+        "buy_type": 1
+    },
+    "SAPIEN/KRW": {
+        "purchase_price": 151.0,
+        "total_quantity": 127.4834,
+        "grade": "S",
+        "last_update": "2026-02-03 14:46:16",
+        "purchase_time": "2026-02-03 14:46:16",
+        "buy_type": 1
+    },
+    "THE/KRW": {
+        "purchase_price": 332.0,
+        "total_quantity": 60.2409,
+        "grade": "S",
+        "last_update": "2026-02-03 15:19:35",
+        "purchase_time": "2026-02-03 15:19:35",
+        "buy_type": 1
+    },
+    "EGLD/KRW": {
+        "purchase_price": 7120.0,
+        "total_quantity": 2.8089,
+        "grade": "S",
+        "last_update": "2026-02-03 17:18:36",
+        "purchase_time": "2026-02-03 17:18:36",
+        "buy_type": 1
+    },
+    "MINA/KRW": {
+        "purchase_price": 109.0,
+        "total_quantity": 183.4862,
+        "grade": "S",
+        "last_update": "2026-02-03 17:18:47",
+        "purchase_time": "2026-02-03 17:18:47",
+        "buy_type": 1
+    },
+    "WNCG/KRW": {
+        "purchase_price": 10.04,
+        "total_quantity": 1992.0318,
+        "grade": "S",
+        "last_update": "2026-02-03 18:46:30",
+        "purchase_time": "2026-02-03 18:46:30",
+        "buy_type": 1
+    },
+    "HIVE/KRW": {
+        "purchase_price": 121.00000000000001,
+        "total_quantity": 165.2892,
+        "grade": "S",
+        "last_update": "2026-02-03 19:02:16",
+        "purchase_time": "2026-02-03 19:02:16",
+        "buy_type": 1
+    },
+    "SUN/KRW": {
+        "purchase_price": 27.63,
+        "total_quantity": 723.8508,
+        "grade": "S",
+        "last_update": "2026-02-03 19:03:34",
+        "purchase_time": "2026-02-03 19:03:34",
+        "buy_type": 1
+    },
+    "CARV/KRW": {
+        "purchase_price": 110.0,
+        "total_quantity": 181.8181,
+        "grade": "S",
+        "last_update": "2026-02-03 19:06:31",
+        "purchase_time": "2026-02-03 19:06:31",
+        "buy_type": 1
+    },
+    "CRO/KRW": {
+        "purchase_price": 122.0,
+        "total_quantity": 163.9344,
+        "grade": "S",
+        "last_update": "2026-02-03 19:19:42",
+        "purchase_time": "2026-02-03 19:19:42",
+        "buy_type": 1
+    },
+    "JST/KRW": {
+        "purchase_price": 62.32000000000001,
+        "total_quantity": 320.9242,
+        "grade": "S",
+        "last_update": "2026-02-03 19:20:56",
+        "purchase_time": "2026-02-03 19:20:56",
+        "buy_type": 1
+    },
+    "MAY/KRW": {
+        "purchase_price": 16.04,
+        "total_quantity": 1246.8827,
+        "grade": "S",
+        "last_update": "2026-02-03 19:38:54",
+        "purchase_time": "2026-02-03 19:38:54",
+        "buy_type": 1
+    },
+    "ICX/KRW": {
+        "purchase_price": 66.98,
+        "total_quantity": 298.5965,
+        "grade": "S",
+        "last_update": "2026-02-03 19:54:11",
+        "purchase_time": "2026-02-03 19:54:11",
+        "buy_type": 1
+    },
+    "ID/KRW": {
+        "purchase_price": 83.34,
+        "total_quantity": 239.9808,
+        "grade": "S",
+        "last_update": "2026-02-03 19:57:06",
+        "purchase_time": "2026-02-03 19:57:06",
+        "buy_type": 1
+    },
+    "PARTI/KRW": {
+        "purchase_price": 114.0,
+        "total_quantity": 175.4385,
+        "grade": "S",
+        "last_update": "2026-02-03 20:34:55",
+        "purchase_time": "2026-02-03 20:34:55",
+        "buy_type": 1
+    },
+    "ZRX/KRW": {
+        "purchase_price": 167.0,
+        "total_quantity": 95.2035,
+        "grade": "S",
+        "last_update": "2026-02-03 21:28:24",
+        "purchase_time": "2026-02-03 21:28:24",
+        "buy_type": 1
+    },
+    "ONG/KRW": {
+        "purchase_price": 106.0,
+        "total_quantity": 188.6792,
+        "grade": "S",
+        "last_update": "2026-02-03 22:15:05",
+        "purchase_time": "2026-02-03 22:15:05",
+        "buy_type": 1
+    },
+    "KNC/KRW": {
+        "purchase_price": 266.0,
+        "total_quantity": 75.1879,
+        "grade": "S",
+        "last_update": "2026-02-03 23:46:44",
+        "purchase_time": "2026-02-03 23:46:44",
+        "buy_type": 1
+    },
+    "OSMO/KRW": {
+        "purchase_price": 62.84,
+        "total_quantity": 477.4029,
+        "grade": "S",
+        "last_update": "2026-02-04 00:23:41",
+        "purchase_time": "2026-02-04 00:23:41",
+        "buy_type": 1
+    },
+    "POWR/KRW": {
+        "purchase_price": 111.0,
+        "total_quantity": 270.2702,
+        "grade": "S",
+        "last_update": "2026-02-04 01:02:07",
+        "purchase_time": "2026-02-04 01:02:07",
+        "buy_type": 1
+    },
+    "ALGO/KRW": {
+        "purchase_price": 154.0,
+        "total_quantity": 194.8051,
+        "grade": "S",
+        "last_update": "2026-02-04 02:43:11",
+        "purchase_time": "2026-02-04 02:43:11",
+        "buy_type": 1
+    },
+    "BARD/KRW": {
+        "purchase_price": 1030.0,
+        "total_quantity": 29.1262,
+        "grade": "S",
+        "last_update": "2026-02-04 04:15:40",
+        "purchase_time": "2026-02-04 04:15:40",
+        "buy_type": 1
+    },
+    "CBK/KRW": {
+        "purchase_price": 439.0,
+        "total_quantity": 68.3371,
+        "grade": "S",
+        "last_update": "2026-02-04 08:32:39",
+        "purchase_time": "2026-02-04 08:32:39",
+        "buy_type": 1
+    },
+    "TRX/KRW": {
+        "purchase_price": 425.0,
+        "total_quantity": 70.5882,
+        "grade": "S",
+        "last_update": "2026-02-04 10:12:04",
+        "purchase_time": "2026-02-04 10:12:04",
+        "buy_type": 1
+    },
+    "USDC/KRW": {
+        "purchase_price": 1475.9893602898878,
+        "total_quantity": 20.3389,
+        "grade": "A",
+        "last_update": "2026-02-04 13:40:24",
+        "purchase_time": "2026-02-04 13:40:24",
+        "buy_type": 1
+    },
+    "META/KRW": {
+        "purchase_price": 14.759208637597814,
+        "total_quantity": 2089.1364,
+        "grade": "A",
+        "last_update": "2026-02-04 13:40:32",
+        "purchase_time": "2026-02-04 13:40:32",
+        "buy_type": 1
+    },
+    "USDT/KRW": {
+        "purchase_price": 1475.0060229412604,
+        "total_quantity": 20.3389,
+        "grade": "A",
+        "last_update": "2026-02-04 13:40:56",
+        "purchase_time": "2026-02-04 13:40:56",
+        "buy_type": 1
+    },
+    "USDE/KRW": {
+        "purchase_price": 1476.0022586109542,
+        "total_quantity": 20.3665,
+        "grade": "S",
+        "last_update": "2026-02-04 13:41:31",
+        "purchase_time": "2026-02-04 13:41:31",
+        "buy_type": 1
+    },
+    "D/KRW": {
+        "avg_price": 8.265049628218405,
+        "purchase_price": 8.265049628218405,
+        "total_quantity": 1944.2644,
+        "max_price": 8.265049628218405,
+        "grade": "A",
+        "buy_type": 1,
+        "last_update": "2026-02-07 23:35:51",
+        "purchase_time": "2026-02-07 23:35:51"
+    },
+    "IOTA/KRW": {
+        "purchase_price": 113.0000002825,
+        "total_quantity": 353.9823,
+        "grade": "S",
+        "last_update": "2026-02-04 17:50:06",
+        "purchase_time": "2026-02-04 17:50:06",
+        "buy_type": 1
+    },
+    "ONDO/KRW": {
+        "purchase_price": 420.00046310037277,
+        "total_quantity": 95.0118,
+        "grade": "S",
+        "last_update": "2026-02-04 18:01:40",
+        "purchase_time": "2026-02-04 18:01:40",
+        "buy_type": 1
+    },
+    "A/KRW": {
+        "purchase_price": 139.00053475013368,
+        "total_quantity": 289.855,
+        "grade": "S",
+        "last_update": "2026-02-04 18:10:06",
+        "purchase_time": "2026-02-04 18:10:06",
+        "buy_type": 1
+    },
+    "ENA/KRW": {
+        "purchase_price": 208.0000998400479,
+        "total_quantity": 192.3076,
+        "grade": "S",
+        "last_update": "2026-02-04 18:14:31",
+        "purchase_time": "2026-02-04 18:14:31",
+        "buy_type": 1
+    },
+    "RENDER/KRW": {
+        "avg_price": 1994.9826782941107,
+        "purchase_price": 1994.9826782941107,
+        "total_quantity": 15.0678,
+        "max_price": 1994.9826782941107,
+        "grade": "A",
+        "buy_type": 1,
+        "last_update": "2026-02-07 23:37:15",
+        "purchase_time": "2026-02-07 23:37:15"
+    },
+    "TRUMP/KRW": {
+        "avg_price": 5661.725016632565,
+        "purchase_price": 5661.725016632565,
+        "total_quantity": 15.9326,
+        "max_price": 5661.725016632565,
+        "grade": "A",
+        "buy_type": 1,
+        "last_update": "2026-02-07 02:46:10",
+        "purchase_time": "2026-02-07 02:46:10"
+    },
+    "HBAR/KRW": {
+        "purchase_price": 136.9996219199395,
+        "total_quantity": 294.1176,
+        "grade": "S",
+        "last_update": "2026-02-04 21:44:48",
+        "purchase_time": "2026-02-04 21:44:48",
+        "buy_type": 1
+    },
+    "KITE/KRW": {
+        "purchase_price": 193.0,
+        "total_quantity": 0,
+        "grade": "S",
+        "last_update": "2026-02-06 06:15:59",
+        "purchase_time": "2026-02-06 06:15:59",
+        "buy_type": 1
+    },
+    "WCT/KRW": {
+        "purchase_price": 92.82000159650403,
+        "total_quantity": 430.9416,
+        "grade": "S",
+        "last_update": "2026-02-05 00:44:26",
+        "purchase_time": "2026-02-05 00:44:26",
+        "buy_type": 1
+    },
+    "USD1/KRW": {
+        "avg_price": 1481.8791155483204,
+        "purchase_price": 1481.8791155483204,
+        "total_quantity": 33.8524,
+        "max_price": 1481.8791155483204,
+        "grade": "A",
+        "buy_type": 1,
+        "last_update": "2026-02-07 16:39:50",
+        "purchase_time": "2026-02-07 16:39:50"
+    },
+    "HYPER/KRW": {
+        "purchase_price": 156.00003432000756,
+        "total_quantity": 256.4102,
+        "grade": "S",
+        "last_update": "2026-02-05 08:14:22",
+        "purchase_time": "2026-02-05 08:14:22",
+        "buy_type": 1
+    },
+    "HOME/KRW": {
+        "purchase_price": 43.06990574530391,
+        "total_quantity": 930.882,
+        "grade": "S",
+        "last_update": "2026-02-05 10:56:28",
+        "purchase_time": "2026-02-05 10:56:28",
+        "buy_type": 1
+    },
+    "POL/KRW": {
+        "purchase_price": 158.00091845025258,
+        "total_quantity": 254.777,
+        "grade": "S",
+        "last_update": "2026-02-05 12:44:29",
+        "purchase_time": "2026-02-05 12:44:29",
+        "buy_type": 1
+    },
+    "SKR/KRW": {
+        "purchase_price": 26.700004167187565,
+        "total_quantity": 1499.8125,
+        "grade": "S",
+        "last_update": "2026-02-05 13:54:30",
+        "purchase_time": "2026-02-05 13:54:30",
+        "buy_type": 1
+    },
+    "RAD/KRW": {
+        "purchase_price": 341.0,
+        "total_quantity": 0,
+        "grade": "S",
+        "last_update": "2026-02-06 14:19:43",
+        "purchase_time": "2026-02-06 14:19:43",
+        "buy_type": 1
+    },
+    "ES/KRW": {
+        "purchase_price": 194.00001600500133,
+        "total_quantity": 412.3711,
+        "grade": "S",
+        "last_update": "2026-02-05 16:40:37",
+        "purchase_time": "2026-02-05 16:40:37",
+        "buy_type": 1
+    },
+    "ZRO/KRW": {
+        "purchase_price": 2514.0239952190354,
+        "total_quantity": 19.9123,
+        "grade": "S",
+        "last_update": "2026-02-05 22:55:24",
+        "purchase_time": "2026-02-05 22:55:24",
+        "buy_type": 1
+    },
+    "WAL/KRW": {
+        "purchase_price": 124.00000198400004,
+        "total_quantity": 403.2258,
+        "grade": "S",
+        "last_update": "2026-02-05 22:56:56",
+        "purchase_time": "2026-02-05 22:56:56",
+        "buy_type": 1
+    },
+    "SEI/KRW": {
+        "purchase_price": 117.00000748800049,
+        "total_quantity": 427.3504,
+        "grade": "S",
+        "last_update": "2026-02-05 23:07:03",
+        "purchase_time": "2026-02-05 23:07:03",
+        "buy_type": 1
+    },
+    "STABLE/KRW": {
+        "avg_price": 30.399310730467796,
+        "purchase_price": 30.399310730467796,
+        "total_quantity": 2953.6196,
+        "max_price": 30.399310730467796,
+        "grade": "A",
+        "buy_type": 1,
+        "last_update": "2026-02-07 02:35:03",
+        "purchase_time": "2026-02-07 02:35:03"
+    },
+    "FIL/KRW": {
+        "purchase_price": 1417.9967124449865,
+        "total_quantity": 28.2885,
+        "grade": "S",
+        "last_update": "2026-02-06 01:25:06",
+        "purchase_time": "2026-02-06 01:25:06",
+        "buy_type": 1
+    },
+    "MANA/KRW": {
+        "purchase_price": 145.00003625000906,
+        "total_quantity": 275.862,
+        "grade": "S",
+        "last_update": "2026-02-06 02:25:58",
+        "purchase_time": "2026-02-06 02:25:58",
+        "buy_type": 1
+    },
+    "ARKM/KRW": {
+        "purchase_price": 179.0000698100272,
+        "total_quantity": 223.4636,
+        "grade": "S",
+        "last_update": "2026-02-06 02:41:02",
+        "purchase_time": "2026-02-06 02:41:02",
+        "buy_type": 1
+    },
+    "VET/KRW": {
+        "purchase_price": 10.990000089019,
+        "total_quantity": 3639.6724,
+        "grade": "S",
+        "last_update": "2026-02-06 03:02:59",
+        "purchase_time": "2026-02-06 03:02:59",
+        "buy_type": 1
+    },
+    "MOCA/KRW": {
+        "purchase_price": 21.810001085047553,
+        "total_quantity": 1834.021,
+        "grade": "S",
+        "last_update": "2026-02-06 03:57:26",
+        "purchase_time": "2026-02-06 03:57:26",
+        "buy_type": 1
+    },
+    "PLUME/KRW": {
+        "purchase_price": 15.94985008931916,
+        "total_quantity": 2512.5628,
+        "grade": "S",
+        "last_update": "2026-02-06 03:58:48",
+        "purchase_time": "2026-02-06 03:58:48",
+        "buy_type": 1
+    },
+    "MORPHO/KRW": {
+        "purchase_price": 1548.9878163804594,
+        "total_quantity": 25.6574,
+        "grade": "S",
+        "last_update": "2026-02-06 05:38:27",
+        "purchase_time": "2026-02-06 05:38:27",
+        "buy_type": 1
+    },
+    "XVS/KRW": {
+        "purchase_price": 4611.957055645218,
+        "total_quantity": 8.5506,
+        "grade": "S",
+        "last_update": "2026-02-06 05:47:44",
+        "purchase_time": "2026-02-06 05:47:44",
+        "buy_type": 1
+    },
+    "ACE/KRW": {
+        "purchase_price": 251.00294716334727,
+        "total_quantity": 156.8627,
+        "grade": "S",
+        "last_update": "2026-02-06 05:50:19",
+        "purchase_time": "2026-02-06 05:50:19",
+        "buy_type": 1
+    },
+    "AR/KRW": {
+        "avg_price": 1292.3782490885587,
+        "purchase_price": 1292.3782490885587,
+        "total_quantity": 10.1078,
+        "max_price": 1292.3782490885587,
+        "grade": "A",
+        "buy_type": 1,
+        "last_update": "2026-02-07 23:36:27",
+        "purchase_time": "2026-02-07 23:36:27"
+    },
+    "AUCTION/KRW": {
+        "purchase_price": 6385.050601641566,
+        "total_quantity": 6.2745,
+        "grade": "S",
+        "last_update": "2026-02-06 10:26:25",
+        "purchase_time": "2026-02-06 10:26:25",
+        "buy_type": 1
+    },
+    "FORT/KRW": {
+        "purchase_price": 25.080237002508024,
+        "total_quantity": 1640.0164,
+        "grade": "S",
+        "last_update": "2026-02-06 12:09:24",
+        "purchase_time": "2026-02-06 12:09:24",
+        "buy_type": 1
+    },
+    "AIOZ/KRW": {
+        "purchase_price": 82.74000133625103,
+        "total_quantity": 483.4421,
+        "grade": "S",
+        "last_update": "2026-02-06 12:32:17",
+        "purchase_time": "2026-02-06 12:32:17",
+        "buy_type": 1
+    },
+    "STAT/KRW": {
+        "purchase_price": 46.79351046078208,
+        "total_quantity": 854.8835,
+        "grade": "S",
+        "last_update": "2026-02-06 14:10:55",
+        "purchase_time": "2026-02-06 14:10:55",
+        "buy_type": 1
+    },
+    "NEAR/KRW": {
+        "avg_price": 1596.0,
+        "purchase_price": 1596.0,
+        "total_quantity": 9.2926,
+        "max_price": 1596.0,
+        "grade": "A",
+        "buy_type": 1,
+        "last_update": "2026-02-07 13:24:46",
+        "purchase_time": "2026-02-07 13:24:46"
+    },
+    "FLOW/KRW": {
+        "purchase_price": 102.00001632000262,
+        "total_quantity": 392.1568,
+        "grade": "S",
+        "last_update": "2026-02-06 17:27:10",
+        "purchase_time": "2026-02-06 17:27:10",
+        "buy_type": 1
+    },
+    "PEAQ/KRW": {
+        "purchase_price": 24.669743998686947,
+        "total_quantity": 1619.4331,
+        "grade": "S",
+        "last_update": "2026-02-06 17:55:26",
+        "purchase_time": "2026-02-06 17:55:26",
+        "buy_type": 1
+    },
+    "STRAX/KRW": {
+        "purchase_price": 20.916199053284885,
+        "total_quantity": 1918.4652,
+        "grade": "S",
+        "last_update": "2026-02-06 19:06:20",
+        "purchase_time": "2026-02-06 19:06:20",
+        "buy_type": 1
+    },
+    "SNT/KRW": {
+        "purchase_price": 15.81,
+        "total_quantity": 0,
+        "grade": "S",
+        "last_update": "2026-02-06 21:09:51",
+        "purchase_time": "2026-02-06 21:09:51",
+        "buy_type": 1
+    },
+    "GOAT/KRW": {
+        "purchase_price": 33.719870765029405,
+        "total_quantity": 1182.033,
+        "grade": "S",
+        "last_update": "2026-02-06 23:49:37",
+        "purchase_time": "2026-02-06 23:49:37",
+        "buy_type": 1
+    },
+    "CTC/KRW": {
+        "purchase_price": 225.00009843754304,
+        "total_quantity": 177.7777,
+        "grade": "S",
+        "last_update": "2026-02-06 23:58:13",
+        "purchase_time": "2026-02-06 23:58:13",
+        "buy_type": 1
+    },
+    "PROMPT/KRW": {
+        "avg_price": 74.17497255465673,
+        "purchase_price": 74.17497255465673,
+        "total_quantity": 666.9334,
+        "max_price": 74.17497255465673,
+        "grade": "A",
+        "buy_type": 1,
+        "last_update": "2026-02-07 13:24:47",
+        "purchase_time": "2026-02-07 13:24:47"
+    },
+    "XTER/KRW": {
+        "avg_price": 28.080025917093646,
+        "purchase_price": 28.080025917093646,
+        "total_quantity": 1785.0767,
+        "max_price": 28.080025917093646,
+        "grade": "A",
+        "buy_type": 1,
+        "last_update": "2026-02-07 15:46:37",
+        "purchase_time": "2026-02-07 15:46:37"
+    },
+    "BNT/KRW": {
+        "avg_price": 451.00217728278693,
+        "purchase_price": 451.00217728278693,
+        "total_quantity": 66.9642,
+        "max_price": 451.00217728278693,
+        "grade": "A",
+        "buy_type": 1,
+        "last_update": "2026-02-07 13:34:14",
+        "purchase_time": "2026-02-07 13:34:14"
+    },
+    "PENDLE/KRW": {
+        "avg_price": 1776.9004421180264,
+        "purchase_price": 1776.9004421180264,
+        "total_quantity": 33.814499999999995,
+        "max_price": 1776.9004421180264,
+        "grade": "A",
+        "buy_type": "1",
+        "last_update": "2026-02-07 23:36:44",
+        "purchase_time": "2026-02-07 23:36:44"
+    },
+    "CTK/KRW": {
+        "avg_price": 309.00025029020276,
+        "purchase_price": 309.00025029020276,
+        "total_quantity": 97.0873,
+        "max_price": 309.00025029020276,
+        "grade": "A",
+        "buy_type": 1,
+        "last_update": "2026-02-07 23:38:32",
+        "purchase_time": "2026-02-07 23:38:32"
+    },
+    "STG/KRW": {
+        "avg_price": 204.0000634666864,
+        "purchase_price": 204.0000634666864,
+        "total_quantity": 132.3529,
+        "max_price": 204.0000634666864,
+        "grade": "A",
+        "buy_type": 1,
+        "last_update": "2026-02-07 23:38:39",
+        "purchase_time": "2026-02-07 23:38:39"
+    },
+    "SCR/KRW": {
+        "avg_price": 78.38091484277193,
+        "purchase_price": 78.38091484277193,
+        "total_quantity": 382.8483,
+        "max_price": 78.38091484277193,
+        "grade": "A",
+        "buy_type": "1",
+        "last_update": "2026-02-07 23:38:28",
+        "purchase_time": "2026-02-07 23:38:28"
+    }
+}
