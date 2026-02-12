@@ -366,10 +366,12 @@ async def buy_scan_task(app):
             # 1. 전 종목 스캔 루프
             for idx, m in enumerate(krw_filtered):
                 symbol = m['symbol']
-                sys.stdout.write(f"\r▶ 스캔 중: [{idx + 1}/{len(krw_filtered)}] {symbol:<12}")
-                sys.stdout.flush()
+                # 1. 출력 빈도를 줄여 I/O 부하 감소
+                if (idx + 1) % 10 == 0 or idx == 0: 
+                    sys.stdout.write(f"\r▶ 스캔 중: [{idx + 1}/{len(krw_filtered)}] {symbol:<12}")
+                    sys.stdout.flush()
 
-                await asyncio.sleep(0.05)
+                await asyncio.sleep(0.3)
                 # [예외 처리] 지원하지 않는 마켓(symbollist 미포함) 방어
                 markets_dict = getattr(exchange, 'markets', None)
                 if markets_dict is not None and symbol not in markets_dict:
@@ -672,7 +674,7 @@ async def sell_monitor_task(app):
                 this_grade = inv_item.get('grade')
                 this_purchase_time=inv_item.get('purchase_time')
                 # [분석용 로그] 사자마자 팔리는 원인을 잡기 위해 무조건 출력
-                print(f"🔍 [MONITOR] {symbol} | 현재가: {this_curr_p:,.0f} | 평단가: {this_avg_p:,.0f} (기록:{p_inv} / 거래소:{p_exch})")
+                print(f"🔍 [MONITOR] {symbol} | 현재가: {this_curr_p:,.0f} | 평단가: {this_avg_p:,.0f} (기록:{p_inv:.2f} / 거래소:{p_exch:.2f})")
 
                 if this_avg_p <= 0:
                     # 평단가가 없으면 일단 '현재가'를 평단가로 가정해서 수익률을 0%로 만듦 (강제 매도 방지)
@@ -696,7 +698,7 @@ async def sell_monitor_task(app):
                     save_inventory(symbol, this_avg_p, this_qty, this_grade, buy_type, this_purchase_time) # 고점 갱신 시 저장
 
                 if this_profit >= 10.0 or emergency_mode.get(symbol, False):
-                    current_loop_sleep = 5      # 긴급 모드는 5초마다 조회
+                    current_loop_sleep = 10      # 긴급 모드는 5초마다 조회
                 ##############################################
                 this_profit_krw = (this_curr_p - this_avg_p) * this_qty
 
@@ -784,8 +786,12 @@ async def sell_monitor_task(app):
                     df=df,
                     symbol=symbol,
                     purchase_price=this_avg_p,
+                    max_price=current_max_p,
+                    grade=this_grade,
                     symbol_inventory_age=this_elapsed_bars,
-                    status=status, realtime_p=realtime_price, buy_type=buy_type
+                    status=status, 
+                    realtime_p=realtime_price, 
+                    buy_type=buy_type
                 )
                 
                 # 리턴값 분해 (is_sell, reason, [urgent])
@@ -1469,9 +1475,16 @@ async def process_report_logic(update, context, query=None):
             
             # 전략 엔진 호출
             is_sell_signal, sell_reason, is_urgent = await strategy.check_sell_signal(
-                exchange, df, symbol, purchase_price, symbol_inventory_age if 'symbol_inventory_age' in locals() else 0, # 있으면 쓰고 없으면 0
-                status if 'status' in locals() else 'NORMAL', # 있으면 쓰고 없으면 NORMAL
-                this_buy_type
+                exchange=exchange,
+                df=df,
+                symbol=symbol,
+                purchase_price=this_avg_p,
+                max_price=float(inv_item.get('max_price', this_curr_p)),
+                grade=this_grade,
+                symbol_inventory_age=this_elapsed_bars,
+                status=status,
+                realtime_p=this_curr_p,
+                buy_type=this_buy_type
             )
             # [추가: 3번 타입 방어 로직 - 정기 리포트와 동일하게 맞춤] #####
             
@@ -1653,7 +1666,6 @@ async def main():
     # sell_monitor_task는 전혀 방해받지 않고 자기 할 일을 합니다.
     buy_task = asyncio.create_task(buy_scan_task(app))
     sell_task = asyncio.create_task(sell_monitor_task(app))
-    urgent_sell_task = asyncio.create_task(monitor_sell_loop(app))
 
     # 텔레그램 인터페이스 시작
     await app.initialize()
@@ -1663,7 +1675,7 @@ async def main():
 
     try:
         # 두 타스크가 종료될 때까지 대기 (사실상 무한 루프)
-        await asyncio.gather(buy_task, sell_task, urgent_sell_task)
+        await asyncio.gather(buy_task, sell_task)
     except Exception as e:
         logger.error(f"시스템 루프 에러 발생: {e}")
     finally:

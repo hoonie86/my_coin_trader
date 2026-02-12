@@ -346,7 +346,7 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
         # 5% 이상 급등락이 있었으면 탈락
         if dynamic_rise >= 5.0:
             data_dict['dynamic_rise_YN'] = 'Y'
-            print(f"DEBUG: {symbol} | 골크 발생. 골크점 : {199-gold_index} | 시작점 : {199-check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
+            print(f"DEBUG: {symbol} | 골크 발생. 골크점 : {199-gold_index} | 시작점 : {199-check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise:.2f}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
             return False, f"🚫 [제외] 골크 전후 변동성 과다({dynamic_rise:.1f}% >= 5%)", "B", data_dict
         # else:
         #     print(f"DEBUG: {symbol} | 골크 발생. 골크점 : {199-gold_index} | 시작점 : {199-check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
@@ -489,7 +489,7 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
     if ma40_val < ma185_val and rsi_val <= 40 and data_dict.get('dynamic_rise_YN') != 'Y':
         # 가드 A: 5일선 이격도가 -8.5% 이하일 것 (고점 매수 원천 차단)
         # 가드 B: 너무 급등하지 않은 '새끼 양봉'일 것 (0.5% ~ 2.0%)
-        if disparity_5_185 <= -8.5 and 0.5 <= candle_body_pct <= 2.0:
+        if disparity_5_185 <= -7.0 and 0 <= candle_body_pct <= 2.0:
             if slope_rate > -0.05: # 185선이 투매 수준으로 꺾이지 않았을 때
                 data_dict = _fill_data_dict_full(df, curr, prev, curr_price, symbol)
                 return True, f"💎 [TYPE3] 바닥낚시(이격:{disparity_5_185:.1f}% / 양봉:{candle_body_pct:.1f}%)", "A", data_dict
@@ -757,29 +757,32 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
 
             drop_from_peak = ((high_price - curr_p) / high_price * 100) if high_price > 0 else 0
 
-            # [1순위] 1. 1% 이상 1.2% 미만: 본절 방어 (손해 안 보게 최소 수익에서 매도)
-            if 0.5<= profit_rate_pct < 1.5:
+            ########## [수정 시작] 최고 수익률을 기준으로 감시 구간을 고정하여 급락 시 이탈 방지 ##########
+            max_profit_rate_pct = ((high_price - purchase_price) / purchase_price * 100) if purchase_price > 0 else 0
+
+            # [1순위] 1. 본절 방어 (최고 수익 0.5% ~ 1.5% 구간 도달 이력)
+            if 0.5 <= max_profit_rate_pct < 1.5:
                 logger.info(f"DEBUG: {symbol} | 최소 수익 마지노선 : {purchase_price * 1.005:.2f}원 하락시 매도")
                 if curr_p <= purchase_price * 1.005: # 수수료 고려 약 0.5% 수익 지점 터치 시
-                    return True, f"🛡️ [본절방어] 최소수익금 터치 매도 ({profit_rate_pct:.2f}%)", False
+                    return True, f"🛡️ [본절방어] 최고수익({max_profit_rate_pct:.2f}%) 대비 하락 매도", False
 
-            # 2. 1.2% 이상 2% 미만: 고점 대비 1% 하락 시 매도
-            elif 1.5 <= profit_rate_pct < 2.5:
+            # 2. 최고 수익 1.5% 이상 2.5% 미만 도달 이력: 고점 대비 1% 하락 시 매도
+            elif 1.5 <= max_profit_rate_pct < 2.5:
                 logger.info(f"DEBUG: {symbol} | 고점 대비 현재가 1% 이상 하락시 매도. 잔여 : {1-(drop_from_peak):.2f}%")
                 if drop_from_peak >= 1.0:
-                    return True, f"💰 [익절-A] 1.2%구간 고점대비 1% 하락 매도", False
+                    return True, f"💰 [익절-A] 최고수익({max_profit_rate_pct:.2f}%) 대비 1% 하락 매도", False
 
-            # 3. 2% 이상 3.5% 미만: 고점 대비 1.5% 하락 시 매도
-            elif 2.5 <= profit_rate_pct < 3.5:
+            # 3. 최고 수익 2.5% 이상 3.5% 미만 도달 이력: 고점 대비 1.5% 하락 시 매도
+            elif 2.5 <= max_profit_rate_pct < 3.5:
                 logger.info(f"DEBUG: {symbol} | 고점 대비 현재가 1.5% 이상 하락시 매도. 잔여 : {1.5-(drop_from_peak):.2f}%")
                 if drop_from_peak >= 1.5:
-                    return True, f"💰 [익절-B] 2%구간 고점대비 1.5% 하락 매도", False
+                    return True, f"💰 [익절-B] 최고수익({max_profit_rate_pct:.2f}%) 대비 1.5% 하락 매도", False
 
-            # 4. 3.5% 이상: 고점 대비 3% 하락 시 매도
-            elif profit_rate_pct >= 3.5:
+            # 4. 최고 수익 3.5% 이상 도달 이력: 고점 대비 2% 하락 시 매도
+            elif max_profit_rate_pct >= 3.5:
                 logger.info(f"DEBUG: {symbol} | 고점 대비 현재가 2% 이상 하락시 매도. 잔여 : {2-(drop_from_peak):.2f}%")
                 if drop_from_peak >= 2.0:
-                    return True, f"💰 [익절-C] 3.5%구간 고점대비 2.0% 하락 매도", False
+                    return True, f"💰 [익절-C] 최고수익({max_profit_rate_pct:.2f}%) 대비 2.0% 하락 매도", False
 
             # ---------------------------------------------------------
             # [정비 2] 40 지지선 및 S+급 보호 (상향->평행->상향 로직)
