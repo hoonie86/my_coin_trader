@@ -353,6 +353,10 @@ async def buy_scan_task(app):
                 print(f"\n📊 [시장 현황] {lock_status} | 현재평균: {current_market_avg:+.2f}% | 기준점: {strategy.market_ref_rate:+.2f}%")
                 if strategy.is_buy_locked:
                     print(f"   💡 해제까지: {current_market_avg:+.2f}% -> {strategy.market_ref_rate + 2.0:+.2f}% 필요")
+            if strategy.is_buy_locked:
+                print(f"🚫 [시장잠금] Panic Filter 상태입니다. 스캔을 생략하고 5분 뒤 시장을 재확인합니다.")
+                await asyncio.sleep(300)
+                continue
             # [사후분석] 60분 경과한 미지 기록 종목 수익률 로그 업데이트 (기존 로직과 겹치지 않도록 먼저 처리)
             now = datetime.now()
             for sym in list(missed_60m_tracker.keys()):
