@@ -301,13 +301,14 @@ async def check_buy_signal(exchange, df, symbol, warning_list, df_1m=None):
     curr_max_high_low = max(curr['open'], curr['close'])
     upper_wick = (curr['high'] - curr_max_high_low) / curr_max_high_low * 100
     
-    if volatility > 5.0:
+    if volatility >= 5.0:
+        print(f"DEBUG: {symbol} 매수 탈락 - 변동성 과다({volatility:.1f}%)")
+        return False, f"🚫 [상단방어] 구간 변동성({volatility:.1f}%) 및 저항 포착", "F", {}
+    else:
         if upper_wick >= 2.0:
             print(f"DEBUG: {symbol} 매수 탈락 - 윗꼬리 과다({volatility:.1f}%)")
-            return False, f"🚫 [상단방어] 구간 변동성({volatility:.1f}%) 및 저항 포착", "F", {}
-    else:
-        print(f"DEBUG: {symbol} 매수 변동성 통과({volatility:.1f}%)")
-
+            return False, f"🚫 [윗꼬리 방어] 가격 변동성({volatility:.1f}%) 설거지 포착", "F", {}
+        
     # [가격 필터] 10원 미만 또는 10,000원 이상 → BTC 마켓 동전주/비정상 차단
     if curr_price < 10 or curr_price >= 10000:
         return False, "가격필터(BTC마켓)", "", data_dict
@@ -385,10 +386,10 @@ async def check_buy_signal(exchange, df, symbol, warning_list, df_1m=None):
         dynamic_rise = ((win_high - win_low) / win_low * 100) if win_low > 0 else 0
         #print(f"DEBUG: {symbol} | 골크 발생. 골크점 : {199-gold_index} | 시작점 : {199-check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
         # 4% 이상 급등락이 있었으면 탈락
-        if dynamic_rise >= 4.0:
+        if dynamic_rise >= 5.0:
             data_dict['dynamic_rise_YN'] = 'Y'
             print(f"DEBUG: {symbol} | 골크 발생. 골크점 : {199-gold_index} | 시작점 : {199-check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise:.2f}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
-            return False, f"🚫 [제외] 골크 전후 변동성 과다({dynamic_rise:.1f}% >= 4%)", "B", data_dict
+            return False, f"🚫 [제외] 골크 전후 변동성 과다({dynamic_rise:.1f}% >= 5%)", "B", data_dict
         # else:
         #     print(f"DEBUG: {symbol} | 골크 발생. 골크점 : {199-gold_index} | 시작점 : {199-check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
     else:
@@ -404,9 +405,9 @@ async def check_buy_signal(exchange, df, symbol, warning_list, df_1m=None):
         dynamic_rise = ((win_high - win_low) / win_low * 100) if win_low > 0 else 0
         # print(f"DEBUG: {symbol} | 골크 미발생. 시작점: {check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
         # 4% 이상 급등락이 있었으면 탈락
-        if dynamic_rise >= 4.0:
+        if dynamic_rise >= 5.0:
             data_dict['dynamic_rise_YN'] = 'Y'
-            return False, f"🚫 [제외] 골크 미발생 변동성 과다({dynamic_rise:.1f}% >= 4%)", "B", data_dict
+            return False, f"🚫 [제외] 골크 미발생 변동성 과다({dynamic_rise:.1f}% >= 5%)", "B", data_dict
     bars_since_gold = len(df) - gold_index if gold_index != -1 else -1
     data_dict['bars_since_gold'] = bars_since_gold
     
@@ -590,50 +591,55 @@ async def check_buy_signal(exchange, df, symbol, warning_list, df_1m=None):
         if slope_rate >= -0.01 and disparity_gold <= 0.005:
             recent_max = df['high'].rolling(window=50).max().iloc[-1]
             drop_rate = ((recent_max - curr_price) / recent_max) * 100
-            data_dict['grade'] = 'S+'
-            return True, "💎 [TYPE1-S+] 밥그릇 바닥 완전 수렴", "S+", data_dict
+            data_dict['grade'] = 'S'
+            return True, "💎 [TYPE1-S] 밥그릇 바닥 완전 수렴", "S", data_dict
         
         # [S] 밥그릇 바닥 탈출 (변곡점 확인)
-        if slope_rate >= -0.01 and disparity_gold <= 0.015:
-            data_dict['grade'] = 'S'
-            return True, "⭐ [TYPE1-S] 밥그릇 바닥 탈출(변곡점)", "S", data_dict
+        if slope_rate >= -0.01 and disparity_gold <= 0.010:
+            if (curr_price - ma40_val) / ma40_val > 0.02:
+                data_dict['grade'] = 'A+'
+                return True, "🚀 [TYPE1-A] 상승대기(골드안착/추격주의)", "A", data_dict
+
+            data_dict['grade'] = 'A+'
+            return True, "⭐ [TYPE1-A+] 밥그릇 바닥 탈출(변곡점)", "A+", data_dict
 
         # [A+] 185선 평행/우상향 전환 초기
         if slope_rate >= -0.01:
-            data_dict['grade'] = 'A+'
-            return True, "🚀 [TYPE1-A+] 185선 평행/우상향 전환", "A+", data_dict
+            data_dict['grade'] = 'B+'
+            return True, "🚀 [TYPE1-B+] 185선 평행/우상향 전환", "B+", data_dict
         
         # [A] 상승 대기 (골드 안착)
-        data_dict['grade'] = 'A'
-        return True, "🚀 [TYPE1-A] 상승대기(골드안착)", "A", data_dict
+        data_dict['grade'] = 'B'
+        return True, "🚀 [TYPE1-B] 상승대기(골드안착)", "B", data_dict
 
     # ==========================================================================
     # [TYPE2: 눌림목 및 40선 지지 (에너지 응축)]
     # 집중: 골든크로스 이후 40선(노란선) 밀착 및 지지 확인
     # ==========================================================================
-    if -0.5 <= disparity_40 <= 0.025 and data_dict.get('dynamic_rise_YN') != 'Y':   # 40선 이격도
-        # --- [안전 가드] 폭락 중인 칼날 잡기 방지 (T2 필수 체크) ---
-        is_falling_now = (curr['close'] < curr['open']) and ((curr['open'] - curr['close']) / curr['open'] >= 0.02)
-        recent_3_candles = df.iloc[-3:]
-        negative_candles = len(recent_3_candles[recent_3_candles['close'] < recent_3_candles['open']])
-        
-        if is_falling_now or negative_candles >= 2:
-            reason = "📉 [TYPE2-탈락] 40선 밀착했으나 하락 관성 강함 (폭락 주의)"
-            data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
-            return False, reason, "", data_dict
-        # --- [안전 가드 끝] ---
+    if 4 <= bars_since_gold <= 40:
+        if -0.5 <= disparity_40 <= 0.025 and data_dict.get('dynamic_rise_YN') != 'Y':   # 40선 이격도
+            # --- [안전 가드] 폭락 중인 칼날 잡기 방지 (T2 필수 체크) ---
+            is_falling_now = (curr['close'] < curr['open']) and ((curr['open'] - curr['close']) / curr['open'] >= 0.02)
+            recent_3_candles = df.iloc[-3:]
+            negative_candles = len(recent_3_candles[recent_3_candles['close'] < recent_3_candles['open']])
+            
+            if is_falling_now or negative_candles >= 2:
+                reason = "📉 [TYPE2-탈락] 40선 밀착했으나 하락 관성 강함 (폭락 주의)"
+                data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
+                return False, reason, "", data_dict
+            # --- [안전 가드 끝] ---
 
-        if abs(diff_185) < 1.0 and slope_rate >= -0.03:   # 경사 수치와 경사율이 우상향 전환
-            data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
-            
-            # [S] 에너지 응축 (185선 평행/우상향 전환 초기, 40선/185선 동시 밀착 지지)
-            if slope_rate >= -0.01 and disparity_gold <= 0.015:
-                data_dict['grade'] = 'S'
-                return True, "🔥 [TYPE2-S] 에너지응축(40선/185선 동시지점)", "S", data_dict
-            
-            # [S] 일반 40선 밀착 지지
-            data_dict['grade'] = 'A'
-            return True, "✨ [TYPE2-A] 40선 밀착 및 지지 확인", "A", data_dict
+            if abs(diff_185) < 1.0 and slope_rate >= -0.03:   # 경사 수치와 경사율이 우상향 전환
+                data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
+                
+                # [S] 에너지 응축 (185선 평행/우상향 전환 초기, 40선/185선 동시 밀착 지지)
+                if slope_rate >= -0.01 and disparity_gold <= 0.015:
+                    data_dict['grade'] = 'S'
+                    return True, "🔥 [TYPE2-S] 에너지응축(40선/185선 동시지점)", "S", data_dict
+                
+                # [S] 일반 40선 밀착 지지
+                data_dict['grade'] = 'A'
+                return True, "✨ [TYPE2-A] 40선 밀착 및 지지 확인", "A", data_dict
 
     # [B등급] 급등 후 거래량이 줄어들며 20일선에서 지지받는 눌림목: 현재가가 ma20 근처이고 거래량 감소 시 B
     if ma20_val and base_avg_vol and curr_vol < base_avg_vol * 0.9 and abs(curr_price - ma20_val) / ma20_val <= 0.03 and data_dict.get('dynamic_rise_YN') != 'Y':
