@@ -5,8 +5,8 @@ from datetime import datetime
 from config import logger
 
 
-CSV_FILE = "missed_opportunities.csv"
-LOSS_REVIEW_FILE = "loss_review.csv"
+CSV_FILE = "trades/missed_opportunities.csv"
+LOSS_REVIEW_FILE = "trades/loss_review.csv"
 MAX_FILE_SIZE_MB = 50
 
 
@@ -31,7 +31,7 @@ def check_and_backup_file():
             
             if file_size_mb > MAX_FILE_SIZE_MB:
                 # 백업 파일명 생성 (타임스탬프 포함)
-                backup_filename = f"missed_opportunities_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+                backup_filename = f"backups/missed_opportunities_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
                 shutil.copy2(CSV_FILE, backup_filename)
                 logger.info(f"[파일백업] {CSV_FILE} ({file_size_mb:.2f}MB) -> {backup_filename}")
                 

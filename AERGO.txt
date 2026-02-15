@@ -1,0 +1,1046 @@
+▶ 스캔 중: [50/447] AERGO/KRW   [2026-02-13 06:05:59,864] [분석기록] UNI/KRW | 사유: 🚫 [제외] 골크 미발생 변동성 과다(9.8% >= 4%) | RSI:  | 거래량배수:  | 태그: 
+▶ 스캔 중: [50/447] AERGO/KRW   [2026-02-13 06:20:06,057] [분석기록] AERGO/KRW | 사유: 📉 [TYPE2-탈락] 40선 밀착했으나 하락 관성 강함 (폭락 주의) | RSI: 49.49 | 거래량배수: 0.059 | 태그: 
+▶ 스캔 중: [50/447] AERGO/KRW   [2026-02-13 06:33:20,991] [분석기록] AERGO/KRW | 사유: 📉 [TYPE2-탈락] 40선 밀착했으나 하락 관성 강함 (폭락 주의) | RSI: 50.25 | 거래량배수: 0.124 | 태그: 
+▶ 스캔 중: [50/447] AERGO/KRW   [2026-02-13 06:46:39,215] [분석기록] AERGO/KRW | 사유: 📉 [TYPE2-탈락] 40선 밀착했으나 하락 관성 강함 (폭락 주의) | RSI: 50.10 | 거래량배수: 3.798 | 태그: 
+▶ 스캔 중: [50/447] AERGO/KRW   [2026-02-13 06:59:56,947] [분석기록] AERGO/KRW | 사유: 📉 [TYPE2-탈락] 40선 밀착했으나 하락 관성 강함 (폭락 주의) | RSI: 50.40 | 거래량배수: 4.031 | 태그: 
+▶ 스캔 중: [50/447] AERGO/KRW   [2026-02-13 07:13:21,581] [분석기록] AERGO/KRW | 사유: 📉 [TYPE2-탈락] 40선 밀착했으나 하락 관성 강함 (폭락 주의) | RSI: 45.00 | 거래량배수: 0.763 | 태그: 
+▶ 스캔 중: [50/447] AERGO/KRW   [2026-02-13 07:27:11,280] [분석기록] AERGO/KRW | 사유: 📉 [TYPE2-탈락] 40선 밀착했으나 하락 관성 강함 (폭락 주의) | RSI: 44.74 | 거래량배수: 0.816 | 태그: 
+▶ 스캔 중: [50/447] AERGO/KRW   [2026-02-13 07:40:33,691] [분석기록] AERGO/KRW | 사유: 📉 [TYPE2-탈락] 40선 밀착했으나 하락 관성 강함 (폭락 주의) | RSI: 46.34 | 거래량배수: 0.845 | 태그: 
+▶ 스캔 중: [50/447] AERGO/KRW   [2026-02-13 07:54:01,938] [분석기록] UNI/KRW | 사유: 🚫 [제외] 골크 미발생 변동성 과다(9.8% >= 4%) | RSI:  | 거래량배수:  | 태그: 
+▶ 스캔 중: [50/447] AERGO/KRW   [2026-02-13 08:07:20,556] [분석기록] UNI/KRW | 사유: 🚫 [제외] 골크 미발생 변동성 과다(9.8% >= 4%) | RSI:  | 거래량배수:  | 태그: 
+▶ 스캔 중: [50/447] AERGO/KRW   [2026-02-13 08:20:40,397] [분석기록] UNI/KRW | 사유: 🚫 [제외] 골크 미발생 변동성 과다(9.8% >= 4%) | RSI:  | 거래량배수:  | 태그: 
+▶ 스캔 중: [50/447] AERGO/KRW   [2026-02-13 08:34:17,862] [분석기록] UNI/KRW | 사유: 🚫 [제외] 골크 미발생 변동성 과다(9.8% >= 4%) | RSI:  | 거래량배수:  | 태그: 
+[2026-02-13 08:46:39,111] [60분수익률] AERGO/KRW | 기록시점: 2026-02-13 07:40:33 | 기록가: 83 | 60분후: 84 | 수익률: +1.22%
+▶ 스캔 중: [50/447] AERGO/KRW   [2026-02-13 08:47:32,951] DEBUG: SUN/KRW | age: 2 | profit: -0.03%
+▶ 스캔 중: [50/447] AERGO/KRW   [2026-02-13 09:00:56,661] [분석기록] UNI/KRW | 사유: 🚫 [제외] 골크 미발생 변동성 과다(9.8% >= 4%) | RSI:  | 거래량배수:  | 태그: 
+▶ 스캔 중: [50/447] AERGO/KRW   [2026-02-13 09:14:26,054] [분석기록] UNI/KRW | 사유: 🚫 [제외] 골크 미발생 변동성 과다(9.8% >= 4%) | RSI:  | 거래량배수:  | 태그: 
+▶ 스캔 중: [50/447] AERGO/KRW   [2026-02-13 09:27:48,141] [분석기록] AERGO/KRW | 사유: 📉 [TYPE2-탈락] 40선 밀착했으나 하락 관성 강함 (폭락 주의) | RSI: 45.79 | 거래량배수: 3.269 | 태그: 
+▶ 스캔 중: [50/447] AERGO/KRW   [2026-02-13 09:41:29,025] [분석기록] AERGO/KRW | 사유: 📉 [TYPE2-탈락] 40선 밀착했으나 하락 관성 강함 (폭락 주의) | RSI: 42.17 | 거래량배수: 0.005 | 태그: 
+▶ 스캔 중: [50/447] AERGO/KRW   [2026-02-13 09:54:52,628] [분석기록] AERGO/KRW | 사유: 📉 [TYPE2-탈락] 40선 밀착했으나 하락 관성 강함 (폭락 주의) | RSI: 42.17 | 거래량배수: 0.005 | 태그: 
+▶ 스캔 중: [50/447] AERGO/KRW   [2026-02-13 10:08:14,927] [분석기록] UNI/KRW | 사유: 🚫 [제외] 골크 미발생 변동성 과다(9.8% >= 4%) | RSI:  | 거래량배수:  | 태그: 
+▶ 스캔 중: [50/447] AERGO/KRW   [2026-02-13 10:21:39,369] [분석기록] UNI/KRW | 사유: 🚫 [제외] 골크 미발생 변동성 과다(9.8% >= 4%) | RSI:  | 거래량배수:  | 태그: 
+▶ 스캔 중: [50/447] AERGO/KRW   [2026-02-13 10:34:59,741] [분석기록] AERGO/KRW | 사유: 📉 [TYPE2-탈락] 40선 밀착했으나 하락 관성 강함 (폭락 주의) | RSI: 45.52 | 거래량배수: 0.263 | 태그: 
+▶ 스캔 중: [50/447] AERGO/KRW   [2026-02-13 10:48:35,076] [분석기록] AERGO/KRW | 사유: 📉 [TYPE2-탈락] 40선 밀착했으나 하락 관성 강함 (폭락 주의) | RSI: 45.39 | 거래량배수: 2.687 | 태그: 
+▶ 스캔 중: [50/447] AERGO/KRW   [2026-02-13 11:01:54,400] DEBUG: TRX/KRW | age: 999 | profit: 0.00%
+▶ 스캔 중: [50/447] AERGO/KRW   [2026-02-13 11:15:14,278] DEBUG: GRND/KRW | age: 18 | profit: -0.63%
+▶ 스캔 중: [50/447] AERGO/KRW   [2026-02-13 11:28:49,247] [분석기록] AERGO/KRW | 사유: 📉 [TYPE2-탈락] 40선 밀착했으나 하락 관성 강함 (폭락 주의) | RSI: 47.18 | 거래량배수: 0.226 | 태그: 
+▶ 스캔 중: [50/447] AERGO/KRW   [2026-02-13 11:42:20,621] [분석기록] UNI/KRW | 사유: 🚫 [제외] 골크 미발생 변동성 과다(8.0% >= 4%) | RSI:  | 거래량배수:  | 태그: 
+▶ 스캔 중: [50/447] AERGO/KRW   [2026-02-13 11:55:56,796] [분석기록] UNI/KRW | 사유: 🚫 [제외] 골크 미발생 변동성 과다(8.0% >= 4%) | RSI:  | 거래량배수:  | 태그: 
+▶ 스캔 중: [50/447] AERGO/KRW   [2026-02-13 12:09:22,218] [분석기록] AERGO/KRW | 사유: 📉 [TYPE2-탈락] 40선 밀착했으나 하락 관성 강함 (폭락 주의) | RSI: 48.41 | 거래량배수: 0.245 | 태그: 
+▶ 스캔 중: [50/447] AERGO/KRW   [2026-02-13 12:22:43,831] [분석기록] AERGO/KRW | 사유: 📉 [TYPE2-탈락] 40선 밀착했으나 하락 관성 강함 (폭락 주의) | RSI: 48.41 | 거래량배수: 0.461 | 태그: 
+▶ 스캔 중: [50/447] AERGO/KRW   [2026-02-13 12:36:13,738] DEBUG: GRND/KRW | age: 21 | profit: 1.36%
+[2026-02-13 12:46:22,332] 🚨 [ORDER CHECK] AERGO/KRW | 요청금액: 30,000 | 실제가용잔액: 57,398
+[2026-02-13 12:46:22,332] 🚨 [ORDER CHECK] AERGO/KRW | 요청금액: 30,000 | 실제가용잔액: 57,398
+[2026-02-13 12:47:15,752] DEBUG: AERGO/KRW | age: 0 | profit: -0.23%
+[2026-02-13 12:48:23,786] DEBUG: AERGO/KRW | age: 0 | profit: -0.23%
+🛒 [매수집행] AERGO/KRW | 금액: 30000 | 수량: 360.1008 | 등급: S | 타입: 1
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+🔍 [MONITOR] AERGO/KRW | 현재가: 83 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 0
+🔍 [MONITOR] AERGO/KRW | 현재가: 83 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 0
+[2026-02-13 12:49:32,122] DEBUG: AERGO/KRW | age: 0 | profit: -0.23%
+🔍 [MONITOR] AERGO/KRW | 현재가: 83 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 0
+[2026-02-13 12:50:44,315] DEBUG: AERGO/KRW | age: 0 | profit: -0.23%
+🔍 [MONITOR] AERGO/KRW | 현재가: 83 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 0
+[2026-02-13 12:51:53,017] DEBUG: AERGO/KRW | age: 0 | profit: -0.07%
+🔍 [MONITOR] AERGO/KRW | 현재가: 83 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 0
+[2026-02-13 12:53:01,751] DEBUG: AERGO/KRW | age: 0 | profit: -0.26%
+🔍 [MONITOR] AERGO/KRW | 현재가: 83 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 0
+[2026-02-13 12:54:10,458] DEBUG: AERGO/KRW | age: 0 | profit: -0.26%
+🔍 [MONITOR] AERGO/KRW | 현재가: 83 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 0
+[2026-02-13 12:55:19,217] DEBUG: AERGO/KRW | age: 0 | profit: -0.26%
+🔍 [MONITOR] AERGO/KRW | 현재가: 83 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 0
+[2026-02-13 12:56:27,780] DEBUG: AERGO/KRW | age: 0 | profit: -0.26%
+🔍 [MONITOR] AERGO/KRW | 현재가: 83 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 0
+[2026-02-13 12:57:35,821] DEBUG: AERGO/KRW | age: 0 | profit: -0.08%
+[2026-02-13 12:58:43,848] DEBUG: AERGO/KRW | age: 0 | profit: 0.06%
+[2026-02-13 13:00:51,433] DEBUG: AERGO/KRW | age: 0 | profit: 0.17%
+[2026-02-13 13:01:58,966] DEBUG: AERGO/KRW | age: 0 | profit: 0.06%
+🔍 [MONITOR] AERGO/KRW | 현재가: 83 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 0
+🔍 [MONITOR] AERGO/KRW | 현재가: 84 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 0
+🔍 [MONITOR] AERGO/KRW | 현재가: 84 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 0
+🔍 [MONITOR] AERGO/KRW | 현재가: 84 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 0
+[2026-02-13 13:03:06,580] DEBUG: AERGO/KRW | age: 0 | profit: 0.06%
+🔍 [MONITOR] AERGO/KRW | 현재가: 84 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 0
+[2026-02-13 13:04:14,191] DEBUG: AERGO/KRW | age: 0 | profit: 0.60%
+🔍 [MONITOR] AERGO/KRW | 현재가: 84 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 0
+[2026-02-13 13:05:21,805] DEBUG: AERGO/KRW | age: 0 | profit: 0.77%
+🔍 [MONITOR] AERGO/KRW | 현재가: 84 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 0
+🔍 [MONITOR] AERGO/KRW | 현재가: 84 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 0
+▶ 스캔 중: [210/447] PYR/KRW     [2026-02-13 13:06:29,673] DEBUG: AERGO/KRW | age: 0 | profit: 0.77%
+🔍 [MONITOR] AERGO/KRW | 현재가: 84 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 0
+▶ 스캔 중: [270/447] MOCA/KRW    [2026-02-13 13:07:37,331] DEBUG: AERGO/KRW | age: 0 | profit: 0.77%
+🔍 [MONITOR] AERGO/KRW | 현재가: 84 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 0
+▶ 스캔 중: [330/447] QKC/KRW     [2026-02-13 13:08:45,031] DEBUG: AERGO/KRW | age: 0 | profit: 0.83%
+[2026-02-13 13:09:52,887] DEBUG: AERGO/KRW | age: 0 | profit: 0.80%
+🔍 [MONITOR] AERGO/KRW | 현재가: 84 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 0
+[2026-02-13 13:11:00,449] DEBUG: AERGO/KRW | age: 0 | profit: 0.82%
+[2026-02-13 13:12:08,996] DEBUG: AERGO/KRW | age: 0 | profit: 0.50%
+[2026-02-13 13:13:16,530] DEBUG: AERGO/KRW | age: 0 | profit: 0.50%
+[2026-02-13 13:14:24,608] DEBUG: AERGO/KRW | age: 0 | profit: 1.07%
+[2026-02-13 13:15:32,138] DEBUG: AERGO/KRW | age: 0 | profit: 1.07%
+🔍 [MONITOR] AERGO/KRW | 현재가: 84 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 0
+🔍 [MONITOR] AERGO/KRW | 현재가: 84 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 0
+🔍 [MONITOR] AERGO/KRW | 현재가: 84 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 0
+🔍 [MONITOR] AERGO/KRW | 현재가: 84 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 0
+🔍 [MONITOR] AERGO/KRW | 현재가: 84 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 0
+[2026-02-13 13:16:40,128] DEBUG: AERGO/KRW | age: 1 | profit: 1.07%
+🔍 [MONITOR] AERGO/KRW | 현재가: 84 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 1
+[2026-02-13 13:17:48,033] DEBUG: AERGO/KRW | age: 1 | profit: 1.07%
+🔍 [MONITOR] AERGO/KRW | 현재가: 84 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 1
+[2026-02-13 13:18:55,896] DEBUG: AERGO/KRW | age: 1 | profit: 1.07%
+🔍 [MONITOR] AERGO/KRW | 현재가: 84 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 1
+[2026-02-13 13:20:03,664] DEBUG: AERGO/KRW | age: 1 | profit: 1.07%
+🔍 [MONITOR] AERGO/KRW | 현재가: 84 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 1
+[2026-02-13 13:21:11,427] DEBUG: AERGO/KRW | age: 1 | profit: 1.40%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 1
+[2026-02-13 13:22:19,165] DEBUG: AERGO/KRW | age: 1 | profit: 1.06%
+🔍 [MONITOR] AERGO/KRW | 현재가: 84 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 1
+[2026-02-13 13:23:27,034] DEBUG: AERGO/KRW | age: 1 | profit: 1.06%
+🔍 [MONITOR] AERGO/KRW | 현재가: 84 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 1
+[2026-02-13 13:24:34,576] DEBUG: AERGO/KRW | age: 1 | profit: 1.20%
+[2026-02-13 13:25:42,115] DEBUG: AERGO/KRW | age: 1 | profit: 1.65%
+[2026-02-13 13:26:49,644] DEBUG: AERGO/KRW | age: 1 | profit: 1.63%
+[2026-02-13 13:27:25,100] 🚨 [FINAL CHECK] AERGO/KRW | JSON데이터유무:True | 최종평단:83.49884254630926
+[2026-02-13 13:27:25,101] 📊 [CALC RESULT] AERGO/KRW | 수익률:1.63% | 수익금:490원
+[2026-02-13 13:27:25,639] DEBUG: AERGO/KRW | age: 1 | profit: 1.63%
+[2026-02-13 13:27:57,172] DEBUG: AERGO/KRW | age: 1 | profit: 1.63%
+[2026-02-13 13:29:04,731] DEBUG: AERGO/KRW | age: 1 | profit: 1.63%
+[2026-02-13 13:29:32,602] [60분수익률] AERGO/KRW | 기록시점: 2026-02-13 12:22:43 | 기록가: 83 | 60분후: 85 | 수익률: +2.18%
+🔍 [MONITOR] AERGO/KRW | 현재가: 84 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 1
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 1
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 1
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 1
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 1
+[2026-02-13 13:30:12,526] DEBUG: AERGO/KRW | age: 1 | profit: 1.51%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 1
+[2026-02-13 13:31:20,297] DEBUG: AERGO/KRW | age: 1 | profit: 1.51%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 1
+[2026-02-13 13:32:28,183] DEBUG: AERGO/KRW | age: 1 | profit: 1.67%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 1
+[2026-02-13 13:33:35,984] DEBUG: AERGO/KRW | age: 1 | profit: 1.67%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 1
+[2026-02-13 13:34:43,903] DEBUG: AERGO/KRW | age: 1 | profit: 1.23%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 1
+[2026-02-13 13:35:51,563] DEBUG: AERGO/KRW | age: 1 | profit: 1.23%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 1
+[2026-02-13 13:36:59,174] DEBUG: AERGO/KRW | age: 1 | profit: 1.14%
+🔍 [MONITOR] AERGO/KRW | 현재가: 84 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 1
+[2026-02-13 13:38:06,711] DEBUG: AERGO/KRW | age: 1 | profit: 1.14%
+[2026-02-13 13:39:14,246] DEBUG: AERGO/KRW | age: 1 | profit: 1.35%
+[2026-02-13 13:40:21,777] DEBUG: AERGO/KRW | age: 1 | profit: 1.35%
+[2026-02-13 13:41:29,324] DEBUG: AERGO/KRW | age: 1 | profit: 1.61%
+[2026-02-13 13:42:36,862] DEBUG: AERGO/KRW | age: 1 | profit: 1.28%
+🔍 [MONITOR] AERGO/KRW | 현재가: 84 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 1
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 1
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 1
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 1
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 1
+[2026-02-13 13:43:44,466] DEBUG: AERGO/KRW | age: 1 | profit: 1.28%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 1
+[2026-02-13 13:44:52,005] DEBUG: AERGO/KRW | age: 1 | profit: 1.28%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 1
+▶ 스캔 중: [160/447] GRND/KRW    [2026-02-13 13:45:59,724] DEBUG: AERGO/KRW | age: 1 | profit: 1.28%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 1
+[2026-02-13 13:47:07,438] DEBUG: AERGO/KRW | age: 2 | profit: 1.62%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 2
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 2
+▶ 스캔 중: [280/447] AVAIL/KRW   [2026-02-13 13:48:15,171] DEBUG: AERGO/KRW | age: 2 | profit: 1.68%
+[2026-02-13 13:49:22,719] DEBUG: AERGO/KRW | age: 2 | profit: 1.98%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 2
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 2
+▶ 스캔 중: [400/447] AVNT/KRW    [2026-02-13 13:50:31,310] DEBUG: AERGO/KRW | age: 2 | profit: 2.37%
+[2026-02-13 13:51:38,847] DEBUG: AERGO/KRW | age: 2 | profit: 2.31%
+[2026-02-13 13:52:46,422] DEBUG: AERGO/KRW | age: 2 | profit: 1.86%
+[2026-02-13 13:53:53,960] DEBUG: AERGO/KRW | age: 2 | profit: 2.01%
+[2026-02-13 13:55:01,492] DEBUG: AERGO/KRW | age: 2 | profit: 2.01%
+[2026-02-13 13:56:09,023] DEBUG: AERGO/KRW | age: 2 | profit: 2.53%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 2
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 2
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 2
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 2
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 2
+[2026-02-13 13:57:16,786] DEBUG: AERGO/KRW | age: 2 | profit: 2.35%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 2
+▶ 스캔 중: [100/447] ACH/KRW     [2026-02-13 13:58:24,407] DEBUG: AERGO/KRW | age: 2 | profit: 1.77%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 2
+[2026-02-13 13:59:32,379] DEBUG: AERGO/KRW | age: 2 | profit: 1.33%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 2
+[2026-02-13 14:00:40,313] DEBUG: AERGO/KRW | age: 2 | profit: 1.32%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 2
+[2026-02-13 14:01:48,307] DEBUG: AERGO/KRW | age: 2 | profit: 1.33%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 2
+[2026-02-13 14:02:55,858] DEBUG: AERGO/KRW | age: 2 | profit: 1.33%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 2
+[2026-02-13 14:04:03,793] DEBUG: AERGO/KRW | age: 2 | profit: 1.75%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 2
+[2026-02-13 14:05:11,329] DEBUG: AERGO/KRW | age: 2 | profit: 1.47%
+[2026-02-13 14:06:18,864] DEBUG: AERGO/KRW | age: 2 | profit: 2.72%
+[2026-02-13 14:07:26,930] DEBUG: AERGO/KRW | age: 2 | profit: 3.08%
+[2026-02-13 14:08:34,995] DEBUG: AERGO/KRW | age: 2 | profit: 3.93%
+[2026-02-13 14:09:42,525] DEBUG: AERGO/KRW | age: 2 | profit: 3.23%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 2
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 2
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 2
+🔍 [MONITOR] AERGO/KRW | 현재가: 87 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 2
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 2
+[2026-02-13 14:10:50,284] DEBUG: AERGO/KRW | age: 2 | profit: 2.07%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 2
+[2026-02-13 14:11:57,875] DEBUG: AERGO/KRW | age: 2 | profit: 1.80%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 2
+[2026-02-13 14:13:06,668] DEBUG: AERGO/KRW | age: 2 | profit: 1.80%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 2
+[2026-02-13 14:14:14,509] DEBUG: AERGO/KRW | age: 2 | profit: 1.80%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 2
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 2
+▶ 스캔 중: [280/447] AVAIL/KRW   [2026-02-13 14:15:22,302] DEBUG: AERGO/KRW | age: 2 | profit: 2.22%
+[2026-02-13 14:16:30,149] DEBUG: AERGO/KRW | age: 3 | profit: 2.52%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 3
+[2026-02-13 14:17:37,865] DEBUG: AERGO/KRW | age: 3 | profit: 2.68%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 3
+[2026-02-13 14:18:48,537] DEBUG: AERGO/KRW | age: 3 | profit: 2.97%
+[2026-02-13 14:19:54,568] DEBUG: AERGO/KRW | age: 3 | profit: 2.96%
+[2026-02-13 14:21:01,132] DEBUG: AERGO/KRW | age: 3 | profit: 2.96%
+[2026-02-13 14:22:09,166] DEBUG: AERGO/KRW | age: 3 | profit: 2.43%
+[2026-02-13 14:23:17,200] DEBUG: AERGO/KRW | age: 3 | profit: 2.96%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 3
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 3
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 3
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 3
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 3
+[2026-02-13 14:24:25,313] DEBUG: AERGO/KRW | age: 3 | profit: 2.96%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 3
+[2026-02-13 14:25:33,413] DEBUG: AERGO/KRW | age: 3 | profit: 2.96%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 3
+[2026-02-13 14:26:41,455] DEBUG: AERGO/KRW | age: 3 | profit: 2.88%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 3
+[2026-02-13 14:27:49,677] DEBUG: AERGO/KRW | age: 3 | profit: 3.02%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 3
+[2026-02-13 14:28:57,998] DEBUG: AERGO/KRW | age: 3 | profit: 3.38%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 3
+[2026-02-13 14:30:06,118] DEBUG: AERGO/KRW | age: 3 | profit: 2.73%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 3
+▶ 스캔 중: [390/447] SPK/KRW     [2026-02-13 14:31:14,016] DEBUG: AERGO/KRW | age: 3 | profit: 3.03%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 3
+[2026-02-13 14:32:21,551] DEBUG: AERGO/KRW | age: 3 | profit: 2.67%
+[2026-02-13 14:33:29,081] DEBUG: AERGO/KRW | age: 3 | profit: 3.04%
+[2026-02-13 14:34:36,610] DEBUG: AERGO/KRW | age: 3 | profit: 2.67%
+[2026-02-13 14:35:44,146] DEBUG: AERGO/KRW | age: 3 | profit: 2.80%
+[2026-02-13 14:36:51,733] DEBUG: AERGO/KRW | age: 3 | profit: 2.26%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 3
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 3
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 3
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 3
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 3
+[2026-02-13 14:37:59,346] DEBUG: AERGO/KRW | age: 3 | profit: 2.50%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 3
+[2026-02-13 14:39:06,919] DEBUG: AERGO/KRW | age: 3 | profit: 2.80%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 3
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 3
+▶ 스캔 중: [150/447] WNCG/KRW    [2026-02-13 14:40:14,551] DEBUG: AERGO/KRW | age: 3 | profit: 3.59%
+[2026-02-13 14:41:22,223] DEBUG: AERGO/KRW | age: 3 | profit: 3.71%
+🔍 [MONITOR] AERGO/KRW | 현재가: 87 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 3
+[2026-02-13 14:42:30,188] DEBUG: AERGO/KRW | age: 3 | profit: 2.88%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 3
+[2026-02-13 14:43:38,068] DEBUG: AERGO/KRW | age: 3 | profit: 3.38%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 3
+[2026-02-13 14:44:45,978] DEBUG: AERGO/KRW | age: 3 | profit: 2.60%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 3
+[2026-02-13 14:45:53,826] DEBUG: AERGO/KRW | age: 3 | profit: 2.77%
+[2026-02-13 14:47:01,366] DEBUG: AERGO/KRW | age: 4 | profit: 2.77%
+[2026-02-13 14:48:08,915] DEBUG: AERGO/KRW | age: 4 | profit: 2.77%
+[2026-02-13 14:49:16,450] DEBUG: AERGO/KRW | age: 4 | profit: 2.42%
+[2026-02-13 14:50:23,989] DEBUG: AERGO/KRW | age: 4 | profit: 2.42%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 3
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 4
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 4
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 4
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 4
+[2026-02-13 14:51:31,647] DEBUG: AERGO/KRW | age: 4 | profit: 2.42%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 4
+[2026-02-13 14:52:39,642] DEBUG: AERGO/KRW | age: 4 | profit: 2.42%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 4
+[2026-02-13 14:53:47,365] DEBUG: AERGO/KRW | age: 4 | profit: 2.91%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 4
+[2026-02-13 14:54:55,080] DEBUG: AERGO/KRW | age: 4 | profit: 2.91%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 4
+[2026-02-13 14:56:02,864] DEBUG: AERGO/KRW | age: 4 | profit: 2.91%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 4
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 4
+▶ 스캔 중: [330/447] QKC/KRW     [2026-02-13 14:57:10,644] DEBUG: AERGO/KRW | age: 4 | profit: 2.53%
+[2026-02-13 14:58:18,520] DEBUG: AERGO/KRW | age: 4 | profit: 2.79%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 4
+[2026-02-13 14:59:26,057] DEBUG: AERGO/KRW | age: 4 | profit: 2.79%
+[2026-02-13 15:00:33,590] DEBUG: AERGO/KRW | age: 4 | profit: 2.79%
+[2026-02-13 15:01:41,124] DEBUG: AERGO/KRW | age: 4 | profit: 2.79%
+[2026-02-13 15:02:48,660] DEBUG: AERGO/KRW | age: 4 | profit: 2.29%
+[2026-02-13 15:03:56,211] DEBUG: AERGO/KRW | age: 4 | profit: 2.23%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 4
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 4
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 4
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 4
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 4
+[2026-02-13 15:05:04,229] DEBUG: AERGO/KRW | age: 4 | profit: 2.22%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 4
+[2026-02-13 15:06:11,925] DEBUG: AERGO/KRW | age: 4 | profit: 2.23%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 4
+[2026-02-13 15:07:19,536] DEBUG: AERGO/KRW | age: 4 | profit: 2.23%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 4
+[2026-02-13 15:08:27,321] DEBUG: AERGO/KRW | age: 4 | profit: 2.40%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 4
+[2026-02-13 15:09:35,181] DEBUG: AERGO/KRW | age: 4 | profit: 2.71%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 4
+[2026-02-13 15:10:43,194] DEBUG: AERGO/KRW | age: 4 | profit: 2.71%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 4
+[2026-02-13 15:11:51,151] DEBUG: AERGO/KRW | age: 4 | profit: 2.82%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 4
+[2026-02-13 15:12:58,877] DEBUG: AERGO/KRW | age: 4 | profit: 3.35%
+[2026-02-13 15:14:06,882] DEBUG: AERGO/KRW | age: 4 | profit: 3.35%
+[2026-02-13 15:15:14,421] DEBUG: AERGO/KRW | age: 4 | profit: 3.27%
+[2026-02-13 15:16:21,951] DEBUG: AERGO/KRW | age: 4 | profit: 3.27%
+[2026-02-13 15:17:29,544] DEBUG: AERGO/KRW | age: 5 | profit: 3.27%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 4
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 4
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 4
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 4
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 5
+[2026-02-13 15:18:37,403] DEBUG: AERGO/KRW | age: 5 | profit: 3.27%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 5
+[2026-02-13 15:19:45,291] DEBUG: AERGO/KRW | age: 5 | profit: 3.27%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 5
+[2026-02-13 15:20:53,055] DEBUG: AERGO/KRW | age: 5 | profit: 2.73%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 5
+[2026-02-13 15:22:00,604] DEBUG: AERGO/KRW | age: 5 | profit: 3.01%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 5
+[2026-02-13 15:23:08,485] DEBUG: AERGO/KRW | age: 5 | profit: 3.01%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 5
+[2026-02-13 15:24:16,446] DEBUG: AERGO/KRW | age: 5 | profit: 3.00%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 5
+[2026-02-13 15:25:24,262] DEBUG: AERGO/KRW | age: 5 | profit: 2.42%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 5
+[2026-02-13 15:26:32,050] DEBUG: AERGO/KRW | age: 5 | profit: 2.67%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 5
+[2026-02-13 15:27:39,916] DEBUG: AERGO/KRW | age: 5 | profit: 2.67%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 5
+[2026-02-13 15:28:47,879] DEBUG: AERGO/KRW | age: 5 | profit: 2.76%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 5
+▶ 스캔 중: [390/447] SPK/KRW     [2026-02-13 15:29:55,389] DEBUG: AERGO/KRW | age: 5 | profit: 2.73%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 5
+[2026-02-13 15:31:02,925] DEBUG: AERGO/KRW | age: 5 | profit: 2.73%
+[2026-02-13 15:32:10,458] DEBUG: AERGO/KRW | age: 5 | profit: 2.73%
+[2026-02-13 15:33:18,000] DEBUG: AERGO/KRW | age: 5 | profit: 2.73%
+[2026-02-13 15:34:25,531] DEBUG: AERGO/KRW | age: 5 | profit: 2.73%
+[2026-02-13 15:35:33,065] DEBUG: AERGO/KRW | age: 5 | profit: 2.40%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 5
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 5
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 5
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 5
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 5
+[2026-02-13 15:36:40,758] DEBUG: AERGO/KRW | age: 5 | profit: 2.40%
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 5
+[2026-02-13 15:37:48,484] DEBUG: AERGO/KRW | age: 5 | profit: 2.34%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 5
+[2026-02-13 15:38:56,027] DEBUG: AERGO/KRW | age: 5 | profit: 1.64%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 5
+[2026-02-13 15:40:03,832] DEBUG: AERGO/KRW | age: 5 | profit: 1.32%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 5
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 5
+▶ 스캔 중: [280/447] AVAIL/KRW   [2026-02-13 15:41:11,815] DEBUG: AERGO/KRW | age: 5 | profit: 1.47%
+[2026-02-13 15:42:19,589] DEBUG: AERGO/KRW | age: 5 | profit: 1.73%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 5
+[2026-02-13 15:43:27,130] DEBUG: AERGO/KRW | age: 5 | profit: 1.73%
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 5
+[2026-02-13 15:44:34,665] DEBUG: AERGO/KRW | age: 5 | profit: 1.34%
+[2026-02-13 15:45:42,193] DEBUG: AERGO/KRW | age: 5 | profit: 1.34%
+[2026-02-13 15:46:49,727] DEBUG: AERGO/KRW | age: 6 | profit: 1.34%
+[2026-02-13 15:46:49,728] DEBUG: AERGO/KRW | 3.16% 추가 상승시 급등 모드 전환. 상승률: -1.16%
+[2026-02-13 15:46:49,728] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 15:46:49,728] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+[2026-02-13 15:47:57,260] DEBUG: AERGO/KRW | age: 6 | profit: 1.62%
+[2026-02-13 15:47:57,260] DEBUG: AERGO/KRW | 2.89% 추가 상승시 급등 모드 전환. 상승률: -0.89%
+[2026-02-13 15:47:57,261] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 15:47:57,261] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+[2026-02-13 15:49:04,794] DEBUG: AERGO/KRW | age: 6 | profit: 1.75%
+[2026-02-13 15:49:04,796] DEBUG: AERGO/KRW | 2.76% 추가 상승시 급등 모드 전환. 상승률: -0.76%
+[2026-02-13 15:49:04,796] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 15:49:04,796] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 5
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 5
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 6
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 6
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 6
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 6
+▶ 스캔 중: [40/447] SXP/KRW     [2026-02-13 15:50:12,426] DEBUG: AERGO/KRW | age: 6 | profit: 1.75%
+[2026-02-13 15:50:12,427] DEBUG: AERGO/KRW | 2.76% 추가 상승시 급등 모드 전환. 상승률: -0.76%
+[2026-02-13 15:50:12,427] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 15:50:12,427] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+[2026-02-13 15:51:21,459] DEBUG: AERGO/KRW | age: 6 | profit: 1.80%
+[2026-02-13 15:51:21,460] DEBUG: AERGO/KRW | 2.71% 추가 상승시 급등 모드 전환. 상승률: -0.71%
+[2026-02-13 15:51:21,461] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 15:51:21,461] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 6
+[2026-02-13 15:52:29,480] DEBUG: AERGO/KRW | age: 6 | profit: 1.80%
+[2026-02-13 15:52:29,481] DEBUG: AERGO/KRW | 2.71% 추가 상승시 급등 모드 전환. 상승률: -0.71%
+[2026-02-13 15:52:29,481] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 15:52:29,481] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 6
+[2026-02-13 15:53:37,110] DEBUG: AERGO/KRW | age: 6 | profit: 1.89%
+[2026-02-13 15:53:37,112] DEBUG: AERGO/KRW | 2.62% 추가 상승시 급등 모드 전환. 상승률: -0.62%
+[2026-02-13 15:53:37,112] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 15:53:37,112] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 6
+[2026-02-13 15:54:44,821] DEBUG: AERGO/KRW | age: 6 | profit: 1.89%
+[2026-02-13 15:54:44,823] DEBUG: AERGO/KRW | 2.62% 추가 상승시 급등 모드 전환. 상승률: -0.62%
+[2026-02-13 15:54:44,823] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 15:54:44,823] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 6
+[2026-02-13 15:55:52,394] DEBUG: AERGO/KRW | age: 6 | profit: 1.89%
+[2026-02-13 15:55:52,394] DEBUG: AERGO/KRW | 2.62% 추가 상승시 급등 모드 전환. 상승률: -0.62%
+[2026-02-13 15:55:52,394] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 15:55:52,395] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 6
+[2026-02-13 15:57:00,363] DEBUG: AERGO/KRW | age: 6 | profit: 1.99%
+[2026-02-13 15:57:00,364] DEBUG: AERGO/KRW | 2.53% 추가 상승시 급등 모드 전환. 상승률: -0.53%
+[2026-02-13 15:57:00,364] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 15:57:00,364] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 6
+[2026-02-13 15:58:07,898] DEBUG: AERGO/KRW | age: 6 | profit: 1.99%
+[2026-02-13 15:58:07,899] DEBUG: AERGO/KRW | 2.53% 추가 상승시 급등 모드 전환. 상승률: -0.53%
+[2026-02-13 15:58:07,899] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 15:58:07,899] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+[2026-02-13 15:59:16,023] DEBUG: AERGO/KRW | age: 6 | profit: 2.40%
+[2026-02-13 15:59:16,024] DEBUG: AERGO/KRW | 2.13% 추가 상승시 급등 모드 전환. 상승률: -0.13%
+[2026-02-13 15:59:16,024] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 15:59:16,024] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+[2026-02-13 16:00:23,557] DEBUG: AERGO/KRW | age: 6 | profit: 2.29%
+[2026-02-13 16:00:23,557] DEBUG: AERGO/KRW | 2.23% 추가 상승시 급등 모드 전환. 상승률: -0.23%
+[2026-02-13 16:00:23,557] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:00:23,558] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+[2026-02-13 16:01:31,084] DEBUG: AERGO/KRW | age: 6 | profit: 2.38%
+[2026-02-13 16:01:31,085] DEBUG: AERGO/KRW | 2.00% 추가 상승시 급등 모드 전환. 상승률: 0.00%
+[2026-02-13 16:01:31,085] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:01:31,085] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+[2026-02-13 16:02:38,625] DEBUG: AERGO/KRW | age: 6 | profit: 2.38%
+[2026-02-13 16:02:38,625] DEBUG: AERGO/KRW | 2.00% 추가 상승시 급등 모드 전환. 상승률: 0.00%
+[2026-02-13 16:02:38,625] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:02:38,626] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 6
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 6
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 6
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 6
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 6
+[2026-02-13 16:03:46,258] DEBUG: AERGO/KRW | age: 6 | profit: 2.29%
+[2026-02-13 16:03:46,258] DEBUG: AERGO/KRW | 2.09% 추가 상승시 급등 모드 전환. 상승률: -0.09%
+[2026-02-13 16:03:46,259] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:03:46,259] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 6
+[2026-02-13 16:04:53,805] DEBUG: AERGO/KRW | age: 6 | profit: 2.00%
+[2026-02-13 16:04:53,805] DEBUG: AERGO/KRW | 2.37% 추가 상승시 급등 모드 전환. 상승률: -0.37%
+[2026-02-13 16:04:53,805] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:04:53,806] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 6
+[2026-02-13 16:06:01,340] DEBUG: AERGO/KRW | age: 6 | profit: 1.82%
+[2026-02-13 16:06:01,341] DEBUG: AERGO/KRW | 2.55% 추가 상승시 급등 모드 전환. 상승률: -0.55%
+[2026-02-13 16:06:01,341] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:06:01,341] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 6
+[2026-02-13 16:07:08,943] DEBUG: AERGO/KRW | age: 6 | profit: 1.82%
+[2026-02-13 16:07:08,944] DEBUG: AERGO/KRW | 2.55% 추가 상승시 급등 모드 전환. 상승률: -0.55%
+[2026-02-13 16:07:08,944] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:07:08,944] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+🔍 [MONITOR] AERGO/KRW | 현재가: 85 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 6
+[2026-02-13 16:08:16,881] DEBUG: AERGO/KRW | age: 6 | profit: 2.58%
+[2026-02-13 16:08:16,882] DEBUG: AERGO/KRW | 1.81% 추가 상승시 급등 모드 전환. 상승률: 0.19%
+[2026-02-13 16:08:16,882] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:08:16,882] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 6
+[2026-02-13 16:09:24,619] DEBUG: AERGO/KRW | age: 6 | profit: 2.58%
+[2026-02-13 16:09:24,620] DEBUG: AERGO/KRW | 1.81% 추가 상승시 급등 모드 전환. 상승률: 0.19%
+[2026-02-13 16:09:24,620] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:09:24,620] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 6
+[2026-02-13 16:10:32,579] DEBUG: AERGO/KRW | age: 6 | profit: 2.58%
+[2026-02-13 16:10:32,579] DEBUG: AERGO/KRW | 1.81% 추가 상승시 급등 모드 전환. 상승률: 0.19%
+[2026-02-13 16:10:32,579] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:10:32,580] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 6
+[2026-02-13 16:11:40,216] DEBUG: AERGO/KRW | age: 6 | profit: 2.97%
+[2026-02-13 16:11:40,217] DEBUG: AERGO/KRW | 1.43% 추가 상승시 급등 모드 전환. 상승률: 0.57%
+[2026-02-13 16:11:40,217] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:11:40,217] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+[2026-02-13 16:12:47,756] DEBUG: AERGO/KRW | age: 6 | profit: 3.00%
+[2026-02-13 16:12:47,757] DEBUG: AERGO/KRW | 1.40% 추가 상승시 급등 모드 전환. 상승률: 0.60%
+[2026-02-13 16:12:47,757] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:12:47,757] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+[2026-02-13 16:13:55,288] DEBUG: AERGO/KRW | age: 6 | profit: 2.97%
+[2026-02-13 16:13:55,289] DEBUG: AERGO/KRW | 1.43% 추가 상승시 급등 모드 전환. 상승률: 0.57%
+[2026-02-13 16:13:55,289] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:13:55,289] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+[2026-02-13 16:15:03,876] DEBUG: AERGO/KRW | age: 6 | profit: 2.80%
+[2026-02-13 16:15:03,877] DEBUG: AERGO/KRW | 1.59% 추가 상승시 급등 모드 전환. 상승률: 0.41%
+[2026-02-13 16:15:03,877] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:15:03,877] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+[2026-02-13 16:16:11,414] DEBUG: AERGO/KRW | age: 6 | profit: 2.86%
+[2026-02-13 16:16:11,415] DEBUG: AERGO/KRW | 1.53% 추가 상승시 급등 모드 전환. 상승률: 0.47%
+[2026-02-13 16:16:11,415] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:16:11,415] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 6
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 6
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 6
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 6
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 6
+[2026-02-13 16:17:19,242] DEBUG: AERGO/KRW | age: 7 | profit: 2.94%
+[2026-02-13 16:17:19,243] DEBUG: AERGO/KRW | 1.46% 추가 상승시 급등 모드 전환. 상승률: 0.54%
+[2026-02-13 16:17:19,243] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:17:19,243] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 7
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 7
+▶ 스캔 중: [80/447] LPT/KRW     [2026-02-13 16:18:27,038] DEBUG: AERGO/KRW | age: 7 | profit: 2.94%
+[2026-02-13 16:18:27,038] DEBUG: AERGO/KRW | 1.46% 추가 상승시 급등 모드 전환. 상승률: 0.54%
+[2026-02-13 16:18:27,038] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:18:27,039] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+[2026-02-13 16:19:34,900] DEBUG: AERGO/KRW | age: 7 | profit: 2.94%
+[2026-02-13 16:19:34,901] DEBUG: AERGO/KRW | 1.46% 추가 상승시 급등 모드 전환. 상승률: 0.54%
+[2026-02-13 16:19:34,901] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:19:34,901] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 7
+[2026-02-13 16:20:42,839] DEBUG: AERGO/KRW | age: 7 | profit: 2.94%
+[2026-02-13 16:20:42,840] DEBUG: AERGO/KRW | 1.46% 추가 상승시 급등 모드 전환. 상승률: 0.54%
+[2026-02-13 16:20:42,840] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:20:42,840] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 7
+[2026-02-13 16:21:50,471] DEBUG: AERGO/KRW | age: 7 | profit: 2.94%
+[2026-02-13 16:21:50,471] DEBUG: AERGO/KRW | 1.46% 추가 상승시 급등 모드 전환. 상승률: 0.54%
+[2026-02-13 16:21:50,471] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:21:50,472] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 7
+[2026-02-13 16:22:58,194] DEBUG: AERGO/KRW | age: 7 | profit: 2.94%
+[2026-02-13 16:22:58,195] DEBUG: AERGO/KRW | 1.46% 추가 상승시 급등 모드 전환. 상승률: 0.54%
+[2026-02-13 16:22:58,195] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:22:58,195] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 7
+[2026-02-13 16:24:05,872] DEBUG: AERGO/KRW | age: 7 | profit: 2.76%
+[2026-02-13 16:24:05,873] DEBUG: AERGO/KRW | 1.64% 추가 상승시 급등 모드 전환. 상승률: 0.36%
+[2026-02-13 16:24:05,873] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:24:05,873] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 7
+▶ 스캔 중: [420/447] XPL/KRW     [2026-02-13 16:25:13,532] DEBUG: AERGO/KRW | age: 7 | profit: 2.74%
+[2026-02-13 16:25:13,533] DEBUG: AERGO/KRW | 1.65% 추가 상승시 급등 모드 전환. 상승률: 0.35%
+[2026-02-13 16:25:13,534] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:25:13,534] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 7
+[2026-02-13 16:26:21,069] DEBUG: AERGO/KRW | age: 7 | profit: 2.74%
+[2026-02-13 16:26:21,070] DEBUG: AERGO/KRW | 1.65% 추가 상승시 급등 모드 전환. 상승률: 0.35%
+[2026-02-13 16:26:21,070] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:26:21,070] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+[2026-02-13 16:27:28,605] DEBUG: AERGO/KRW | age: 7 | profit: 2.74%
+[2026-02-13 16:27:28,606] DEBUG: AERGO/KRW | 1.65% 추가 상승시 급등 모드 전환. 상승률: 0.35%
+[2026-02-13 16:27:28,606] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:27:28,606] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+[2026-02-13 16:28:36,139] DEBUG: AERGO/KRW | age: 7 | profit: 3.01%
+[2026-02-13 16:28:36,140] DEBUG: AERGO/KRW | 1.39% 추가 상승시 급등 모드 전환. 상승률: 0.61%
+[2026-02-13 16:28:36,140] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:28:36,140] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+[2026-02-13 16:28:39,690] 🚨 [FINAL CHECK] AERGO/KRW | JSON데이터유무:True | 최종평단:83.49884254630926
+[2026-02-13 16:28:39,690] 📊 [CALC RESULT] AERGO/KRW | 수익률:3.01% | 수익금:904원
+[2026-02-13 16:28:40,231] DEBUG: AERGO/KRW | age: 7 | profit: 3.01%
+[2026-02-13 16:28:40,279] DEBUG: AERGO/KRW | 1.39% 추가 상승시 급등 모드 전환. 상승률: 0.61%
+[2026-02-13 16:28:40,285] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:28:40,285] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+[2026-02-13 16:29:43,724] DEBUG: AERGO/KRW | age: 7 | profit: 3.34%
+[2026-02-13 16:29:43,725] DEBUG: AERGO/KRW | 1.06% 추가 상승시 급등 모드 전환. 상승률: 0.94%
+[2026-02-13 16:29:43,725] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:29:43,726] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+[2026-02-13 16:30:52,294] DEBUG: AERGO/KRW | age: 7 | profit: 4.35%
+[2026-02-13 16:30:52,295] DEBUG: AERGO/KRW | 1.09% 추가 상승시 급등 모드 전환. 상승률: 0.91%
+[2026-02-13 16:30:52,295] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:30:52,296] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 7
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 7
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 7
+🔍 [MONITOR] AERGO/KRW | 현재가: 86 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 7
+🔍 [MONITOR] AERGO/KRW | 현재가: 87 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 7
+[2026-02-13 16:32:00,199] DEBUG: AERGO/KRW | age: 7 | profit: 4.92%
+[2026-02-13 16:32:00,200] DEBUG: AERGO/KRW | 0.53% 추가 상승시 급등 모드 전환. 상승률: 1.47%
+[2026-02-13 16:32:00,200] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:32:00,200] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+🔍 [MONITOR] AERGO/KRW | 현재가: 88 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 7
+[2026-02-13 16:33:08,492] DEBUG: AERGO/KRW | age: 7 | profit: 8.16%
+[2026-02-13 16:33:08,493] DEBUG: AERGO/KRW | -2.60% 추가 상승시 급등 모드 전환. 상승률: 4.60%
+[2026-02-13 16:33:08,493] DEBUG: AERGO/KRW | 급등 매도 모드
+[2026-02-13 16:33:09,028] 🚨🚨🚨 AERGO/KRW 긴급 매도 신호 감지! 유예 없이 즉시 집행: 🚨[급등-초기] 고점대비 2% 하락 (위치:4.6%)
+🔍 [MONITOR] AERGO/KRW | 현재가: 91 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 7
+[2026-02-13 16:34:11,550] DEBUG: AERGO/KRW | age: 7 | profit: 7.99%
+[2026-02-13 16:34:11,551] DEBUG: AERGO/KRW | -2.44% 추가 상승시 급등 모드 전환. 상승률: 4.44%
+[2026-02-13 16:34:11,552] DEBUG: AERGO/KRW | 급등 매도 모드
+[2026-02-13 16:34:12,082] 🚨🚨🚨 AERGO/KRW 긴급 매도 신호 감지! 유예 없이 즉시 집행: 🚨[급등-초기] 고점대비 2% 하락 (위치:4.4%)
+🔍 [MONITOR] AERGO/KRW | 현재가: 90 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 7
+[2026-02-13 16:35:14,613] DEBUG: AERGO/KRW | age: 7 | profit: 5.15%
+[2026-02-13 16:35:14,614] DEBUG: AERGO/KRW | 0.31% 추가 상승시 급등 모드 전환. 상승률: 1.69%
+[2026-02-13 16:35:14,614] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:35:14,614] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+🔍 [MONITOR] AERGO/KRW | 현재가: 88 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 7
+[2026-02-13 16:36:23,378] DEBUG: AERGO/KRW | age: 7 | profit: 5.40%
+[2026-02-13 16:36:23,379] DEBUG: AERGO/KRW | 0.07% 추가 상승시 급등 모드 전환. 상승률: 1.93%
+[2026-02-13 16:36:23,379] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:36:23,379] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+🔍 [MONITOR] AERGO/KRW | 현재가: 88 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 7
+[2026-02-13 16:37:31,309] DEBUG: AERGO/KRW | age: 7 | profit: 4.76%
+[2026-02-13 16:37:31,310] DEBUG: AERGO/KRW | 0.69% 추가 상승시 급등 모드 전환. 상승률: 1.31%
+[2026-02-13 16:37:31,310] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:37:31,311] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+🔍 [MONITOR] AERGO/KRW | 현재가: 87 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 7
+[2026-02-13 16:38:39,356] DEBUG: AERGO/KRW | age: 7 | profit: 4.66%
+[2026-02-13 16:38:39,357] DEBUG: AERGO/KRW | 0.78% 추가 상승시 급등 모드 전환. 상승률: 1.22%
+[2026-02-13 16:38:39,357] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:38:39,357] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+🔍 [MONITOR] AERGO/KRW | 현재가: 87 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 7
+[2026-02-13 16:39:46,905] DEBUG: AERGO/KRW | age: 7 | profit: 4.06%
+[2026-02-13 16:39:46,909] DEBUG: AERGO/KRW | 1.36% 추가 상승시 급등 모드 전환. 상승률: 0.64%
+[2026-02-13 16:39:46,909] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:39:46,909] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+[2026-02-13 16:40:54,434] DEBUG: AERGO/KRW | age: 7 | profit: 4.13%
+[2026-02-13 16:40:54,435] DEBUG: AERGO/KRW | 1.29% 추가 상승시 급등 모드 전환. 상승률: 0.71%
+[2026-02-13 16:40:54,435] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:40:54,436] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+[2026-02-13 16:42:02,487] DEBUG: AERGO/KRW | age: 7 | profit: 4.19%
+[2026-02-13 16:42:02,488] DEBUG: AERGO/KRW | 1.24% 추가 상승시 급등 모드 전환. 상승률: 0.76%
+[2026-02-13 16:42:02,489] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:42:02,489] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+[2026-02-13 16:43:10,018] DEBUG: AERGO/KRW | age: 7 | profit: 3.62%
+[2026-02-13 16:43:10,019] DEBUG: AERGO/KRW | 1.79% 추가 상승시 급등 모드 전환. 상승률: 0.21%
+[2026-02-13 16:43:10,019] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:43:10,019] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+[2026-02-13 16:44:17,552] DEBUG: AERGO/KRW | age: 7 | profit: 4.65%
+[2026-02-13 16:44:17,553] DEBUG: AERGO/KRW | 0.80% 추가 상승시 급등 모드 전환. 상승률: 1.20%
+[2026-02-13 16:44:17,553] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:44:17,553] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+🔍 [MONITOR] AERGO/KRW | 현재가: 87 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 7
+🔍 [MONITOR] AERGO/KRW | 현재가: 87 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 7
+🔍 [MONITOR] AERGO/KRW | 현재가: 87 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 7
+🔍 [MONITOR] AERGO/KRW | 현재가: 87 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 7
+🔍 [MONITOR] AERGO/KRW | 현재가: 87 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 7
+[2026-02-13 16:44:53,975] 🚨 [FINAL CHECK] AERGO/KRW | JSON데이터유무:True | 최종평단:83.49884254630926
+[2026-02-13 16:44:53,975] 📊 [CALC RESULT] AERGO/KRW | 수익률:4.65% | 수익금:1,398원
+[2026-02-13 16:44:54,491] DEBUG: AERGO/KRW | age: 7 | profit: 4.65%
+[2026-02-13 16:44:54,492] DEBUG: AERGO/KRW | 0.80% 추가 상승시 급등 모드 전환. 상승률: 1.20%
+[2026-02-13 16:44:54,492] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:44:54,492] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+[2026-02-13 16:45:25,083] DEBUG: AERGO/KRW | age: 7 | profit: 4.43%
+[2026-02-13 16:45:25,084] DEBUG: AERGO/KRW | 1.00% 추가 상승시 급등 모드 전환. 상승률: 1.00%
+[2026-02-13 16:45:25,084] DEBUG: AERGO/KRW | 일반 매도 모드
+[2026-02-13 16:45:25,084] DEBUG: AERGO/KRW | TYPE: 1 | 매도 조건 탐지 시작
+[2026-02-13 16:45:26,198] DEBUG: AERGO/KRW | sell order_result: {'info': {'status': '0000', 'order_id': 'C0305000000096493126'}, 'symbol': 'AERGO/KRW', 'type': 'market', 'side': 'sell', 'id': 'C0305000000096493126', 'fees': [], 'clientOrderId': None, 'timestamp': None, 'datetime': None, 'lastTradeTimestamp': None, 'lastUpdateTimestamp': None, 'price': None, 'amount': None, 'cost': None, 'average': None, 'filled': None, 'remaining': None, 'timeInForce': 'IOC', 'postOnly': None, 'trades': [], 'reduceOnly': None, 'stopPrice': None, 'triggerPrice': None, 'takeProfitPrice': None, 'stopLossPrice': None, 'status': None, 'fee': None}
+[2026-02-13 16:45:26,198] DEBUG: 💰 AERGO/KRW 매도 집행 완료: 🚀 [S-TS-3.5] 익절 C (낙폭 3.0%) | 수량: 360.1008
+🔍 [MONITOR] AERGO/KRW | 현재가: 87 | 평단가: 83 (기록:83.50 / 거래소:83.50)
+💾 [기록완료] AERGO/KRW | 등급: S | 평단: 83 | 수량: 360.1008
+DEBUG: AERGO/KRW | buy_time: 2026-02-13 12:46:25 | calc_age: 7

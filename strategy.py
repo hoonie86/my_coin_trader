@@ -3,11 +3,20 @@ import pandas as pd
 import numpy as np
 import requests
 from datetime import datetime
+from datetime import datetime, timedelta
 from config import logger
 
 market_ref_rate = 0.0
 is_buy_locked = False
 
+cooldown_dict = {}
+
+def is_in_cooldown(symbol):
+    if symbol in cooldown_dict:
+        if datetime.now() < cooldown_dict[symbol]:
+            return True
+    return False
+    
 async def update_market_panic_status(current_avg):
     global market_ref_rate, is_buy_locked
     # 1. 최초 잠금: -3% 돌파 시
@@ -223,7 +232,7 @@ def _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_
 
 # [사용자 원본 버전 2 - 메인 사용 중인 로직]
 # [확장] 하락장 대응 + 정배열 전환 + 급등 추적 모두 반영. 기존 로직 삭제 없이 주석/분기로 보강.
-def check_buy_signal(df, symbol, warning_list, df_1m=None):
+async def check_buy_signal(exchange, df, symbol, warning_list, df_1m=None):
     """
     매수 신호 판단 함수 (4개 값 리턴)
     
@@ -235,6 +244,22 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
     """
     # [시장 방어막 체크]
     global is_buy_locked, market_ref_rate
+    # [[ UPDATE: 잔고 및 데이터 오류, 재매수 제한 필터 ]]
+    try:
+        curr = df.iloc[-1]
+        curr_price = float(curr['close'])
+        if curr_price <= 0:
+            return False, "⚠️ [데이터오류] 현재가 조회 실패(0)", "", {}
+
+        if is_in_cooldown(symbol):
+            return False, "⏱️ [Cooldown] 매도 후 재진입 제한 중", "", {}
+
+        balance = await asyncio.to_thread(exchange.fetch_free_balance)
+        if balance.get('KRW', 0) < 5500:
+            return False, "🚫 [잔고부족] 가용 KRW 부족 (수수료 포함 매수 루프 차단)", "", {}
+    except Exception as e:
+        return False, f"⚠️ 초기 필터링 에러: {e}", "", {}   
+
     if is_buy_locked:
         return False, f"DEBUG: 🚫 [시장잠금] Panic Filter 작동 중 (해제 기준:{-1 - market_ref_rate:.2f}% 상승)", "", {}
 
@@ -257,8 +282,32 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
     curr = df.iloc[-1]
     prev = df.iloc[-2]
     curr_price = float(curr['close'])
-
+    # [[ UPDATE: 골든크로스 기반 가변 윈도우 상단 방어 ]]
+    gold_index = -1
+    ###### [수정] bars_since_gold 초기값 선언 ######
+    bars_since_gold = 999 
+    for i in range(1, 101):
+        if i+1 < len(df):
+            if df['ma40'].iloc[-i-1] < df['ma185'].iloc[-i-1] and df['ma40'].iloc[-i] > df['ma185'].iloc[-i]:
+                gold_index = len(df) - i
+                bars_since_gold = i # ###### [수정] 여기서 계산
+                break
     
+    start_idx = max(0, gold_index - 20) if gold_index != -1 else max(0, len(df) - 25)
+    window_df = df.iloc[start_idx:]
+    win_low, win_high = window_df['low'].min(), window_df['high'].max()
+    volatility = ((win_high - win_low) / win_low * 100) if win_low > 0 else 0
+    
+    curr_max_high_low = max(curr['open'], curr['close'])
+    upper_wick = (curr['high'] - curr_max_high_low) / curr_max_high_low * 100
+    
+    if volatility > 5.0:
+        if upper_wick >= 2.0:
+            print(f"DEBUG: {symbol} 매수 탈락 - 윗꼬리 과다({volatility:.1f}%)")
+            return False, f"🚫 [상단방어] 구간 변동성({volatility:.1f}%) 및 저항 포착", "F", {}
+    else:
+        print(f"DEBUG: {symbol} 매수 변동성 통과({volatility:.1f}%)")
+
     # [가격 필터] 10원 미만 또는 10,000원 이상 → BTC 마켓 동전주/비정상 차단
     if curr_price < 10 or curr_price >= 10000:
         return False, "가격필터(BTC마켓)", "", data_dict
@@ -289,8 +338,7 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
     if max_185 > min_185 > 0:
         pos_185 = (curr_185 - min_185) / (max_185 - min_185)
         # 상위 30% (0.7 이상) 위치에 있다면 밥그릇 바닥이 아님
-        if pos_185 >= 0.7:
-            return False, f"🚫 [제외] 185선 고점 구간({pos_185*100:.1f}%)", "B", data_dict
+        is_high_pos_185 = pos_185 >= 0.7    # 상위 30%이면 is_high_pos_185 True
 
     # ---------- [개선] 수급 돌파: 1분봉 기준 (RSI 과열 및 고점 추격 방지 추가) ----------
     if df_1m is not None and len(df_1m) >= 21:
@@ -321,13 +369,6 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
                 # 조건은 맞지만 과열인 경우 로그만 남기고 패스하도록 설계 가능
                 pass
 
-    ########### 골든크로스와 5% 등락 여부 조회
-    gold_index = -1
-    for i in range(1, 97):
-        if df['ma40'].iloc[-i - 1] < df['ma185'].iloc[-i - 1] and \
-                df['ma40'].iloc[-i] > df['ma185'].iloc[-i]:
-            gold_index = len(df) - i
-            break
 
     # [수정] 골든크로스 여부 확인 후 '구간 변동성' 체크 수행
     if gold_index != -1:
@@ -343,11 +384,11 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
         # 구간 내 변동폭 계산
         dynamic_rise = ((win_high - win_low) / win_low * 100) if win_low > 0 else 0
         #print(f"DEBUG: {symbol} | 골크 발생. 골크점 : {199-gold_index} | 시작점 : {199-check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
-        # 5% 이상 급등락이 있었으면 탈락
-        if dynamic_rise >= 5.0:
+        # 4% 이상 급등락이 있었으면 탈락
+        if dynamic_rise >= 4.0:
             data_dict['dynamic_rise_YN'] = 'Y'
             print(f"DEBUG: {symbol} | 골크 발생. 골크점 : {199-gold_index} | 시작점 : {199-check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise:.2f}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
-            return False, f"🚫 [제외] 골크 전후 변동성 과다({dynamic_rise:.1f}% >= 5%)", "B", data_dict
+            return False, f"🚫 [제외] 골크 전후 변동성 과다({dynamic_rise:.1f}% >= 4%)", "B", data_dict
         # else:
         #     print(f"DEBUG: {symbol} | 골크 발생. 골크점 : {199-gold_index} | 시작점 : {199-check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
     else:
@@ -362,10 +403,10 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
         # 구간 내 변동폭 계산
         dynamic_rise = ((win_high - win_low) / win_low * 100) if win_low > 0 else 0
         # print(f"DEBUG: {symbol} | 골크 미발생. 시작점: {check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
-        # 5% 이상 급등락이 있었으면 탈락
-        if dynamic_rise >= 5.0:
+        # 4% 이상 급등락이 있었으면 탈락
+        if dynamic_rise >= 4.0:
             data_dict['dynamic_rise_YN'] = 'Y'
-            return False, f"🚫 [제외] 골크 미발생 변동성 과다({dynamic_rise:.1f}% >= 5%)", "B", data_dict
+            return False, f"🚫 [제외] 골크 미발생 변동성 과다({dynamic_rise:.1f}% >= 4%)", "B", data_dict
     bars_since_gold = len(df) - gold_index if gold_index != -1 else -1
     data_dict['bars_since_gold'] = bars_since_gold
     
@@ -473,23 +514,19 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
     ma5_val = float(curr['ma5']) if not pd.isna(curr['ma5']) else curr_price
     disparity_5_185 = (ma5_val - ma185_val) / ma185_val * 100 if ma185_val > 0 else 0
     
-    # 2. 새끼 양봉 계산 (시가 대비 +0.5% ~ +2.0% 사이만 허용)
+    prev_ma5 = float(prev['ma5'])
+    prev_ma185 = float(prev['ma185'])
+    prev_disparity = (prev_ma5 - prev_ma185) / prev_ma185 * 100 if prev_ma185 > 0 else 0
+    
+    # 2. 새끼 양봉 계산 (시가 대비 +0.0% ~ +2.0% 사이만 허용)
     candle_body_pct = ((curr_price - curr['open']) / curr['open'] * 100) if curr['open'] > 0 else 0
-
-    # ---------- [신규] 역추세 과매도: 185일선 하락 중이라도 RSI≤20 또는 185일선 이격도≤-10% 이고 현재가>40일선 이면 매수 후보 ----------
-    is_185_falling = slope_rate < -0.06 and not is_was_descending
-    if is_185_falling and (rsi_val <= 45 or disparity_185_5 <= -14.0) and disparity_40_5 < 2.5 and disparity_90_40 <= -2  and data_dict.get('dynamic_rise_YN') != 'Y':
-        # 등급 A: 하락 중 과매도 구간
-        data_dict['grade'] = 'A'
-        data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
-        reason = f"✅ [TYPE3] 역추세 과매도(RSI≤45({rsi_val}) 또는 185이격≤-14%({disparity_185_5})이고 5,40 이격도 2.5%({disparity_40_5}), 40,90 이격도 -2%({disparity_90_40}))"
-        return True, reason, "A", data_dict
-
-    # [수정] 40선이 185선 아래여야 하며, 5일선이 확실히 바닥(-8.5%)에 처박혔을 때만 진입
+    target_disparity = -7.0 if slope_rate <= -0.03 else -4.0
+    # [수정] 40선이 185선 아래여야 하며, 5일선이 확실히 바닥(-7.0%)에 처박히고 이격이 좁혀질 때 진입
     if ma40_val < ma185_val and rsi_val <= 40 and data_dict.get('dynamic_rise_YN') != 'Y':
-        # 가드 A: 5일선 이격도가 -8.5% 이하일 것 (고점 매수 원천 차단)
-        # 가드 B: 너무 급등하지 않은 '새끼 양봉'일 것 (0.5% ~ 2.0%)
-        if disparity_5_185 <= -7.0 and 0 <= candle_body_pct <= 2.0:
+        if is_high_pos_185:
+            return False, f"🚫 [TYPE3-제외] 185선 고점 구간({pos_185*100:.1f}%)", "B", data_dict
+        # 가드 A: 5일선 이격도가 -7.0% 이하이면서, 직전 이격보다 수치가 커졌을 때 (수렴)
+        if disparity_5_185 <= target_disparity and disparity_5_185 > prev_disparity and -2.0 <= candle_body_pct <= 2.0:
             if slope_rate > -0.05: # 185선이 투매 수준으로 꺾이지 않았을 때
                 data_dict = _fill_data_dict_full(df, curr, prev, curr_price, symbol)
                 return True, f"💎 [TYPE3] 바닥낚시(이격:{disparity_5_185:.1f}% / 양봉:{candle_body_pct:.1f}%)", "A", data_dict
@@ -538,30 +575,37 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
     # [TYPE1: 밥그릇 바닥 탈출 및 변곡점 포착]
     # 집중: 40선/185선 골든크로스 전후의 기울기 변화와 수렴도
     # ==========================================================================
-    if curr_price > curr['ma40'] and disparity_40 <= 0.07 and data_dict.get('dynamic_rise_YN') != 'Y':
-        if curr['close'] >= curr['open'] or has_volume_surge:
-            data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
-            
-            # [S+] 밥그릇 바닥 완전 수렴 (T1 최상급)
-            if slope_rate >= -0.01 and disparity_gold <= 0.005:
-                recent_max = df['high'].rolling(window=50).max().iloc[-1]
-                drop_rate = ((recent_max - curr_price) / recent_max) * 100
-                data_dict['grade'] = 'S+'
-                return True, "💎 [TYPE1-S+] 밥그릇 바닥 완전 수렴", "S+", data_dict
-            
-            # [S] 밥그릇 바닥 탈출 (변곡점 확인)
-            if slope_rate >= -0.01 and disparity_gold <= 0.015:
-                data_dict['grade'] = 'S'
-                return True, "⭐ [TYPE1-S] 밥그릇 바닥 탈출(변곡점)", "S", data_dict
+    # 1. 40일선 위이거나, 아래라도 -3% 이내 근접 시 허용 (RON 사례)
+    is_near_ma40 = abs(curr_price - ma40_val) / ma40_val <= 0.03 if ma40_val > 0 else False
+    # 2. 이탈 방지: 40일선 기울기가 양수(우상향)이고 현재 캔들이 양봉이거나 거래량 실렸을 때
+    is_upward_trend = ma40_val > df['ma40'].iloc[-2] and (curr_price >= df['close'].iloc[-2] or has_volume_surge)
 
-            # [A+] 185선 평행/우상향 전환 초기
-            if slope_rate >= -0.01:
-                data_dict['grade'] = 'A+'
-                return True, "🚀 [TYPE1-A+] 185선 평행/우상향 전환", "A+", data_dict
-            
-            # [A] 상승 대기 (골드 안착)
-            data_dict['grade'] = 'A'
-            return True, "🚀 [TYPE1-A] 상승대기(골드안착)", "A", data_dict
+    if is_near_ma40 and is_upward_trend and disparity_40 <= 0.07 and data_dict.get('dynamic_rise_YN') != 'Y':
+        if is_high_pos_185:
+            return False, f"🚫 [TYPE1-제외] 185선 고점 구간({pos_185*100:.1f}%)", "B", data_dict
+        #if curr['close'] >= curr['open'] or has_volume_surge:
+        data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
+        
+        # [S+] 밥그릇 바닥 완전 수렴 (T1 최상급)
+        if slope_rate >= -0.01 and disparity_gold <= 0.005:
+            recent_max = df['high'].rolling(window=50).max().iloc[-1]
+            drop_rate = ((recent_max - curr_price) / recent_max) * 100
+            data_dict['grade'] = 'S+'
+            return True, "💎 [TYPE1-S+] 밥그릇 바닥 완전 수렴", "S+", data_dict
+        
+        # [S] 밥그릇 바닥 탈출 (변곡점 확인)
+        if slope_rate >= -0.01 and disparity_gold <= 0.015:
+            data_dict['grade'] = 'S'
+            return True, "⭐ [TYPE1-S] 밥그릇 바닥 탈출(변곡점)", "S", data_dict
+
+        # [A+] 185선 평행/우상향 전환 초기
+        if slope_rate >= -0.01:
+            data_dict['grade'] = 'A+'
+            return True, "🚀 [TYPE1-A+] 185선 평행/우상향 전환", "A+", data_dict
+        
+        # [A] 상승 대기 (골드 안착)
+        data_dict['grade'] = 'A'
+        return True, "🚀 [TYPE1-A] 상승대기(골드안착)", "A", data_dict
 
     # ==========================================================================
     # [TYPE2: 눌림목 및 40선 지지 (에너지 응축)]
@@ -604,8 +648,7 @@ def check_buy_signal(df, symbol, warning_list, df_1m=None):
          data_dict['grade'] = 'A' # 등급 하향
          # 기존 reason 뒤에 하락세 경고 문구 추가
     if 'grade' in data_dict and data_dict['grade'] in ['S', 'S+', 'A', 'A+', 'B']:
-        print(f"🎯 [추천성공] {symbol} | 등급:{data_dict['grade']} | 구간Low:{window_low:,.0f} | 구간High:{window_high:,.0f} | 변동:{dynamic_rise:.2f}%")
-    
+        print(f"🎯 [추천성공] {symbol} | 등급:{data_dict['grade']} | 구간Low:{win_low:,.0f} | 구간High:{win_high:,.0f} | 변동:{dynamic_rise:.2f}%")    
     if curr_price <= curr['ma40']:
         reason = f"현재가({curr_price:,.0f}) ≤ 40일선({ma40_val:,.0f}, 이격도:{disparity_40_pct:.2f}%)"
         return False, reason, "", data_dict
@@ -644,7 +687,7 @@ def check_3_2_negative_candles(target_df):
 # ---------------------------------------------------------
 async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, grade='A', symbol_inventory_age=99, status=None, realtime_p=None, buy_type=1):
     global emergency_mode
-    high_price = max(max_price, df['high'].tail(20).max())
+    high_price = max(max_price, df['high'].tail(6).max())
     # [유지] 지표 계산
     df['ma40'] = df['close'].rolling(40).mean()
     df['ma90'] = df['close'].rolling(90).mean()
@@ -661,6 +704,17 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
     profit_rate = (curr_p - purchase_price) / purchase_price if purchase_price > 0 else 0
     profit_rate_pct = profit_rate * 100
     
+    ###### [수정 시작] 1순위: 즉시 매도 신호 처리 및 Cooldown 기록 ######
+    # -3% 긴급 손절 및 S-TS-0.5(본절 방어)는 6시간 재진입 제한 및 10분 유예 무시(True 리턴)
+    if profit_rate_pct <= -3.0:
+        cooldown_dict[symbol] = datetime.now() + timedelta(hours=6)
+        return True, f"🚨 [긴급손절] 진입가 대비 -3% 도달", True
+
+    max_profit_rate_pct = ((high_price - purchase_price) / purchase_price * 100) if purchase_price > 0 else 0
+    if 0.5 <= max_profit_rate_pct < 1.2 and curr_p <= purchase_price * 1.005:
+        cooldown_dict[symbol] = datetime.now() + timedelta(hours=6)
+        return True, f"🛡️ [S-TS-0.5] 본절방어(즉시)", True
+
     ###### [출력] 유예 로직 통과 여부 확인 ######
     # print(f"DEBUG: {symbol} | age: {symbol_inventory_age} | profit: {profit_rate_pct:.2f}%")
     logger.info(f"DEBUG: {symbol} | age: {symbol_inventory_age} | profit: {profit_rate_pct:.2f}%")
@@ -685,66 +739,74 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
     ################################################################################
     # 변수를 건드리지 않고, 30분봉 시가 대비 상승폭만 따로 계산합니다.
     soaring_rate = (curr_p - curr['open']) / curr['open'] * 100
+    is_rush_mode = False
     # print(f"DEBUG: {symbol} | {2.0 - soaring_rate}% 추가 상승시 급등 모드 전환") 
     logger.info(f"DEBUG: {symbol} | {2.0 - soaring_rate:.2f}% 추가 상승시 급등 모드 전환. 상승률: {soaring_rate:.2f}%")
-    if soaring_rate >= 2.0:
-        logger.info(f"DEBUG: {symbol} | 급등 매도 모드")
-
-        try:
-            # 3분봉 데이터 호출 (정밀 분석용)
-            ohlcv_3m = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '3m', limit=50)
-            df_3m = pd.DataFrame(ohlcv_3m, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
-            
-            # 최근 10개 3분봉 고점 추적
-            high_10_3m = df_3m['high'].tail(10).max()
-            curr_3m_p = df_3m['close'].iloc[-1]
-            curr_3m_data = df_3m.iloc[-1] # [추가] 현재 봉 상세 데이터
-
-            # 최근 10개 봉 중 거래량이 가장 컸던 고점 봉을 찾음
-            abs_peak_idx = len(df_3m) - 10 + df_3m['vol'].tail(10).argmax()
-            peak_candle = df_3m.iloc[abs_peak_idx]
-
-            # 고점(peak)이 음봉이 아니고, 그 직전 봉(index-1)이 존재할 때만 가동
-            if peak_candle['close'] >= peak_candle['open'] and abs_peak_idx > 0:
-                prev_peak_candle = df_3m.iloc[abs_peak_idx - 1]
-                # 고점의 '직전 봉' 몸통 50% 선 계산
-                prev_mid_point = (prev_peak_candle['open'] + prev_peak_candle['close']) / 2
+    # 수익률 5% 이상이거나 30분봉 2% 급등 시 급등 모드 진입
+    if soaring_rate >= 2.0 or max_profit_rate_pct >= 5.0:
+        is_rush_mode = True
+        # ATOM 사례 대응: 변동성이 죽고 안정적 우상향(10% 이상) 시 일반 모드로 전환
+        vol_30m = (df['high'].tail(3).max() - df['low'].tail(3).min()) / df['low'].tail(3).min() * 100
+        if vol_30m < 1.2 and profit_rate_pct > 7.0:
+            logger.info(f"☕ {symbol} 안정적 우상향 판단. 일반 모드 대응 전환")
+            is_rush_mode = False
+        else:
+            logger.info(f"DEBUG: {symbol} | 급등 매도 모드 가동")
+            try:
+                # 3분봉 데이터 호출 (정밀 분석용)
+                ohlcv_3m = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '3m', limit=50)
+                df_3m = pd.DataFrame(ohlcv_3m, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
                 
-                # [실시간 긴급 조건]
-                # 1. 현재 저가(low)가 직전봉 허리를 깼는가?
-                # 2. 현재 거래량이 고점 거래량을 이미 넘어섰는가?
-                # 3. 현재 캔들이 음봉 상태(시가 > 현재가)인가?
-                if curr_3m_data['low'] < prev_mid_point and curr_3m_data['vol'] > peak_candle['vol']:
-                    if curr_3m_data['close'] < curr_3m_data['open']: # 실시간 음봉 상태면 즉시 리턴
-                        return True, f"🚨[50%긴급] 실시간 음봉 전환 및 고점직전봉 허리({prev_mid_point:,.0f}) 이탈", True
+                # 최근 10개 3분봉 고점 추적
+                high_10_3m = df_3m['high'].tail(10).max()
+                curr_3m_p = df_3m['close'].iloc[-1]
+                curr_3m_data = df_3m.iloc[-1] # [추가] 현재 봉 상세 데이터
 
-            # (A) 세력 이탈 감지: 2음봉 + 고점 거래량 10% 이상 (3분봉 기준)
-            is_2_neg_3m, reason_2_neg_3m = check_3_2_negative_candles(df_3m)
-            if is_2_neg_3m:
-                high_idx_3m = df_3m['high'].tail(10).argmax()
-                high_vol_3m = df_3m['vol'].iloc[len(df_3m) - 10 + high_idx_3m]
-                curr_vol_3m = df_3m['vol'].iloc[-1] + df_3m['vol'].iloc[-2]
-                if curr_vol_3m > (high_vol_3m * 0.1):
-                    return True, f"🚨[급등-세력이탈] 2음봉 & 거래량폭발", True
+                # 최근 10개 봉 중 거래량이 가장 컸던 고점 봉을 찾음
+                abs_peak_idx = len(df_3m) - 10 + df_3m['vol'].tail(10).argmax()
+                peak_candle = df_3m.iloc[abs_peak_idx]
 
-            # (B) 캔들 위치별 차등 낙폭
-            if soaring_rate >= 10.0:
-                if curr_3m_p < high_10_3m * 0.97:
-                    return True, f"🚨[급등-강력] 고점대비 3% 하락 (위치:{soaring_rate:.1f}%)", True
-            else:
-                if curr_3m_p < high_10_3m * 0.98:
-                    return True, f"🚨[급등-초기] 고점대비 2% 하락 (위치:{soaring_rate:.1f}%)", True
+                # 고점(peak)이 음봉이 아니고, 그 직전 봉(index-1)이 존재할 때만 가동
+                if peak_candle['close'] >= peak_candle['open'] and abs_peak_idx > 0:
+                    prev_peak_candle = df_3m.iloc[abs_peak_idx - 1]
+                    # 고점의 '직전 봉' 몸통 50% 선 계산
+                    prev_mid_point = (prev_peak_candle['open'] + prev_peak_candle['close']) / 2
+                    
+                    # [실시간 긴급 조건]
+                    # 1. 현재 저가(low)가 직전봉 허리를 깼는가?
+                    # 2. 현재 거래량이 고점 거래량을 이미 넘어섰는가?
+                    # 3. 현재 캔들이 음봉 상태(시가 > 현재가)인가?
+                    if curr_3m_data['low'] < prev_mid_point and curr_3m_data['vol'] > peak_candle['vol']:
+                        if curr_3m_data['close'] < curr_3m_data['open']: # 실시간 음봉 상태면 즉시 리턴
+                            return True, f"🚨[50%긴급] 실시간 음봉 전환 및 고점직전봉 허리({prev_mid_point:,.0f}) 이탈", True
 
-            # (C) 수익률 마지노선 사수 (14% -> 13% 사수)
-            if profit_rate_pct >= 13.0:
-                final_sell_cost = purchase_price * 1.13
-                logger.info(f"DEBUG: {symbol} | 3분봉 현재가 : {curr_3m_p} | 최종 13% 대기가: {final_sell_cost}")
-                if curr_3m_p <= final_sell_cost:   # 현재가가 구매가의 13% 까지 내려오면 무조건 매도
-                    return True, "🚨[마지노선] 수익률 13% 사수 매도", True
+                # (A) 세력 이탈 감지: 2음봉 + 고점 거래량 10% 이상 (3분봉 기준)
+                is_2_neg_3m, reason_2_neg_3m = check_3_2_negative_candles(df_3m)
+                if is_2_neg_3m:
+                    high_idx_3m = df_3m['high'].tail(10).argmax()
+                    high_vol_3m = df_3m['vol'].iloc[len(df_3m) - 10 + high_idx_3m]
+                    curr_vol_3m = df_3m['vol'].iloc[-1] + df_3m['vol'].iloc[-2]
+                    if curr_vol_3m > (high_vol_3m * 0.1):
+                        return True, f"🚨[급등-세력이탈] 2음봉 & 거래량폭발", True
 
-        except Exception as e:
-            logger.error(f"급등 정밀 분석 에러: {e}")
-    else:   # 급등이 아닌경우
+                # (B) 캔들 위치별 차등 낙폭
+                if soaring_rate >= 10.0:
+                    if curr_3m_p < high_10_3m * 0.97:
+                        return True, f"🚨[급등-강력] 고점대비 3% 하락 (위치:{soaring_rate:.1f}%)", True
+                else:
+                    if curr_3m_p < high_10_3m * 0.98:
+                        return True, f"🚨[급등-초기] 고점대비 2% 하락 (위치:{soaring_rate:.1f}%)", True
+
+                # (C) 수익률 마지노선 사수 (14% -> 13% 사수)
+                if profit_rate_pct >= 13.0:
+                    final_sell_cost = purchase_price * 1.13
+                    logger.info(f"DEBUG: {symbol} | 3분봉 현재가 : {curr_3m_p} | 최종 13% 대기가: {final_sell_cost}")
+                    if curr_3m_p <= final_sell_cost:   # 현재가가 구매가의 13% 까지 내려오면 무조건 매도
+                        return True, "🚨[마지노선] 수익률 13% 사수 매도", True
+
+            except Exception as e:
+                logger.error(f"급등 정밀 분석 에러: {e}")
+    if not is_rush_mode:   # 급등이 아닌경우
         logger.info(f"DEBUG: {symbol} | 일반 매도 모드")
         current_type = str(buy_type)
 
@@ -760,29 +822,25 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
             ########## [수정 시작] 최고 수익률을 기준으로 감시 구간을 고정하여 급락 시 이탈 방지 ##########
             max_profit_rate_pct = ((high_price - purchase_price) / purchase_price * 100) if purchase_price > 0 else 0
 
-            # [1순위] 1. 본절 방어 (최고 수익 0.5% ~ 1.5% 구간 도달 이력)
-            if 0.5 <= max_profit_rate_pct < 1.5:
-                logger.info(f"DEBUG: {symbol} | 최소 수익 마지노선 : {purchase_price * 1.005:.2f}원 하락시 매도")
-                if curr_p <= purchase_price * 1.005: # 수수료 고려 약 0.5% 수익 지점 터치 시
-                    return True, f"🛡️ [본절방어] 최고수익({max_profit_rate_pct:.2f}%) 대비 하락 매도", False
+            # 1. 본절 방어 (1.2% 미만)
+            if 0.5 <= max_profit_rate_pct < 1.2:
+                if curr_p <= purchase_price * 1.005:
+                    return True, f"🛡️ [S-TS-0.5] 본절방어", False
 
-            # 2. 최고 수익 1.5% 이상 2.5% 미만 도달 이력: 고점 대비 1% 하락 시 매도
-            elif 1.5 <= max_profit_rate_pct < 2.5:
-                logger.info(f"DEBUG: {symbol} | 고점 대비 현재가 1% 이상 하락시 매도. 잔여 : {1-(drop_from_peak):.2f}%")
+            # 2. 익절 구간 A (1.2% ~ 2.0% 미만): 고점 대비 1% 하락 시 매도
+            elif 1.2 <= max_profit_rate_pct < 2.0:
                 if drop_from_peak >= 1.0:
-                    return True, f"💰 [익절-A] 최고수익({max_profit_rate_pct:.2f}%) 대비 1% 하락 매도", False
+                    return True, f"💰 [S-TS-1.2] 익절 A (낙폭 1.0%)", False
 
-            # 3. 최고 수익 2.5% 이상 3.5% 미만 도달 이력: 고점 대비 1.5% 하락 시 매도
-            elif 2.5 <= max_profit_rate_pct < 3.5:
-                logger.info(f"DEBUG: {symbol} | 고점 대비 현재가 1.5% 이상 하락시 매도. 잔여 : {1.5-(drop_from_peak):.2f}%")
+            # 3. 익절 구간 B (2.0% ~ 3.5% 미만): 고점 대비 1.5% 하락 시 매도
+            elif 2.0 <= max_profit_rate_pct < 3.5:
                 if drop_from_peak >= 1.5:
-                    return True, f"💰 [익절-B] 최고수익({max_profit_rate_pct:.2f}%) 대비 1.5% 하락 매도", False
+                    return True, f"💰 [S-TS-2.0] 익절 B (낙폭 1.5%)", False
 
-            # 4. 최고 수익 3.5% 이상 도달 이력: 고점 대비 2% 하락 시 매도
+            # 4. 익절 구간 C (3.5% 이상): 고점 대비 3.0% 하락 시 매도
             elif max_profit_rate_pct >= 3.5:
-                logger.info(f"DEBUG: {symbol} | 고점 대비 현재가 2% 이상 하락시 매도. 잔여 : {2-(drop_from_peak):.2f}%")
-                if drop_from_peak >= 2.0:
-                    return True, f"💰 [익절-C] 최고수익({max_profit_rate_pct:.2f}%) 대비 2.0% 하락 매도", False
+                if drop_from_peak >= 3.0:
+                    return True, f"🚀 [S-TS-3.5] 익절 C (낙폭 3.0%)", False
 
             # ---------------------------------------------------------
             # [정비 2] 40 지지선 및 S+급 보호 (상향->평행->상향 로직)

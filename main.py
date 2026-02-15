@@ -3,6 +3,12 @@ import pandas as pd
 import sys
 import json
 import os
+import shutil
+# 1. 필수 폴더 생성
+for folder in ['logs', 'trades', 'backups']:
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+        print(f"📁 폴더 생성 완료: {folder}")
 import strategy, config, telegram_ui, analyzer
 from datetime import datetime, timedelta
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -24,7 +30,7 @@ missed_60m_tracker = {}
 # [추가] 비상 체제 상태를 저장할 딕셔너리 선언
 emergency_mode = {}
 # [평단가 로컬 관리용]
-INV_FILE = "inventory.json"
+INV_FILE = "trades/inventory.json"
 
 
 def load_inventory():
@@ -366,12 +372,17 @@ async def buy_scan_task(app):
             # 1. 전 종목 스캔 루프
             for idx, m in enumerate(krw_filtered):
                 symbol = m['symbol']
+
+                ## [[ MODIFIED: 보유 종목은 분석 및 추천에서 즉시 제외 (서버 부하 감소) ]]
+                if symbol in owned_symbols:
+                    continue
+
                 # 1. 출력 빈도를 줄여 I/O 부하 감소
                 if (idx + 1) % 10 == 0 or idx == 0: 
                     sys.stdout.write(f"\r▶ 스캔 중: [{idx + 1}/{len(krw_filtered)}] {symbol:<12}")
                     sys.stdout.flush()
 
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(0.5)
                 # [예외 처리] 지원하지 않는 마켓(symbollist 미포함) 방어
                 markets_dict = getattr(exchange, 'markets', None)
                 if markets_dict is not None and symbol not in markets_dict:
@@ -390,7 +401,7 @@ async def buy_scan_task(app):
                         df_1m = pd.DataFrame(ohlcv_1m, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
                 except Exception:
                     pass
-                is_buy, reason, grade, data_dict = strategy.check_buy_signal(df, symbol, w_list, df_1m)
+                is_buy, reason, grade, data_dict = await strategy.check_buy_signal(exchange, df, symbol, w_list, df_1m)
                 extracted_type = "1" if "TYPE1" in reason else ("2" if "TYPE2" in reason else ("3" if "TYPE3" in reason else "1"))
                 # [분석 봇] 매수하지 않더라도 탈락 사유·패턴태그·등급 포함 상세 수치 기록 (조건 1개라도 만족/3분 내 3% 급등 포함)
                 current_price = float(df.iloc[-1]['close'])
@@ -510,7 +521,7 @@ async def buy_scan_task(app):
                 if 0 < current_mark < 10 and current_mark > info['last_check_min']:
                     ohlcv_now = await asyncio.to_thread(exchange.fetch_ohlcv, sym, '30m', limit=200)
                     df_now = pd.DataFrame(ohlcv_now, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
-                    still_buy, now_reason, now_grade, now_data_dict = strategy.check_buy_signal(df_now, sym, w_list)
+                    still_buy, now_reason, now_grade, now_data_dict = await strategy.check_buy_signal(exchange, df_now, sym, w_list)
 
                     if still_buy:
                         info['last_check_min'] = current_mark
@@ -524,7 +535,7 @@ async def buy_scan_task(app):
                 if elapsed >= 10:
                     ohlcv_final = await asyncio.to_thread(exchange.fetch_ohlcv, sym, '30m', limit=200)
                     df_final = pd.DataFrame(ohlcv_final, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
-                    is_still_good, final_reason, final_grade, final_data_dict = strategy.check_buy_signal(df_final, sym, w_list)
+                    is_still_good, final_reason, final_grade, final_data_dict = await strategy.check_buy_signal(exchange, df_final, sym, w_list)
                     extracted_type = "1" if "TYPE1" in reason else ("2" if "TYPE2" in reason else ("3" if "TYPE3" in reason else "1"))
                     if is_still_good:
                         success, msg = await safe_market_buy(sym, info['cost'], "S", extracted_type)
@@ -567,6 +578,10 @@ async def execute_sell(app, symbol, reason):
         order_result = await asyncio.to_thread(exchange.create_market_sell_order, symbol, quantity)
         logger.info(f"DEBUG: {symbol} | sell order_result: {order_result}")
         logger.info(f"DEBUG: 💰 {symbol} 매도 집행 완료: {reason} | 수량: {quantity}")
+
+        if symbol in emergency_mode:
+            emergency_mode.pop(symbol, None)
+            logger.info(f"✨ {symbol} 비상 체제 해제 및 메모리 정리 완료")
 
         inv = load_inventory()
         item = inv.get(symbol, {})
@@ -673,8 +688,13 @@ async def sell_monitor_task(app):
                 this_qty = float(data.get('total') or inv_item.get('total_quantity') or 0)
                 this_grade = inv_item.get('grade')
                 this_purchase_time=inv_item.get('purchase_time')
+                
+                p_inv_val = float(p_inv or 0)
+                p_exch_val = float(p_exch or 0)
+                curr_p_val = float(this_curr_p or 0)
+
                 # [분석용 로그] 사자마자 팔리는 원인을 잡기 위해 무조건 출력
-                print(f"🔍 [MONITOR] {symbol} | 현재가: {this_curr_p:,.0f} | 평단가: {this_avg_p:,.0f} (기록:{p_inv:.2f} / 거래소:{p_exch:.2f})")
+                print(f"🔍 [MONITOR] {symbol} | 현재가: {curr_p_val:,.0f} | 평단가: {this_avg_p:,.0f} (기록:{p_inv_val:.2f} / 거래소:{p_exch_val:.2f})")
 
                 if this_avg_p <= 0:
                     # 평단가가 없으면 일단 '현재가'를 평단가로 가정해서 수익률을 0%로 만듦 (강제 매도 방지)
@@ -1161,7 +1181,7 @@ async def sell_monitor_task(app):
 # main.py 상단 적당한 위치
 def save_trade_log(symbol, grade, buy_p, sell_p, profit, reason):
     """매도 결과를 CSV 파일에 기록하여 사후 분석 및 통계용으로 사용"""
-    log_file = "trade_history.csv"
+    log_file = "trades/trade_history.csv"
     try:
         log_data = {
             'date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -1232,8 +1252,8 @@ async def handle_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 df = pd.DataFrame(ohlcv, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
 
                 # 기존 get_current_grade 호출 및 매수 로직 유지
-                from main import get_current_grade  # 참조 확인
-                current_grade = get_current_grade(symbol, df)
+                #from main import get_current_grade  # 참조 확인
+                current_grade = await get_current_grade(exchange, symbol, df)
                 cost = config.DEFAULT_TEST_BUY if action == "buy_now" else 1000000
                 reason = query.message.text if query.message and query.message.text else ""
                 buy_type = get_symbol_buy_type(symbol, reason)
@@ -1470,7 +1490,7 @@ async def process_report_logic(update, context, query=None):
             ma40_line = df['close'].rolling(40).mean().iloc[-1]
             
             symbol_wo_quote = symbol.split('/')[0]
-            asset_info = assets.get(symbol_wo_quote, {})
+            asset_info = assets.get(symbol, {})
             purchase_price = float(asset_info.get('avg_buy_price', 0)) # 여기서 변수 정의!
             
             # 전략 엔진 호출
@@ -1629,13 +1649,13 @@ async def is_sell_still_valid(symbol):
         return True, "에러 발생으로 안전 매도"
 
 
-def get_current_grade(symbol, df):
+async def get_current_grade(exchange, symbol, df):
     """
     [최종] strategy.check_buy_signal 로직과 100% 동기화된 등급 판별
     """
     try:
         # check_buy_signal이 4개 값을 리턴하도록 변경됨: (is_buy, reason, grade, data_dict)
-        is_buy, reason, grade, data_dict = strategy.check_buy_signal(df, symbol, config.WARNING_LIST)
+        is_buy, reason, grade, data_dict = await strategy.check_buy_signal(exchange, df, symbol, config.WARNING_LIST)
 
         if is_buy:
             # grade 값이 직접 반환됨 (예: "S+", "A+", "A", "S")
@@ -1653,9 +1673,41 @@ def get_current_grade(symbol, df):
         logger.error(f"Grade check error: {e}")
         return "B"  # 에러 시 안전하게 자동매수 차단 등급 반환
 
+###### [사용자 요청: 10분 유예 전담 마크 루프 신설] ######
+async def pending_buy_task(app):
+    """447개 스캔과 별개로 매수 대기 종목만 10초마다 체크하여 10분 정각에 집행"""
+    global pending_s_buys
+    while True:
+        try:
+            w_list = strategy.get_warning_list()
+            now = datetime.now()
+            for sym, info in list(pending_s_buys.items()):
+                elapsed = (now - info['start_time']).total_seconds() / 60
+                
+                # 10분 강제 집행 로직 (기존 buy_scan_task에서 분리됨)
+                if elapsed >= 10:
+                    ohlcv_final = await asyncio.to_thread(exchange.fetch_ohlcv, sym, '30m', limit=200)
+                    df_final = pd.DataFrame(ohlcv_final, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
+                    is_still_good, final_reason, final_grade, final_data_dict = await strategy.check_buy_signal(exchange, df_final, sym, w_list)
+                    if is_still_good:
+                        success, msg = await safe_market_buy(sym, info['cost'], "S", "1")
+                        if success:
+                            await app.bot.send_message(config.CHAT_ID, f"🤖 [S급 10분 정각집행] {sym} 자동 매수 완료")
+                    pending_s_buys.pop(sym, None)
+            await asyncio.sleep(10) # 10초 간격으로 가볍게 실행
+        except Exception as e:
+            logger.error(f"Error in pending_buy_task: {e}")
+            await asyncio.sleep(10)
+
 async def main():
     print("🚀 가상화폐 자동 매매 시스템 가동...")
     
+    # 2. 로그 파일 백업 (봇 재시작 시 기존 로그를 backups로 이동)
+    if os.path.exists('logs/bot.txt'):
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        shutil.move('logs/bot.txt', f'backups/bot_{timestamp}.txt')
+        print(f"📦 기존 로그 백업 완료: backups/bot_{timestamp}.txt")
+
     # 텔레그램 봇 설정
     app = Application.builder().token(config.TELEGRAM_TOKEN).build()
     app.add_handler(CallbackQueryHandler(handle_interaction))
@@ -1666,6 +1718,7 @@ async def main():
     # sell_monitor_task는 전혀 방해받지 않고 자기 할 일을 합니다.
     buy_task = asyncio.create_task(buy_scan_task(app))
     sell_task = asyncio.create_task(sell_monitor_task(app))
+    pending_task = asyncio.create_task(pending_buy_task(app))
 
     # 텔레그램 인터페이스 시작
     await app.initialize()
