@@ -232,7 +232,7 @@ def _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_
 
 # [사용자 원본 버전 2 - 메인 사용 중인 로직]
 # [확장] 하락장 대응 + 정배열 전환 + 급등 추적 모두 반영. 기존 로직 삭제 없이 주석/분기로 보강.
-async def check_buy_signal(exchange, df, symbol, warning_list, df_1m=None):
+async def check_buy_signal(exchange, df, symbol, warning_list):
     """
     매수 신호 판단 함수 (4개 값 리턴)
     
@@ -341,36 +341,6 @@ async def check_buy_signal(exchange, df, symbol, warning_list, df_1m=None):
         pos_185 = (curr_185 - min_185) / (max_185 - min_185)
         # 상위 30% (0.7 이상) 위치에 있다면 밥그릇 바닥이 아님
         is_high_pos_185 = pos_185 >= 0.7    # 상위 30%이면 is_high_pos_185 True
-
-    # ---------- [개선] 수급 돌파: 1분봉 기준 (RSI 과열 및 고점 추격 방지 추가) ----------
-    if df_1m is not None and len(df_1m) >= 21:
-        # 유의종목이면 수급 로직 타기 전에 즉시 차단
-        if symbol.split('/')[0] in warning_list:
-            return False, "유의종목차단(S)", "", data_dict
-
-        vol_avg_20 = df_1m['vol'].tail(20).mean()
-        vol_cur = float(df_1m.iloc[-1]['vol'])
-        price_3bars_ago_1m = float(df_1m.iloc[-4]['close']) if len(df_1m) >= 4 else 0
-        surge_3pct_1m = (price_3bars_ago_1m > 0 and (curr_price - price_3bars_ago_1m) / price_3bars_ago_1m >= 0.02)
-        
-        # [핵심 필터 추가]
-        rsi_1m = calculate_rsi(df_1m).iloc[-1] # 1분봉 RSI 계산
-        day_low = df['low'].min() # 당일 저점
-        up_from_low = (curr_price - day_low) / day_low if day_low > 0 else 0
-
-        # 조건: 거래량 300% + 3분 내 2% + RSI 70미만 + 당일 저점대비 7%이내 상승
-        if vol_avg_20 > 0 and vol_cur >= vol_avg_20 * 3 and surge_3pct_1m:
-            if rsi_1m < 70 and up_from_low < 0.07:
-                data_dict = _fill_data_dict_full(df, curr, prev, curr_price, symbol)
-                data_dict['grade'] = 'S'
-                data_dict['pattern_labels'] = _get_pattern_labels(
-                    df, curr, curr_price, data_dict.get('rsi'), float(curr['ma5']) if not pd.isna(curr.get('ma5')) else None,
-                    float(curr['ma20']) if not pd.isna(curr.get('ma20')) else None, float(curr['ma185']) if not pd.isna(curr.get('ma185')) else None)
-                return True, f"💎 [S] 수급 돌파(RSI:{int(rsi_1m)}/상승:{up_from_low*100:.1f}%)", "S", data_dict
-            else:
-                # 조건은 맞지만 과열인 경우 로그만 남기고 패스하도록 설계 가능
-                pass
-
 
     # [수정] 골든크로스 여부 확인 후 '구간 변동성' 체크 수행
     if gold_index != -1:
@@ -597,24 +567,21 @@ async def check_buy_signal(exchange, df, symbol, warning_list, df_1m=None):
         strict_descending = True
         strict_stabilized = True
 
-        # 1단계: 과거 구간 전수 조사 (-96봉 ~ -10봉) -> 모두 -0.05 미만 하락이어야 함
         if len(df) >= 97:
             for i in range(len(df)-96, len(df)-10):
-                p_val, c_val = df['ma185'].iloc[i-1], df['ma185'].iloc[i]
-                if ((c_val - p_val) / p_val) * 100 >= -0.05:
+                p_v, c_v = df['ma185'].iloc[i-1], df['ma185'].iloc[i]
+                if ((c_v - p_v) / p_v) * 100 >= -0.05:
                     strict_descending = False
                     break
         else: strict_descending = False
 
-        # 2단계: 현재 구간 전수 조사 (-10봉 ~ 현재) -> 모두 -0.05 이상 유지되어야 함
         for i in range(len(df)-10, len(df)):
-            p_val, c_val = df['ma185'].iloc[i-1], df['ma185'].iloc[i]
-            if ((c_val - p_val) / p_val) * 100 < -0.05:
+            p_v, c_v = df['ma185'].iloc[i-1], df['ma185'].iloc[i]
+            if ((c_v - p_v) / p_v) * 100 < -0.05:
                 strict_stabilized = False
                 break
-        ###### [신규 끝] ######
-
-        # [수정] TYPE 1 최종 관문: 전수 조사를 통과했을 때만 S/A급 판정 진행
+        
+        # 전수 조사를 통과한 깨끗한 밥그릇만 아래 등급 판정 진행
         if strict_descending and strict_stabilized:
             if is_high_pos_185:
                 return False, f"🚫 [TYPE1-제외] 185선 고점 구간({pos_185*100:.1f}%)", "B", data_dict
@@ -777,9 +744,26 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
     ################################################################################
     ######### [신규: 30분봉 시가 기준 급등 즉시 처단 시스템] #########
     ################################################################################
-    # 변수를 건드리지 않고, 30분봉 시가 대비 상승폭만 따로 계산합니다.
+    ###### [수정] 30m/3m 가변 모드 및 회귀 로직 삽입 (지지선 로직 유지) ######
+    # 1. 상태 진단용 변수
     soaring_rate = (curr_p - curr['open']) / curr['open'] * 100
-    is_rush_mode = False
+    rsi_val = rsi_series.iloc[-1]
+    
+    # 긴급 모드 판단: 기존 이력 OR 수익 10%↑ OR RSI 80↑ OR 30분봉 급등 2%↑ OR TYPE 3
+    is_emergency = (emergency_mode.get(symbol, False) or profit_rate_pct >= 10.0 or 
+                    has_rsi_spike or soaring_rate >= 2.0 or str(buy_type) == '3')
+
+    # 2. [회귀 로직] 긴급 상황 종료 및 일반 모드(30m) 복귀
+    # 수익률 5% 미만 AND RSI 60 미만 AND (TYPE 3 제외) 시 일반 모드로 회귀
+    if is_emergency and profit_rate_pct < 5.0 and rsi_val < 60 and str(buy_type) != '3':
+        emergency_mode[symbol] = False
+        is_emergency = False
+        logger.info(f"☕ {symbol} 안정화 확인: 일반 모드(30m)로 회귀합니다.")
+    elif is_emergency:
+        emergency_mode[symbol] = True
+
+    # 3. 기존 is_rush_mode와 통합하여 3m/30m 분기 결정
+    is_rush_mode = is_emergency
     # print(f"DEBUG: {symbol} | {2.0 - soaring_rate}% 추가 상승시 급등 모드 전환") 
     logger.info(f"DEBUG: {symbol} | {2.0 - soaring_rate:.2f}% 추가 상승시 급등 모드 전환. 상승률: {soaring_rate:.2f}%")
     # 수익률 5% 이상이거나 30분봉 2% 급등 시 급등 모드 진입

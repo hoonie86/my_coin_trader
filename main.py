@@ -397,15 +397,7 @@ async def buy_scan_task(app):
                 if len(ohlcv) < 185: continue
 
                 df = pd.DataFrame(ohlcv, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
-                # [수급 돌파] 1분봉 거래량 20봉 평균 300% + 3분 내 3% 급등 체크용 (옵션: 1m 있으면 전략에 전달)
-                df_1m = None
-                try:
-                    ohlcv_1m = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '1m', limit=25)
-                    if ohlcv_1m and len(ohlcv_1m) >= 21:
-                        df_1m = pd.DataFrame(ohlcv_1m, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
-                except Exception:
-                    pass
-                is_buy, reason, grade, data_dict = await strategy.check_buy_signal(exchange, df, symbol, w_list, df_1m)
+                is_buy, reason, grade, data_dict = await strategy.check_buy_signal(exchange, df, symbol, w_list)
                 extracted_type = "1" if "TYPE1" in reason else ("2" if "TYPE2" in reason else ("3" if "TYPE3" in reason else "1"))
                 # [분석 봇] 매수하지 않더라도 탈락 사유·패턴태그·등급 포함 상세 수치 기록 (조건 1개라도 만족/3분 내 3% 급등 포함)
                 current_price = float(df.iloc[-1]['close'])
@@ -1053,14 +1045,14 @@ async def sell_monitor_task(app):
                         if sell_qty <= 0:
                             logger.info(f"매도 건너뜀(잔고 부족): {symbol}")
                         else:
-                            # [사후분석] 손절 시 직전 1분 봉(하락 속도) 수집 후 매도 실행
-                            last_1m_open, last_1m_close = None, None
+                            # [사후분석] 손절 시 직전 3분 봉(하락 속도) 수집 후 매도 실행
+                            last_3m_open, last_3m_close = None, None
                             if this_profit < 0:
                                 try:
-                                    ohlcv_1m = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '1m', limit=3)
-                                    if ohlcv_1m and len(ohlcv_1m) >= 2:
-                                        last_1m_open = float(ohlcv_1m[-2][1])
-                                        last_1m_close = float(ohlcv_1m[-2][4])
+                                    ohlcv_3m = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '3m', limit=3)
+                                    if ohlcv_3m and len(ohlcv_3m) >= 2:
+                                        last_3m_open = float(ohlcv_3m[-2][1])
+                                        last_3m_close = float(ohlcv_3m[-2][4])
                                 except Exception:
                                     pass
                             orderbook = await asyncio.to_thread(exchange.fetch_order_book, symbol)
