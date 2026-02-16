@@ -802,6 +802,9 @@ async def sell_monitor_task(app):
 
                 ticker = await asyncio.to_thread(exchange.fetch_ticker, symbol)
                 this_curr_p = float(ticker.get('last') or ticker.get('close') or 0)
+                if this_curr_p == 0 and not df.empty:
+                    this_curr_p = float(df.iloc[-1]['close'])
+                    config.logger.info(f"ℹ️ {symbol} 현재가 0 조회 -> OHLCV 종가({this_curr_p})로 보정")
                 realtime_price = this_curr_p  # 실시간 현재가 긁기
                 
                 # [수정] urgent_flag를 함께 받을 수 있도록 호출부 수정
@@ -842,8 +845,11 @@ async def sell_monitor_task(app):
                         if len(bids) >= 3:
                             top_bid_p = float(bids[0][0])
                             if this_curr_p <= 0:
-                                config.logger.warning(f"⚠️ {symbol} 현재가 조회 실패(0)로 인한 모니터링 건너뜀")
-                                continue  # 혹은 return False 등 상황에 맞게 제어
+                                this_curr_p = top_bid_p if top_bid_p > 0 else (float(df.iloc[-1]['close']) if not df.empty else 0)
+                            
+                            if this_curr_p <= 0:
+                                logger.error(f"❌ {symbol} 최종 데이터 부재로 매도 불가")
+                                continue
                             gap_ratio = abs(this_curr_p - top_bid_p) / this_curr_p
                             # 갭 0.3% 미만이면 1호가, 이상이면 현재가 -1호가
                             sell_price = top_bid_p if gap_ratio < 0.003 else get_tick_size(this_curr_p, direction='down')

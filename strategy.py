@@ -286,7 +286,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list, df_1m=None):
     gold_index = -1
     ###### [수정] bars_since_gold 초기값 선언 ######
     bars_since_gold = 999 
-    for i in range(1, 101):
+    for i in range(1, 97):
         if i+1 < len(df):
             if df['ma40'].iloc[-i-1] < df['ma185'].iloc[-i-1] and df['ma40'].iloc[-i] > df['ma185'].iloc[-i]:
                 gold_index = len(df) - i
@@ -472,9 +472,16 @@ async def check_buy_signal(exchange, df, symbol, warning_list, df_1m=None):
     # (투자유의 검사는 가격 필터 직후에 이미 수행됨. 수급 돌파 포함 모든 경로에서 유의 종목 제외)
 
     # 1. [기존 유지] 2일 전 대비 5시간 전 하락 여부 확인 (밥그릇 바닥 확인)
-    ma185_p_2d = df['ma185'].iloc[-96] if len(df) >= 96 else df['ma185'].iloc[0]
-    ma185_r_5h = df['ma185'].iloc[-10] if len(df) >= 10 else df['ma185'].iloc[0]
-    is_was_descending = ma185_r_5h <= ma185_p_2d
+    ma185_past_2d = df['ma185'].iloc[-96] if len(df) >= 96 else df['ma185'].iloc[0]
+    ma185_recent_5h = df['ma185'].iloc[-10] if len(df) >= 10 else df['ma185'].iloc[0]
+
+    # 구간별 기울기(Slope) 계산
+    slope_past = ((ma185_recent_5h - ma185_past_2d) / ma185_past_2d) * 100 if ma185_past_2d > 0 else 0
+    slope_now = ((curr['ma185'] - ma185_recent_5h) / ma185_recent_5h) * 100 if ma185_recent_5h > 0 else 0
+
+    # AND 조건용 변수 생성
+    is_was_descending = slope_past < -0.05    # 과거 2일간 하락세 필수
+    is_now_stabilized = slope_now >= -0.05    # 최근 5시간 하락 멈춤 필수
 
     # 2. [기존 유지] 현재 기울기 수치
     diff_185 = (curr['ma185'] - prev['ma185']) / get_bithumb_tick_size(curr['ma185']) if get_bithumb_tick_size(curr['ma185']) else 0
@@ -499,8 +506,8 @@ async def check_buy_signal(exchange, df, symbol, warning_list, df_1m=None):
                 return True, "✅ [A] 단기 정배열 전환(40일×90일 골든크로스, 현재가>40일선)", "A", data_dict
 
     # [기존 유지] ZRO/STG처럼 고개 든 놈을 살려주는 OR 로직
-    if not (slope_rate >= -0.06 or is_was_descending):
-        reason = f"185일선 하락 조건 불만족(기울기:{slope_rate:.4f}%)"
+    if not (is_was_descending and is_now_stabilized):
+        reason = f"185일선 밥그릇 흐름 부적합(과거:{slope_past:.3f}% / 현재:{slope_now:.3f}%)"
         data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
         return False, reason, "", data_dict
 
