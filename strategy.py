@@ -290,8 +290,9 @@ async def check_buy_signal(exchange, df, symbol, warning_list, df_1m=None):
         if i+1 < len(df):
             if df['ma40'].iloc[-i-1] < df['ma185'].iloc[-i-1] and df['ma40'].iloc[-i] > df['ma185'].iloc[-i]:
                 gold_index = len(df) - i
-                bars_since_gold = i # ###### [수정] 여기서 계산
+                bars_since_gold = i 
                 break
+    data_dict['bars_since_gold'] = bars_since_gold
     
     start_idx = max(0, gold_index - 20) if gold_index != -1 else max(0, len(df) - 25)
     window_df = df.iloc[start_idx:]
@@ -469,19 +470,28 @@ async def check_buy_signal(exchange, df, symbol, warning_list, df_1m=None):
 
     data_dict = _fill_data_dict_full(df, curr, prev, curr_price, symbol)
 
-    # (투자유의 검사는 가격 필터 직후에 이미 수행됨. 수급 돌파 포함 모든 경로에서 유의 종목 제외)
+    is_was_descending = True  # 2일간 지속 하락 여부
+    is_now_stabilized = True  # 5시간 전부터 안착 여부
 
-    # 1. [기존 유지] 2일 전 대비 5시간 전 하락 여부 확인 (밥그릇 바닥 확인)
-    ma185_past_2d = df['ma185'].iloc[-96] if len(df) >= 96 else df['ma185'].iloc[0]
-    ma185_recent_5h = df['ma185'].iloc[-10] if len(df) >= 10 else df['ma185'].iloc[0]
+    # 1단계: 과거 구간 (-96봉 ~ -10봉) 전수 조사 -> 모든 봉의 기울기가 -0.05 미만이어야 함
+    if len(df) >= 97:
+        for i in range(len(df)-96, len(df)-10):
+            p_val, c_val = df['ma185'].iloc[i-1], df['ma185'].iloc[i]
+            bar_slope = ((c_val - p_val) / p_val) * 100
+            # 기울기 $Slope = \frac{C - P}{P} \times 100$
+            if bar_slope >= -0.05:  # 요동(반등)이나 완만한 구간이 단 하나라도 있으면 즉시 탈락
+                is_was_descending = False
+                break
+    else: is_was_descending = False
 
-    # 구간별 기울기(Slope) 계산
-    slope_past = ((ma185_recent_5h - ma185_past_2d) / ma185_past_2d) * 100 if ma185_past_2d > 0 else 0
-    slope_now = ((curr['ma185'] - ma185_recent_5h) / ma185_recent_5h) * 100 if ma185_recent_5h > 0 else 0
+    # 2단계: 현재 구간 (-10봉 ~ 현재) 전수 조사 -> 모든 봉의 기울기가 -0.05 이상이어야 함
+    for i in range(len(df)-10, len(df)):
+        p_val, c_val = df['ma185'].iloc[i-1], df['ma185'].iloc[i]
+        bar_slope = ((c_val - p_val) / p_val) * 100
+        if bar_slope < -0.05:  # 다시 하락세로 꺾이는 구간이 있으면 즉시 탈락
+            is_now_stabilized = False
+            break
 
-    # AND 조건용 변수 생성
-    is_was_descending = slope_past < -0.05    # 과거 2일간 하락세 필수
-    is_now_stabilized = slope_now >= -0.05    # 최근 5시간 하락 멈춤 필수
 
     # 2. [기존 유지] 현재 기울기 수치
     diff_185 = (curr['ma185'] - prev['ma185']) / get_bithumb_tick_size(curr['ma185']) if get_bithumb_tick_size(curr['ma185']) else 0
@@ -504,12 +514,6 @@ async def check_buy_signal(exchange, df, symbol, warning_list, df_1m=None):
                 data_dict['grade'] = 'A'
                 data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
                 return True, "✅ [A] 단기 정배열 전환(40일×90일 골든크로스, 현재가>40일선)", "A", data_dict
-
-    # [기존 유지] ZRO/STG처럼 고개 든 놈을 살려주는 OR 로직
-    if not (is_was_descending and is_now_stabilized):
-        reason = f"185일선 밥그릇 흐름 부적합(과거:{slope_past:.3f}% / 현재:{slope_now:.3f}%)"
-        data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
-        return False, reason, "", data_dict
 
     # 3. [기존 유지] 안전장치: 급격한 수직 낙하만 방어 (중복 블록 제거: 아래 한 번만 유지)
     if diff_185 < -1.2:
@@ -589,35 +593,58 @@ async def check_buy_signal(exchange, df, symbol, warning_list, df_1m=None):
     is_upward_trend = ma40_val > df['ma40'].iloc[-2] and (curr_price >= df['close'].iloc[-2] or has_volume_surge)
 
     if is_near_ma40 and is_upward_trend and disparity_40 <= 0.07 and data_dict.get('dynamic_rise_YN') != 'Y':
-        if is_high_pos_185:
-            return False, f"🚫 [TYPE1-제외] 185선 고점 구간({pos_185*100:.1f}%)", "B", data_dict
-        #if curr['close'] >= curr['open'] or has_volume_surge:
-        data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
-        
-        # [S+] 밥그릇 바닥 완전 수렴 (T1 최상급)
-        if slope_rate >= -0.01 and disparity_gold <= 0.005:
-            recent_max = df['high'].rolling(window=50).max().iloc[-1]
-            drop_rate = ((recent_max - curr_price) / recent_max) * 100
-            data_dict['grade'] = 'S'
-            return True, "💎 [TYPE1-S] 밥그릇 바닥 완전 수렴", "S", data_dict
-        
-        # [S] 밥그릇 바닥 탈출 (변곡점 확인)
-        if slope_rate >= -0.01 and disparity_gold <= 0.010:
-            if (curr_price - ma40_val) / ma40_val > 0.02:
+        ###### [신규] TYPE 1 전용: 185일선 밥그릇 흐름(지속 하락 후 안착) 전수 조사 ######
+        strict_descending = True
+        strict_stabilized = True
+
+        # 1단계: 과거 구간 전수 조사 (-96봉 ~ -10봉) -> 모두 -0.05 미만 하락이어야 함
+        if len(df) >= 97:
+            for i in range(len(df)-96, len(df)-10):
+                p_val, c_val = df['ma185'].iloc[i-1], df['ma185'].iloc[i]
+                if ((c_val - p_val) / p_val) * 100 >= -0.05:
+                    strict_descending = False
+                    break
+        else: strict_descending = False
+
+        # 2단계: 현재 구간 전수 조사 (-10봉 ~ 현재) -> 모두 -0.05 이상 유지되어야 함
+        for i in range(len(df)-10, len(df)):
+            p_val, c_val = df['ma185'].iloc[i-1], df['ma185'].iloc[i]
+            if ((c_val - p_val) / p_val) * 100 < -0.05:
+                strict_stabilized = False
+                break
+        ###### [신규 끝] ######
+
+        # [수정] TYPE 1 최종 관문: 전수 조사를 통과했을 때만 S/A급 판정 진행
+        if strict_descending and strict_stabilized:
+            if is_high_pos_185:
+                return False, f"🚫 [TYPE1-제외] 185선 고점 구간({pos_185*100:.1f}%)", "B", data_dict
+            #if curr['close'] >= curr['open'] or has_volume_surge:
+            data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
+            
+            # [S+] 밥그릇 바닥 완전 수렴 (T1 최상급)
+            if slope_rate >= -0.01 and disparity_gold <= 0.005:
+                recent_max = df['high'].rolling(window=50).max().iloc[-1]
+                drop_rate = ((recent_max - curr_price) / recent_max) * 100
+                data_dict['grade'] = 'S'
+                return True, "💎 [TYPE1-S] 밥그릇 바닥 완전 수렴", "S", data_dict
+            
+            # [S] 밥그릇 바닥 탈출 (변곡점 확인)
+            if slope_rate >= -0.01 and disparity_gold <= 0.010:
+                if (curr_price - ma40_val) / ma40_val > 0.02:
+                    data_dict['grade'] = 'A+'
+                    return True, "🚀 [TYPE1-A] 상승대기(골드안착/추격주의)", "A", data_dict
+
                 data_dict['grade'] = 'A+'
-                return True, "🚀 [TYPE1-A] 상승대기(골드안착/추격주의)", "A", data_dict
+                return True, "⭐ [TYPE1-A+] 밥그릇 바닥 탈출(변곡점)", "A+", data_dict
 
-            data_dict['grade'] = 'A+'
-            return True, "⭐ [TYPE1-A+] 밥그릇 바닥 탈출(변곡점)", "A+", data_dict
-
-        # [A+] 185선 평행/우상향 전환 초기
-        if slope_rate >= -0.01:
-            data_dict['grade'] = 'B+'
-            return True, "🚀 [TYPE1-B+] 185선 평행/우상향 전환", "B+", data_dict
-        
-        # [A] 상승 대기 (골드 안착)
-        data_dict['grade'] = 'B'
-        return True, "🚀 [TYPE1-B] 상승대기(골드안착)", "B", data_dict
+            # [A+] 185선 평행/우상향 전환 초기
+            if slope_rate >= -0.01:
+                data_dict['grade'] = 'B+'
+                return True, "🚀 [TYPE1-B+] 185선 평행/우상향 전환", "B+", data_dict
+            
+            # [A] 상승 대기 (골드 안착)
+            data_dict['grade'] = 'B'
+            return True, "🚀 [TYPE1-B] 상승대기(골드안착)", "B", data_dict
 
     # ==========================================================================
     # [TYPE2: 눌림목 및 40선 지지 (에너지 응축)]
