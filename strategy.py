@@ -502,7 +502,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     
     # 2. 새끼 양봉 계산 (시가 대비 +0.0% ~ +2.0% 사이만 허용)
     candle_body_pct = ((curr_price - curr['open']) / curr['open'] * 100) if curr['open'] > 0 else 0
-    target_disparity = -7.0 if slope_rate <= -0.03 else -4.0
+    target_disparity = -7.0 if slope_rate <= -0.035 else -4.0
     # [수정] 40선이 185선 아래여야 하며, 5일선이 확실히 바닥(-7.0%)에 처박히고 이격이 좁혀질 때 진입
     if ma40_val < ma185_val and rsi_val <= 40 and data_dict.get('dynamic_rise_YN') != 'Y':
         if is_high_pos_185:
@@ -618,7 +618,14 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     # 집중: 골든크로스 이후 40선(노란선) 밀착 및 지지 확인
     # ==========================================================================
     if 4 <= bars_since_gold <= 40:
-        if -0.5 <= disparity_40 <= 0.025 and data_dict.get('dynamic_rise_YN') != 'Y':   # 40선 이격도
+        # 수렴 확인용 직전 이격도 계산
+        prev_ma40 = df['ma40'].iloc[-2]
+        prev_ma185 = df['ma185'].iloc[-2]
+        prev_dis_gold = abs(prev_ma40 - prev_ma185) / prev_ma185 if prev_ma185 > 0 else 999
+
+        # 조건: 정배열(40>185) AND 가격지지(P>40) AND 수렴중(현재이격 < 직전이격)
+        if ma40_val > ma185_val and curr_price > ma40_val and disparity_gold < prev_dis_gold:
+            if -0.5 <= disparity_40 <= 0.025 and data_dict.get('dynamic_rise_YN') != 'Y':   # 40선 이격도
             # --- [안전 가드] 폭락 중인 칼날 잡기 방지 (T2 필수 체크) ---
             is_falling_now = (curr['close'] < curr['open']) and ((curr['open'] - curr['close']) / curr['open'] >= 0.02)
             recent_3_candles = df.iloc[-3:]
@@ -630,7 +637,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 return False, reason, "", data_dict
             # --- [안전 가드 끝] ---
 
-            if abs(diff_185) < 1.0 and slope_rate >= -0.03:   # 경사 수치와 경사율이 우상향 전환
+            if abs(diff_185) < 1.0 and slope_rate >= -0.00:   # 경사 수치와 경사율이 우상향 전환
                 data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
                 
                 # [S] 에너지 응축 (185선 평행/우상향 전환 초기, 40선/185선 동시 밀착 지지)
@@ -712,16 +719,6 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
     profit_rate_pct = profit_rate * 100
     
     ###### [수정 시작] 1순위: 즉시 매도 신호 처리 및 Cooldown 기록 ######
-    # -3% 긴급 손절 및 S-TS-0.5(본절 방어)는 6시간 재진입 제한 및 10분 유예 무시(True 리턴)
-    if profit_rate_pct <= -3.0:
-        cooldown_dict[symbol] = datetime.now() + timedelta(hours=6)
-        return True, f"🚨 [긴급손절] 진입가 대비 -3% 도달", True
-
-    max_profit_rate_pct = ((high_price - purchase_price) / purchase_price * 100) if purchase_price > 0 else 0
-    if 0.5 <= max_profit_rate_pct < 1.2 and curr_p <= purchase_price * 1.005:
-        cooldown_dict[symbol] = datetime.now() + timedelta(hours=6)
-        return True, f"🛡️ [S-TS-0.5] 본절방어(즉시)", True
-
     ###### [출력] 유예 로직 통과 여부 확인 ######
     # print(f"DEBUG: {symbol} | age: {symbol_inventory_age} | profit: {profit_rate_pct:.2f}%")
     logger.info(f"DEBUG: {symbol} | age: {symbol_inventory_age} | profit: {profit_rate_pct:.2f}%")
@@ -734,6 +731,11 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
         if profit_rate_pct <= -3.0:
             return True, f"🚨 [긴급손절] 진입초기 -3% 도달", True
         return False, f"진입 초기 유예({symbol_inventory_age}봉)", False
+
+    max_profit_rate_pct = ((high_price - purchase_price) / purchase_price * 100) if purchase_price > 0 else 0
+    if 0.5 <= max_profit_rate_pct < 1.2 and curr_p <= purchase_price * 1.005:
+        cooldown_dict[symbol] = datetime.now() + timedelta(hours=6)
+        return True, f"🛡️ [S-TS-0.5] 본절방어(즉시)", True
 
     ma40_val = curr['ma40']
     ma185_val = curr['ma185'] if not pd.isna(curr['ma185']) else 0

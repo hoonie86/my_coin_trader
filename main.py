@@ -1436,9 +1436,16 @@ async def process_report_logic(update, context, query=None):
         for symbol, data in assets.items():
             ticker = await asyncio.to_thread(exchange.fetch_ticker, symbol)
             this_curr_p = float(ticker.get('last') or ticker.get('close') or 0)
-            if this_curr_p == 0: continue
-            sym_only = symbol.split('/')[0] # 'LSK/KRW' -> 'LSK'
-            # 1순위: LSK/KRW, 2순위: LSK
+            
+            # 가격 0원 시 보정 로직
+            if this_curr_p == 0:
+                # 30분봉 데이터를 미리 가져와서 종가 활용 (루프 내 ohlcv 호출부 활용 가능)
+                ohlcv_fallback = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '30m', limit=1)
+                if ohlcv_fallback:
+                    this_curr_p = float(ohlcv_fallback[-1][4])
+                else:
+                    continue # 데이터가 아예 없으면 스킵
+                
             inv_item = inv_data.get(symbol) or inv_data.get(sym_only) or {}
 
             # [수정] JSON에서 확실히 평단가를 가져오게 키 이름을 모두 체크
