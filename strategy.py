@@ -478,17 +478,6 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     data_dict['disparity_185_5'] = disparity_185_5
     data_dict['disparity_40_5'] = disparity_40_5
 
-    # ---------- [신규] 단기 정배열 전환: 40일선 골든크로스 90일선 + 현재가>40일선 (과도한 5/20 조건 대체) ----------
-    if len(df) >= 90:
-        ma90_curr = curr.get('ma90')
-        ma90_prev = df['ma90'].iloc[-2]
-        if not (pd.isna(ma90_curr) or pd.isna(ma90_prev)) and ma40_val and ma90_curr and data_dict.get('dynamic_rise_YN') != 'Y':
-            prev_40, prev_90 = df['ma40'].iloc[-2], ma90_prev
-            if prev_40 <= prev_90 and ma40_val > float(ma90_curr) and curr_price > ma40_val:
-                data_dict['grade'] = 'A'
-                data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
-                return True, "✅ [A] 단기 정배열 전환(40일×90일 골든크로스, 현재가>40일선)", "A", data_dict
-
     # 3. [기존 유지] 안전장치: 급격한 수직 낙하만 방어 (중복 블록 제거: 아래 한 번만 유지)
     if diff_185 < -1.2:
         reason = f"185일선 급락(diff:{diff_185:.2f} < -1.2)"
@@ -614,31 +603,50 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         if strict_descending and strict_stabilized:
             if is_high_pos_185:
                 return False, f"🚫 [TYPE1-제외] 185선 고점 구간({pos_185*100:.1f}%)", "B", data_dict
-            #if curr['close'] >= curr['open'] or has_volume_surge:
+            
+            # 패턴 라벨링 기록
             data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
             
-            # [S+] 밥그릇 바닥 완전 수렴 (T1 최상급)
+            ###### [추가] 40선/90선 골든크로스 및 정배열 상태 확인 (가중치 변수) ######
+            prev_ma40 = float(prev['ma40'])
+            prev_ma90 = float(df['ma90'].iloc[-2])
+            is_40_90_gc = prev_ma40 <= prev_ma90 and ma40_val > ma90_val
+            is_40_above_90 = ma40_val > ma90_val
+            ####################################################################
+
+            # [S+급] 밥그릇 바닥 수렴 + 40/90 골든크로스 (최상의 변곡점)
+            if slope_rate >= -0.01 and disparity_gold <= 0.005 and is_40_90_gc:
+                data_dict['grade'] = 'S+'
+                return True, "💎 [TYPE1-S+] 밥그릇 수렴 및 40/90 골든크로스 확정", "S+", data_dict
+
+            # [S급] 밥그릇 바닥 완전 수렴 (기존 T1 최상급)
             if slope_rate >= -0.01 and disparity_gold <= 0.005:
                 recent_max = df['high'].rolling(window=50).max().iloc[-1]
-                drop_rate = ((recent_max - curr_price) / recent_max) * 100
+                # drop_rate = ((recent_max - curr_price) / recent_max) * 100  # 필요 시 data_dict에 기록
                 data_dict['grade'] = 'S'
                 return True, "💎 [TYPE1-S] 밥그릇 바닥 완전 수렴", "S", data_dict
             
-            # [S] 밥그릇 바닥 탈출 (변곡점 확인)
-            if slope_rate >= -0.01 and disparity_gold <= 0.010:
+            # [A+급] 밥그릇 바닥 탈출 및 40/90 정배열 (추세 가속 확인)
+            if slope_rate >= -0.01 and disparity_gold <= 0.010 and is_40_above_90:
+                # 기존 '추격주의' 필터 유지
                 if (curr_price - ma40_val) / ma40_val > 0.02:
-                    data_dict['grade'] = 'A+'
+                    data_dict['grade'] = 'A'
                     return True, "🚀 [TYPE1-A] 상승대기(골드안착/추격주의)", "A", data_dict
 
                 data_dict['grade'] = 'A+'
-                return True, "⭐ [TYPE1-A+] 밥그릇 바닥 탈출(변곡점)", "A+", data_dict
+                return True, "⭐ [TYPE1-A+] 밥그릇 탈출 및 40/90 정배열 안착", "A+", data_dict
 
-            # [A+] 185선 평행/우상향 전환 초기
+            # [A급] 밥그릇 바닥 탈출 (변곡점 확인)
+            if slope_rate >= -0.01 and disparity_gold <= 0.010:
+                data_dict['grade'] = 'A'
+                return True, "⭐ [TYPE1-A] 밥그릇 바닥 탈출(변곡점 확인)", "A", data_dict
+
+            # [B+급] 185선 평행/우상향 전환 초기
             if slope_rate >= -0.01:
                 data_dict['grade'] = 'B+'
                 return True, "🚀 [TYPE1-B+] 185선 평행/우상향 전환", "B+", data_dict
             
-            # [A] 상승 대기 (골드 안착)
+            # [B급] 상승 대기 (골드 안착)
             data_dict['grade'] = 'B'
             return True, "🚀 [TYPE1-B] 상승대기(골드안착)", "B", data_dict
 
