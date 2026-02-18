@@ -443,20 +443,20 @@ async def buy_scan_task(app):
                     # [수정] 등급 판정 및 타입별 자동 매수 필터링
                     # S+, S는 'S'로 / A+, A는 'A'로 통합 판정
                     # reason 문자열을 분석하여 실시간 등급(current_grade) 확정
-                    if any(x in reason for x in ["S급", "[S]", "TYPE3", "Type 3"]):
-                        current_grade = "S"
-                    elif "A" in (grade or reason):
-                        current_grade = "A"
+                    # strategy에서 리턴한 grade 값을 우선 사용
+                    if grade:
+                        if grade.startswith("S"): current_grade = "S"
+                        elif grade.startswith("A"): current_grade = "A"
+                        else: current_grade = "B"
                     else:
-                        current_grade = "B"
+                        # grade가 없는 구형 로직 대응용
+                        if any(x in reason for x in ["S급", "[S]"]): current_grade = "S"
+                        elif "A" in reason: current_grade = "A"
+                        else: current_grade = "B"
 
                     can_auto_buy = False
                     if curr_mode == "AUTO":
-                        if buy_type == 1:
-                            # if current_grade in ["S", "A"]: can_auto_buy = True
-                            if current_grade in ["S"]: can_auto_buy = True
-                        elif buy_type in [2, 3]:
-                            if current_grade == "S": can_auto_buy = True
+                        if current_grade == "S": can_auto_buy = True
 
                     if can_auto_buy:
                     #########################################################
@@ -492,9 +492,8 @@ async def buy_scan_task(app):
                                     )
                                 if symbol in pending_s_buys: del pending_s_buys[symbol]
                     else:
-                        display_grade = "A급" if "[A]" in reason or "A급" in reason else ("S급" if "[S]" in reason or "S급" in reason else "B급")
-                        if display_grade == "B급":
-                            continue
+                        display_grade = f"{current_grade}급"
+                        # if display_grade == "B급":    continue
                         status_tag = f"💎 [매수포착 - {display_grade}]" if not is_s_class_check else "🔥 [S급 포착/수동대기]"
                         is_auto_btn = (indiv_mode == 'AUTO')
                         await app.bot.send_message(

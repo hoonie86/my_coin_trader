@@ -302,14 +302,16 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     curr_max_high_low = max(curr['open'], curr['close'])
     upper_wick = (curr['high'] - curr_max_high_low) / curr_max_high_low * 100
     
-    if volatility >= 5.0:
+    if volatility >= 6.0:
         print(f"DEBUG: {symbol} 매수 탈락 - 변동성 과다({volatility:.1f}%)")
         return False, f"🚫 [상단방어] 구간 변동성({volatility:.1f}%) 및 저항 포착", "F", {}
-    else:
-        if upper_wick >= 2.0:
-            print(f"DEBUG: {symbol} 매수 탈락 - 윗꼬리 과다({volatility:.1f}%)")
-            return False, f"🚫 [윗꼬리 방어] 가격 변동성({volatility:.1f}%) 설거지 포착", "F", {}
         
+    if curr_price < curr['high'] * 0.985:
+        return False, f"🚫 [설거지방어] 고가대비 이탈(-1.5%↑)", "F", {}
+
+    if upper_wick >= 2.0:
+        print(f"DEBUG: {symbol} 매수 탈락 - 윗꼬리 과다({volatility:.1f}%)")
+        return False, f"🚫 [윗꼬리 방어] 가격 변동성({volatility:.1f}%) 설거지 포착", "F", {}    
     # [가격 필터] 10원 미만 또는 10,000원 이상 → BTC 마켓 동전주/비정상 차단
     if curr_price < 10 or curr_price >= 10000:
         return False, "가격필터(BTC마켓)", "", data_dict
@@ -492,26 +494,51 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         return False, reason, "", data_dict
 
     ###################  TYPE3 START ###################
-    # 1. 5일선과 185일선의 이격도 계산 (평균 -8.5% 이하 타겟)
+    # 1. 기본 지표 및 과거 바닥(Oversold) 이력 확인
     ma5_val = float(curr['ma5']) if not pd.isna(curr['ma5']) else curr_price
     disparity_5_185 = (ma5_val - ma185_val) / ma185_val * 100 if ma185_val > 0 else 0
     
     prev_ma5 = float(prev['ma5'])
     prev_ma185 = float(prev['ma185'])
     prev_disparity = (prev_ma5 - prev_ma185) / prev_ma185 * 100 if prev_ma185 > 0 else 0
+
+    # [핵심] 최근 30봉 이내에 RSI 40 이하를 찍으며 '바닥 초입'을 통과했었는지 확인
+    was_oversold_start = (df['rsi'].iloc[-30:] <= 40).any()
     
     # 2. 새끼 양봉 계산 (시가 대비 +0.0% ~ +2.0% 사이만 허용)
     candle_body_pct = ((curr_price - curr['open']) / curr['open'] * 100) if curr['open'] > 0 else 0
     target_disparity = -7.0 if slope_rate <= -0.035 else -4.0
-    # [수정] 40선이 185선 아래여야 하며, 5일선이 확실히 바닥(-7.0%)에 처박히고 이격이 좁혀질 때 진입
-    if ma40_val < ma185_val and rsi_val <= 40 and data_dict.get('dynamic_rise_YN') != 'Y':
+    
+    ###### [추가] 최근 30봉 내 RSI 40 이하를 찍으며 '초입'을 통과했었는지 체크
+    was_oversold_start = (df['rsi'].iloc[-30:] <= 40).any()
+    
+    # [수정] 40선이 185선 아래여야 하며, 과거 바닥(RSI 40)을 통과한 종목을 추적 관리
+    if ma40_val < ma185_val and was_oversold_start and data_dict.get('dynamic_rise_YN') != 'Y':
         if is_high_pos_185:
             return False, f"🚫 [TYPE3-제외] 185선 고점 구간({pos_185*100:.1f}%)", "B", data_dict
-        # 가드 A: 5일선 이격도가 -7.0% 이하이면서, 직전 이격보다 수치가 커졌을 때 (수렴)
+
+        # 가드 A: 5일선 이격도가 바닥권(-7%/-4%)이면서, 직전보다 수렴하고, 새끼 양봉일 때
         if disparity_5_185 <= target_disparity and disparity_5_185 > prev_disparity and -2.0 <= candle_body_pct <= 2.0:
-            if slope_rate > -0.05: # 185선이 투매 수준으로 꺾이지 않았을 때
+            
+            ###### [유지] 185선이 투매 수준으로 꺾이지 않았을 때만 진입 (slope_rate > -0.05)
+            if slope_rate > -0.05:
                 data_dict = _fill_data_dict_full(df, curr, prev, curr_price, symbol)
-                return True, f"💎 [TYPE3] 바닥낚시(이격:{disparity_5_185:.1f}% / 양봉:{candle_body_pct:.1f}%)", "A", data_dict
+                curr_slope_40 = ((ma40_val - prev_ma40) / prev_ma40) * 100 if prev_ma40 > 0 else 0
+                
+                # [S급] 바닥권에서 5일선이 40선을 우상향 돌파 (강력 반등)
+                if prev_ma5 <= prev_ma40 and ma5_val > ma40_val:
+                    data_dict['grade'] = 'S'
+                    return True, f"💎 [TYPE3-S] 바닥낚시 및 5/40 골크 돌파", "S", data_dict
+                
+                # [A급] 40선 기울기가 0 이상으로 전환 (추세 반전 확인)
+                elif curr_slope_40 >= 0:
+                    data_dict['grade'] = 'A'
+                    return True, f"🚀 [TYPE3-A] 바닥낚시 및 40선 추세 반전", "A", data_dict
+                    
+                # [B급] 바닥낚시 조건은 만족하나 아직 돌파/반전 전 (알림용)
+                else:
+                    data_dict['grade'] = 'B'
+                    return True, f"📢 [TYPE3-B] 바닥낚시 수렴 중 (알림)", "B", data_dict
     ###################  TYPE3 END ###################
 
     disparity_40 = abs(curr_price - curr['ma40']) / curr['ma40'] if curr['ma40'] > 0 else 999
@@ -618,37 +645,36 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     # 집중: 골든크로스 이후 40선(노란선) 밀착 및 지지 확인
     # ==========================================================================
     if 4 <= bars_since_gold <= 40:
-        # 수렴 확인용 직전 이격도 계산
-        prev_ma40 = df['ma40'].iloc[-2]
-        prev_ma185 = df['ma185'].iloc[-2]
-        prev_dis_gold = abs(prev_ma40 - prev_ma185) / prev_ma185 if prev_ma185 > 0 else 999
+        # 40일선 기울기 가속도 및 이격도 계산
+        prev_ma40_2 = df['ma40'].iloc[-3]
+        prev_slope_40 = ((prev_ma40 - prev_ma40_2) / prev_ma40_2) * 100 if prev_ma40_2 > 0 else 0
+        curr_slope_40 = ((ma40_val - prev_ma40) / prev_ma40) * 100 if prev_ma40 > 0 else 0
+        dis_gold_pct = (ma40_val - ma185_val) / ma185_val * 100 if ma185_val > 0 else 0
 
-        # 조건: 정배열(40>185) AND 가격지지(P>40) AND 수렴중(현재이격 < 직전이격)
-        if ma40_val > ma185_val and curr_price > ma40_val and disparity_gold < prev_dis_gold:
-            if -0.5 <= disparity_40 <= 0.025 and data_dict.get('dynamic_rise_YN') != 'Y':   # 40선 이격도
-            # --- [안전 가드] 폭락 중인 칼날 잡기 방지 (T2 필수 체크) ---
-            is_falling_now = (curr['close'] < curr['open']) and ((curr['open'] - curr['close']) / curr['open'] >= 0.02)
-            recent_3_candles = df.iloc[-3:]
-            negative_candles = len(recent_3_candles[recent_3_candles['close'] < recent_3_candles['open']])
+        ###### 185선 상태 및 이격도 수렴 여부 (핵심 전제)
+        is_185_stable = ma185_val >= df['ma185'].iloc[-2]
+        is_converging = disparity_gold < prev_dis_gold
+
+        # TYPE 2 조건: 이격 범위(-2~8%) 내에서 185선이 안정적일 때
+        if is_185_stable and -2.0 <= dis_gold_pct <= 8.0:
             
-            if is_falling_now or negative_candles >= 2:
-                reason = "📉 [TYPE2-탈락] 40선 밀착했으나 하락 관성 강함 (폭락 주의)"
-                data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
-                return False, reason, "", data_dict
-            # --- [안전 가드 끝] ---
-
-            if abs(diff_185) < 1.0 and slope_rate >= -0.00:   # 경사 수치와 경사율이 우상향 전환
-                data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
-                
-                # [S] 에너지 응축 (185선 평행/우상향 전환 초기, 40선/185선 동시 밀착 지지)
-                if slope_rate >= -0.01 and disparity_gold <= 0.015:
-                    data_dict['grade'] = 'S'
-                    return True, "🔥 [TYPE2-S] 에너지응축(40선/185선 동시지점)", "S", data_dict
-                
-                # [S] 일반 40선 밀착 지지
+            # [S급] 이격 수렴 중(40선이 내려오는 중) AND 5선이 40선을 돌파
+            prev_ma5 = df['ma5'].iloc[-2]
+            if is_converging and prev_ma5 <= prev_ma40 and ma5_val > ma40_val:
+                data_dict['grade'] = 'S'
+                return True, "💎 [TYPE2-S] S급: 185선 수렴 중 5/40 골든크로스", "S", data_dict
+            
+            # [A급] 40선 기울기가 이미 0 이상으로 돌아선 경우 (추세 확정)
+            if curr_slope_40 >= 0:
                 data_dict['grade'] = 'A'
-                return True, "✨ [TYPE2-A] 40선 밀착 및 지지 확인", "A", data_dict
+                return True, "🚀 [TYPE2-A] A급: 40선 기울기 0이상(우상향) 전환", "A", data_dict
 
+            # [B급] 알림용: 이격 수렴 중이거나 40선 하락 감속 (진입 대기)
+            if is_converging or curr_slope_40 > prev_slope_40:
+                # 거래량은 참고용으로만 체크하여 알림 빈도 확보
+                data_dict['grade'] = 'B'
+                return True, "📢 [TYPE2-B] B급 알림: 수렴 진행 및 추세 개선", "B", data_dict
+                
     # [B등급] 급등 후 거래량이 줄어들며 20일선에서 지지받는 눌림목: 현재가가 ma20 근처이고 거래량 감소 시 B
     if ma20_val and base_avg_vol and curr_vol < base_avg_vol * 0.9 and abs(curr_price - ma20_val) / ma20_val <= 0.03 and data_dict.get('dynamic_rise_YN') != 'Y':
         data_dict['grade'] = 'B'
