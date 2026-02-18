@@ -329,7 +329,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         
     ###### [신규 추가] 스테이블 코인 및 185일선 고점(상위 30%) 원천 차단 ######
     # 1. 스테이블 코인 필터링 (USDC, USDT, DAI 등 차트 왜곡 종목)
-    exclude_symbols = ['USDC', 'USDT', 'DAI', 'BUSD']
+    exclude_symbols = ['USDC', 'USDT', 'DAI', 'BUSD', 'USDE', 'USD1', 'USDP', 'GUSD']
     if symbol.split('/')[0] in exclude_symbols:
         return False, "제외종목(스테이블)", "", data_dict
 
