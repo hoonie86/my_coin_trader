@@ -296,7 +296,12 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     # 이격도 계산 (현재 및 이전 봉)
     disparity_gold = abs(ma40_val - ma185_val) / ma185_val if ma185_val > 0 else 999
     prev_dis_gold = abs(prev_ma40 - prev_ma185) / prev_ma185 if prev_ma185 > 0 else 999
+    slope_rate = ((ma185_val - prev_ma185) / prev_ma185) * 100 if prev_ma185 > 0 else 0
     
+    # 40선/90선 골든크로스 상태 (TYPE 1, 2 공통 가중치 가드)
+    is_40_90_gc = prev_ma40 <= prev_ma90 and ma40_val > ma90_val
+    is_40_above_90 = ma40_val > ma90_val    
+
     # TYPE 3용 이격도
     disparity_5_185 = (ma5_val - ma185_val) / ma185_val * 100 if ma185_val > 0 else 0
     prev_disparity = (prev_ma5 - prev_ma185) / prev_ma185 * 100 if prev_ma185 > 0 else 0
@@ -620,31 +625,21 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             if is_high_pos_185:
                 return False, f"🚫 [TYPE1-제외] 185선 고점 구간({pos_185*100:.1f}%)", "B", data_dict
             
-            # 패턴 라벨링 기록
             data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
             
-            ###### [추가] 40선/90선 골든크로스 및 정배열 상태 확인 (가중치 변수) ######
-            prev_ma40 = float(prev['ma40'])
-            prev_ma90 = float(df['ma90'].iloc[-2])
-            is_40_90_gc = prev_ma40 <= prev_ma90 and ma40_val > ma90_val
-            is_40_above_90 = ma40_val > ma90_val
-            ####################################################################
-
-            # [S+급] 밥그릇 바닥 수렴 + 40/90 골든크로스 (최상의 변곡점)
+            # [S+급] 밥그릇 수렴 + 40/90 골든크로스 (최상의 변곡점)
             if slope_rate >= -0.01 and disparity_gold <= 0.005 and is_40_90_gc:
                 data_dict['grade'] = 'S+'
                 return True, "💎 [TYPE1-S+] 밥그릇 수렴 및 40/90 골든크로스 확정", "S+", data_dict
 
-            # [S급] 밥그릇 바닥 완전 수렴 (기존 T1 최상급)
+            # [S급] 밥그릇 바닥 완전 수렴 (기존 S)
             if slope_rate >= -0.01 and disparity_gold <= 0.005:
-                recent_max = df['high'].rolling(window=50).max().iloc[-1]
-                # drop_rate = ((recent_max - curr_price) / recent_max) * 100  # 필요 시 data_dict에 기록
                 data_dict['grade'] = 'S'
                 return True, "💎 [TYPE1-S] 밥그릇 바닥 완전 수렴", "S", data_dict
             
-            # [A+급] 밥그릇 바닥 탈출 및 40/90 정배열 (추세 가속 확인)
+            # [A+급] 바닥 탈출 + 40/90 정배열 (추세 가속 확인)
             if slope_rate >= -0.01 and disparity_gold <= 0.010 and is_40_above_90:
-                # 기존 '추격주의' 필터 유지
+                # 40일선과 현재가의 이격이 2%를 초과하면 추격주의로 판단하여 등급 하향
                 if (curr_price - ma40_val) / ma40_val > 0.02:
                     data_dict['grade'] = 'A'
                     return True, "🚀 [TYPE1-A] 상승대기(골드안착/추격주의)", "A", data_dict
@@ -652,7 +647,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 data_dict['grade'] = 'A+'
                 return True, "⭐ [TYPE1-A+] 밥그릇 탈출 및 40/90 정배열 안착", "A+", data_dict
 
-            # [A급] 밥그릇 바닥 탈출 (변곡점 확인)
+            # [A급] 밥그릇 바닥 탈출 (기존 A+)
             if slope_rate >= -0.01 and disparity_gold <= 0.010:
                 data_dict['grade'] = 'A'
                 return True, "⭐ [TYPE1-A] 밥그릇 바닥 탈출(변곡점 확인)", "A", data_dict
@@ -683,17 +678,20 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
 
         # TYPE 2 조건: 이격 범위(-2~8%) 내에서 185선이 안정적일 때
         if is_185_stable and -2.0 <= dis_gold_pct <= 8.0:
-            
-            # [S급] 이격 수렴 중(40선이 내려오는 중) AND 5선이 40선을 돌파
+            is_converging = disparity_gold < prev_dis_gold
             prev_ma5 = df['ma5'].iloc[-2]
-            if is_converging and prev_ma5 <= prev_ma40 and ma5_val > ma40_val:
-                data_dict['grade'] = 'S'
-                return True, "💎 [TYPE2-S] S급: 185선 수렴 중 5/40 골든크로스", "S", data_dict
             
-            # [A급] 40선 기울기가 이미 0 이상으로 돌아선 경우 (추세 확정)
-            if curr_slope_40 >= 0:
-                data_dict['grade'] = 'A'
-                return True, "🚀 [TYPE2-A] A급: 40선 기울기 0이상(우상향) 전환", "A", data_dict
+            # [S급] 수렴 중 5/40 골든크로스 돌파 (+ 가중치 적용)
+            if is_converging and prev_ma5 <= prev_ma40 and ma5_val > ma40_val:
+                grade = "S+" if is_40_90_gc else "S"
+                data_dict['grade'] = grade
+                return True, f"💎 [TYPE2-{grade}] 185선 수렴 중 5/40 돌파", grade, data_dict
+            
+            # [A급] 40선 기울기 0 이상 전환 (+ 가중치 적용)
+            elif curr_slope_40 >= 0:
+                grade = "A+" if is_40_90_gc else "A"
+                data_dict['grade'] = grade
+                return True, f"🚀 [TYPE2-{grade}] 40선 기울기 우상향 전환", grade, data_dict
 
             # [B급] 알림용: 이격 수렴 중이거나 40선 하락 감속 (진입 대기)
             if is_converging or curr_slope_40 > prev_slope_40:
