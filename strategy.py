@@ -282,6 +282,8 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     curr = df.iloc[-1]
     prev = df.iloc[-2]
     curr_price = float(curr['close'])
+    prev_ma40 = float(prev['ma40'])
+    prev_ma185 = float(prev['ma185'])
     # [[ UPDATE: 골든크로스 기반 가변 윈도우 상단 방어 ]]
     gold_index = -1
     ###### [수정] bars_since_gold 초기값 선언 ######
@@ -676,10 +678,10 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 return True, "📢 [TYPE2-B] B급 알림: 수렴 진행 및 추세 개선", "B", data_dict
                 
     # [B등급] 급등 후 거래량이 줄어들며 20일선에서 지지받는 눌림목: 현재가가 ma20 근처이고 거래량 감소 시 B
-    if ma20_val and base_avg_vol and curr_vol < base_avg_vol * 0.9 and abs(curr_price - ma20_val) / ma20_val <= 0.03 and data_dict.get('dynamic_rise_YN') != 'Y':
-        data_dict['grade'] = 'B'
-        data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
-        return True, "📌 [B] 눌림목(20일선 지지)", "B", data_dict
+    # if ma20_val and base_avg_vol and curr_vol < base_avg_vol * 0.9 and abs(curr_price - ma20_val) / ma20_val <= 0.03 and data_dict.get('dynamic_rise_YN') != 'Y':
+    #     data_dict['grade'] = 'B'
+    #     data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
+    #     return True, "📌 [B] 눌림목(20일선 지지)", "B", data_dict
 
     # 최종 탈락 사유 판단 (모든 수치·패턴 라벨 기록 후 반환)
     data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
