@@ -273,17 +273,33 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     df['ma40'] = df['close'].rolling(40).mean()
     df['ma185'] = df['close'].rolling(185).mean()
     df['rsi'] = calculate_rsi(df)
-    # [신규] 단기 정배열/골든크로스용 5일·20일 이평선 (30분봉 기준 5봉/20봉)
     df['ma5'] = df['close'].rolling(5).mean()
     df['ma20'] = df['close'].rolling(20).mean()
-    # [단기 정배열 전환] 40일×90일 골든크로스용
     df['ma90'] = df['close'].rolling(90).mean()
 
     curr = df.iloc[-1]
     prev = df.iloc[-2]
     curr_price = float(curr['close'])
+
+    ###### 전수조사 반영: 모든 TYPE에서 사용하는 공통 변수 사전 정의 ######
+    ma5_val = float(curr['ma5']) if not pd.isna(curr['ma5']) else curr_price
+    ma40_val = float(curr['ma40']) if not pd.isna(curr['ma40']) else 0
+    ma90_val = float(curr['ma90']) if not pd.isna(curr['ma90']) else 0
+    ma185_val = float(curr['ma185']) if not pd.isna(curr['ma185']) else 0
+    rsi_val = float(curr['rsi']) if not pd.isna(curr['rsi']) else 50
+
+    prev_ma5 = float(prev['ma5'])
     prev_ma40 = float(prev['ma40'])
+    prev_ma90 = float(prev['ma90'])
     prev_ma185 = float(prev['ma185'])
+
+    # 이격도 계산 (현재 및 이전 봉)
+    disparity_gold = abs(ma40_val - ma185_val) / ma185_val if ma185_val > 0 else 999
+    prev_dis_gold = abs(prev_ma40 - prev_ma185) / prev_ma185 if prev_ma185 > 0 else 999
+    
+    # TYPE 3용 이격도
+    disparity_5_185 = (ma5_val - ma185_val) / ma185_val * 100 if ma185_val > 0 else 0
+    prev_disparity = (prev_ma5 - prev_ma185) / prev_ma185 * 100 if prev_ma185 > 0 else 0
     # [[ UPDATE: 골든크로스 기반 가변 윈도우 상단 방어 ]]
     gold_index = -1
     ###### [수정] bars_since_gold 초기값 선언 ######
