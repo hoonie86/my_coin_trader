@@ -858,7 +858,7 @@ async def sell_monitor_task(app):
                                 continue
                             gap_ratio = abs(this_curr_p - top_bid_p) / this_curr_p
                             # 갭 0.3% 미만이면 1호가, 이상이면 현재가 -1호가
-                            sell_price = top_bid_p if gap_ratio < 0.003 else get_tick_size(this_curr_p, direction='down')
+                            sell_price = top_bid_p if gap_ratio < 0.003 else strategy.get_bithumb_tick_size(this_curr_p, direction='down')
                             order_result = await asyncio.to_thread(exchange.create_limit_sell_order, symbol, sell_qty, sell_price)
                             # 10초간 체결 대기 후 미체결 시 시장가 전환
                             await asyncio.sleep(10) 
@@ -991,7 +991,7 @@ async def sell_monitor_task(app):
                                     if len(bids) >= 3:
                                         top_bid_p = float(bids[0][0])
                                         gap_ratio = abs(this_curr_p - top_bid_p) / this_curr_p
-                                        sell_price = top_bid_p if gap_ratio < 0.003 else get_tick_size(this_curr_p, direction='down')
+                                        sell_price = top_bid_p if gap_ratio < 0.003 else strategy.get_bithumb_tick_size(this_curr_p, direction='down')
                                     
                                     # execute_sell 내부가 시장가라면, 여기서 직접 limit으로 쏘거나 execute_sell을 수정해야 함
                                     await asyncio.to_thread(exchange.create_limit_sell_order, symbol, this_qty, sell_price)
@@ -1074,7 +1074,7 @@ async def sell_monitor_task(app):
                             if len(bids) >= 3:
                                 top_bid_p = float(bids[0][0])
                                 gap_ratio = abs(this_curr_p - top_bid_p) / this_curr_p
-                                sell_price = top_bid_p if gap_ratio < 0.003 else get_tick_size(this_curr_p, direction='down')
+                                sell_price = top_bid_p if gap_ratio < 0.003 else strategy.get_bithumb_tick_size(this_curr_p, direction='down')
                                 order_result = await asyncio.to_thread(exchange.create_limit_sell_order, symbol, sell_qty, sell_price)
                                 # 10초간 체결 대기 후 미체결 시 시장가 전환
                                 await asyncio.sleep(10) 
