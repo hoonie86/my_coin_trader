@@ -348,6 +348,20 @@ async def buy_scan_task(app):
                 current_market_avg = sum(market_rates) / len(market_rates)
                 await strategy.update_market_panic_status(current_market_avg)
                 
+                if strategy.is_buy_locked:
+                    if not strategy.panic_msg_sent:
+                        await app.bot.send_message(config.CHAT_ID, f"🚨 [시장 잠금] Panic Filter 작동 중\n현재 시장 평균: {current_market_avg:+.2f}%\n기준점: {strategy.market_ref_rate:+.2f}%\n매수 스캔을 중단합니다.")
+                        strategy.panic_msg_sent = True
+                else:
+                    # 잠금 상태였다가 해제되는 순간 알림 발송
+                    if strategy.panic_msg_sent:
+                        await app.bot.send_message(
+                            config.CHAT_ID, 
+                            f"✅ [시장 해제] 반등 확인으로 매수 스캔을 재개합니다.\n"
+                            f"현재 시장 평균: {current_market_avg:+.2f}%"
+                        )
+                        strategy.panic_msg_sent = False
+
                 # 시장 현황 보고 (사용자 확인용)
                 lock_status = "🚨 [LOCK]" if strategy.is_buy_locked else "✅ [NORMAL]"
                 print(f"\n📊 [시장 현황] {lock_status} | 현재평균: {current_market_avg:+.2f}% | 기준점: {strategy.market_ref_rate:+.2f}%")
@@ -454,7 +468,10 @@ async def buy_scan_task(app):
 
                     can_auto_buy = False
                     if curr_mode == "AUTO":
-                        if current_grade == "S": can_auto_buy = True
+                        if current_market_avg >= 2.0:
+                            if current_grade in ["S", "A"]: can_auto_buy = True # 호황일 때 A급까지
+                        else:
+                            if current_grade == "S": can_auto_buy = True # 일반 시황 S급만
 
                     if can_auto_buy:
                     #########################################################

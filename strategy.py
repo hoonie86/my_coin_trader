@@ -8,7 +8,7 @@ from config import logger
 
 market_ref_rate = 0.0
 is_buy_locked = False
-
+panic_msg_sent = False
 cooldown_dict = {}
 
 def is_in_cooldown(symbol):
