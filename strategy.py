@@ -381,7 +381,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         # 구간 내 변동폭 계산
         dynamic_rise = ((win_high - win_low) / win_low * 100) if win_low > 0 else 0
         #print(f"DEBUG: {symbol} | 골크 발생. 골크점 : {199-gold_index} | 시작점 : {199-check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
-        # 4% 이상 급등락이 있었으면 탈락
+        # 5% 이상 급등락이 있었으면 탈락
         if dynamic_rise >= 5.0:
             data_dict['dynamic_rise_YN'] = 'Y'
             print(f"DEBUG: {symbol} | 골크 발생. 골크점 : {199-gold_index} | 시작점 : {199-check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise:.2f}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
@@ -389,7 +389,14 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         # else:
         #     print(f"DEBUG: {symbol} | 골크 발생. 골크점 : {199-gold_index} | 시작점 : {199-check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
     else:
-        check_start_idx = -25
+        # ###### [수정] 골든크로스 미발생 시 Type 3 여부에 따라 검사 구간 차등 적용 ######
+        # Type 3(바닥 낚시) 후보군: 40선이 185선 아래 있고 RSI 40 이하 이력이 있을 때
+        was_oversold_start = (df['rsi'].iloc[-30:] <= 40).any()
+        
+        if ma40_val < ma185_val and was_oversold_start:
+            check_start_idx = -10  # Type 3는 최근 5시간(10봉)만 감시
+        else:
+            check_start_idx = -25  # 그 외 일반 미발생 종목은 기존 25봉 유지
         
         # 동적 구간 설정: check_start_idx ~ 현재(-1)까지
         dynamic_window = df.iloc[check_start_idx:]
@@ -400,7 +407,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         # 구간 내 변동폭 계산
         dynamic_rise = ((win_high - win_low) / win_low * 100) if win_low > 0 else 0
         # print(f"DEBUG: {symbol} | 골크 미발생. 시작점: {check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
-        # 4% 이상 급등락이 있었으면 탈락
+        # 5% 이상 급등락이 있었으면 탈락
         if dynamic_rise >= 5.0:
             data_dict['dynamic_rise_YN'] = 'Y'
             return False, f"🚫 [제외] 골크 미발생 변동성 과다({dynamic_rise:.1f}% >= 5%)", "B", data_dict
