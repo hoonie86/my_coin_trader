@@ -1732,7 +1732,8 @@ async def main():
         print(f"📦 기존 로그 백업 완료: backups/bot_{timestamp}.txt")
 
     # 텔레그램 봇 설정
-    app = Application.builder().token(config.TELEGRAM_TOKEN).build()
+    app = Application.builder().token(config.TELEGRAM_TOKEN)\
+        .connect_timeout(30).read_timeout(30).build()
     app.add_handler(CallbackQueryHandler(handle_interaction))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_interaction))
 
