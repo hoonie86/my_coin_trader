@@ -523,13 +523,12 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
 
     # [핵심] 최근 30봉 이내에 RSI 40 이하를 찍으며 '바닥 초입'을 통과했었는지 확인
     was_oversold_start = (df['rsi'].iloc[-30:] <= 40).any()
-    
+    # 현재 봉(-1)을 제외한 직전 30봉 구간에서 단 한 번이라도 뚫었는지 확인
+    has_prior_gc = (df['ma5'].iloc[-31:-1] > df['ma40'].iloc[-31:-1]).any()    
+
     # 2. 새끼 양봉 계산 (시가 대비 +0.0% ~ +2.0% 사이만 허용)
     candle_body_pct = ((curr_price - curr['open']) / curr['open'] * 100) if curr['open'] > 0 else 0
     target_disparity = -7.0 if slope_rate <= -0.035 else -4.0
-    
-    ###### [추가] 최근 30봉 내 RSI 40 이하를 찍으며 '초입'을 통과했었는지 체크
-    was_oversold_start = (df['rsi'].iloc[-30:] <= 40).any()
     
     # [수정] 40선이 185선 아래여야 하며, 과거 바닥(RSI 40)을 통과한 종목을 추적 관리
     if ma40_val < ma185_val and was_oversold_start and data_dict.get('dynamic_rise_YN') != 'Y':
@@ -550,11 +549,13 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 disparity_5_40 = ((ma5_val - ma40_val) / ma40_val) * 100 if ma40_val > 0 else 0
                 
                 # [수정] S급: 40선 격돌(이격 -0.5% 이내) 및 우상향 조건 추가 (골크 발생 전후 찰나만 허용) ######
-                # 1. 이전 봉까지는 5선이 40선 아래(또는 일치)에 있었어야 함 (이미 뚫고 한참 지난 종목 차단)
-                # 2. 5선 기울기 > 0 (반등 시작), 40선 기울기 > -0.08 (급락 억제), 5/40 이격도 > -0.5% (초밀착)
-                if (prev_ma5 <= prev_ma40) and (ma5_slope > 0) and (curr_slope_40 > -0.08) and (disparity_5_40 > -0.5):
+                # 1. (not has_prior_gc) : 바닥 확인 후 지금까지 단 한 번도 뚫은 적이 없어야 함 (무결점)
+                # 2. prev_ma5 <= prev_ma40 : 직전 봉까지는 아래에 있었어야 함 (지각 매수 차단)
+                # 3. ma5_slope > 0, curr_slope_40 > -0.08, disparity_5_40 > -0.5 : 수치 필터
+                if (not has_prior_gc) and (prev_ma5 <= prev_ma40) and (ma5_slope > 0) and (curr_slope_40 > -0.08) and (disparity_5_40 > -0.5):
                     data_dict['grade'] = 'S'
-                    return True, f"💎 [TYPE3-S] 40선 격돌 및 이격 최저점 ({disparity_5_40:.2f}%)", "S", data_dict
+                    return True, f"💎 [TYPE3-S] 무결점 바닥 격돌 ({disparity_5_40:.2f}%)", "S", data_dict
+                
                 # [A급] 40선 기울기가 0 이상으로 전환 (추세 반전 확인)
                 elif curr_slope_40 >= 0:
                     data_dict['grade'] = 'A'
