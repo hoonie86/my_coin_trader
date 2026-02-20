@@ -545,10 +545,16 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 curr_slope_40 = ((ma40_val - prev_ma40) / prev_ma40) * 100 if prev_ma40 > 0 else 0
                 
                 # [S급] 바닥권에서 5일선이 40선을 우상향 돌파 (강력 반등)
-                if prev_ma5 <= prev_ma40 and ma5_val > ma40_val:
-                    data_dict['grade'] = 'S'
-                    return True, f"💎 [TYPE3-S] 바닥낚시 및 5/40 골크 돌파", "S", data_dict
+                # [추가] 격돌 판정을 위한 보조 지표 계산 (5선 기울기 및 5/40 이격도) ######
+                ma5_slope = ((ma5_val - prev_ma5) / prev_ma5) * 100 if prev_ma5 > 0 else 0
+                disparity_5_40 = ((ma5_val - ma40_val) / ma40_val) * 100 if ma40_val > 0 else 0
                 
+                # [수정] S급: 40선 격돌(이격 -0.5% 이내) 및 우상향 조건 추가 (골크 발생 전후 찰나만 허용) ######
+                # 1. 이전 봉까지는 5선이 40선 아래(또는 일치)에 있었어야 함 (이미 뚫고 한참 지난 종목 차단)
+                # 2. 5선 기울기 > 0 (반등 시작), 40선 기울기 > -0.08 (급락 억제), 5/40 이격도 > -0.5% (초밀착)
+                if (prev_ma5 <= prev_ma40) and (ma5_slope > 0) and (curr_slope_40 > -0.08) and (disparity_5_40 > -0.5):
+                    data_dict['grade'] = 'S'
+                    return True, f"💎 [TYPE3-S] 40선 격돌 및 이격 최저점 ({disparity_5_40:.2f}%)", "S", data_dict
                 # [A급] 40선 기울기가 0 이상으로 전환 (추세 반전 확인)
                 elif curr_slope_40 >= 0:
                     data_dict['grade'] = 'A'
