@@ -49,15 +49,24 @@ async def update_market_panic_status(current_avg):
             is_buy_locked = True
             market_ref_rate = current_avg
 
-def get_bithumb_tick_size(price):
-    if price < 10: return 0.001
-    if price < 100: return 0.01
-    if price < 1000: return 0.1
-    if price < 5000: return 1
-    if price < 10000: return 5
-    if price < 50000: return 10
-    if price < 100000: return 50
-    return 100
+def get_bithumb_tick_size(price, direction=None):
+    # [1] 기본 틱 사이즈 결정 (분석용 이격/기울기 계산의 기준점)
+    if price < 10: tick = 0.001
+    elif price < 100: tick = 0.01
+    elif price < 1000: tick = 0.1
+    elif price < 5000: tick = 1
+    elif price < 10000: tick = 5
+    elif price < 50000: tick = 10
+    elif price < 100000: tick = 50
+    else: tick = 100
+
+    # [2] 상황별 반환 처리
+    # 'direction' 인자가 있다면 매도 주문용 '가격'을 반환 (사용자 의도 반영)
+    if direction == 'down':
+        return price - tick  # 예: 54,300 - 100 = 54,200원
+    
+    # 'direction'이 없다면 분석용 '단위'를 반환 (기존 diff_185/slope_rate 로직 보호)
+    return tick  # 예: 100원
 
 
 def calculate_rsi(df, period=14):
@@ -551,20 +560,22 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 # [수정] S급: 40선 격돌(이격 -0.5% 이내) 및 우상향 조건 추가 (골크 발생 전후 찰나만 허용) ######
                 # 1. (not has_prior_gc) : 바닥 확인 후 지금까지 단 한 번도 뚫은 적이 없어야 함 (무결점)
                 # 2. prev_ma5 <= prev_ma40 : 직전 봉까지는 아래에 있었어야 함 (지각 매수 차단)
-                # 3. ma5_slope > 0, curr_slope_40 > -0.08, disparity_5_40 > -0.5 : 수치 필터
-                if (not has_prior_gc) and (prev_ma5 <= prev_ma40) and (ma5_slope > 0) and (curr_slope_40 > -0.08) and (disparity_5_40 > -0.5):
+                # 3. ma5_slope > 0, curr_slope_40 > -0.09, disparity_5_40 > -0.5 : 수치 필터
+                if (not has_prior_gc) and (prev_ma5 <= prev_ma40) and (ma5_slope > 0) and (curr_slope_40 > -0.09) and (disparity_5_40 > -0.5):
                     data_dict['grade'] = 'S'
                     return True, f"💎 [TYPE3-S] 무결점 바닥 격돌 ({disparity_5_40:.2f}%)", "S", data_dict
-                
+                else:
+                    logger.info(f"DEBUG: {symbol} | [TYPE3-S] 탈락 이유 | 조건1(골크 미존재) :  {not has_prior_gc} and 조건2(prev_ma5-prev_ma40): {prev_ma5 - prev_ma40} <= 0 and 조건3(ma5_slope): {ma5_slope} > 0 \
+                    and 조건4(curr_slope_40): {curr_slope_40 + 0.09} > 0 and 조건5(ma5, 40 이격): {disparity_5_40 + 0.5} > 0 | 중 False")
                 # [A급] 40선 기울기가 0 이상으로 전환 (추세 반전 확인)
-                elif curr_slope_40 >= 0:
+                if curr_slope_40 >= 0:
                     data_dict['grade'] = 'A'
                     return True, f"🚀 [TYPE3-A] 바닥낚시 및 40선 추세 반전", "A", data_dict
-                    
-                # [B급] 바닥낚시 조건은 만족하나 아직 돌파/반전 전 (알림용)
                 else:
-                    data_dict['grade'] = 'B'
-                    return True, f"📢 [TYPE3-B] 바닥낚시 수렴 중 (알림)", "B", data_dict
+                    logger.info(f"DEBUG: {symbol} | [TYPE3-A] 탈락 이유 | 조건1(curr_slope_40) : {curr_slope_40} > 0")    
+                # [B급] 바닥낚시 조건은 만족하나 아직 돌파/반전 전 (알림용)
+                data_dict['grade'] = 'B'
+                return True, f"📢 [TYPE3-B] 바닥낚시 수렴 중 (알림)", "B", data_dict
     ###################  TYPE3 END ###################
 
     disparity_40 = abs(curr_price - curr['ma40']) / curr['ma40'] if curr['ma40'] > 0 else 999
@@ -641,33 +652,36 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             
             data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
             
-            # [S+급] 밥그릇 수렴 + 40/90 골든크로스 (최상의 변곡점)
-            if slope_rate >= -0.01 and disparity_gold <= 0.005 and is_40_90_gc:
-                data_dict['grade'] = 'S+'
-                return True, "💎 [TYPE1-S+] 밥그릇 수렴 및 40/90 골든크로스 확정", "S+", data_dict
-
-            # [S급] 밥그릇 바닥 완전 수렴 (기존 S)
-            if slope_rate >= -0.01 and disparity_gold <= 0.005:
-                data_dict['grade'] = 'S'
-                return True, "💎 [TYPE1-S] 밥그릇 바닥 완전 수렴", "S", data_dict
-            
-            # [A+급] 바닥 탈출 + 40/90 정배열 (추세 가속 확인)
-            if slope_rate >= -0.01 and disparity_gold <= 0.010 and is_40_above_90:
-                # 40일선과 현재가의 이격이 2%를 초과하면 추격주의로 판단하여 등급 하향
-                if (curr_price - ma40_val) / ma40_val > 0.02:
-                    data_dict['grade'] = 'A'
-                    return True, "🚀 [TYPE1-A] 상승대기(골드안착/추격주의)", "A", data_dict
-
-                data_dict['grade'] = 'A+'
-                return True, "⭐ [TYPE1-A+] 밥그릇 탈출 및 40/90 정배열 안착", "A+", data_dict
-
-            # [A급] 밥그릇 바닥 탈출 (기존 A+)
-            if slope_rate >= -0.01 and disparity_gold <= 0.010:
-                data_dict['grade'] = 'A'
-                return True, "⭐ [TYPE1-A] 밥그릇 바닥 탈출(변곡점 확인)", "A", data_dict
-
-            # [B+급] 185선 평행/우상향 전환 초기
             if slope_rate >= -0.01:
+                # [S+급] 밥그릇 수렴 + 40/90 골든크로스 (최상의 변곡점)
+                if disparity_gold <= 0.005 and is_40_90_gc:
+                    data_dict['grade'] = 'S+'
+                    return True, "💎 [TYPE1-S+] 밥그릇 수렴 및 40/90 골든크로스 확정", "S+", data_dict
+                else:
+                    logger.info(f"DEBUG: {symbol} | [TYPE1-S+] 탈락 이유 | 조건1(disparity_gold): {disparity_gold} <= 0.005 and 조건2(is_40_90_gc): {is_40_90_gc} | 둘 중 하나 False")
+                # [S급] 밥그릇 바닥 완전 수렴 (기존 S)
+                if disparity_gold <= 0.005:
+                    data_dict['grade'] = 'S'
+                    return True, "💎 [TYPE1-S] 밥그릇 바닥 완전 수렴", "S", data_dict
+                else:
+                    logger.info(f"DEBUG: {symbol} | [TYPE1-S] 탈락 이유 | 조건1(disparity_gold) : {disparity_gold} <= 0")
+                
+                # [A+급] 바닥 탈출 + 40/90 정배열 (추세 가속 확인)
+                if disparity_gold <= 0.010 and is_40_above_90:
+                    # 40일선과 현재가의 이격이 2%를 초과하면 추격주의로 판단하여 등급 하향
+                    if (curr_price - ma40_val) / ma40_val > 0.02:
+                        data_dict['grade'] = 'A'
+                        return True, "🚀 [TYPE1-A] 상승대기(골드안착/추격주의)", "A", data_dict
+
+                    data_dict['grade'] = 'A+'
+                    return True, "⭐ [TYPE1-A+] 밥그릇 탈출 및 40/90 정배열 안착", "A+", data_dict
+
+                # [A급] 밥그릇 바닥 탈출 (기존 A+)
+                if disparity_gold <= 0.010:
+                    data_dict['grade'] = 'A'
+                    return True, "⭐ [TYPE1-A] 밥그릇 바닥 탈출(변곡점 확인)", "A", data_dict
+
+                # [B+급] 185선 평행/우상향 전환 초기
                 data_dict['grade'] = 'B+'
                 return True, "🚀 [TYPE1-B+] 185선 평행/우상향 전환", "B+", data_dict
             
@@ -690,25 +704,26 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         is_185_stable = ma185_val >= df['ma185'].iloc[-2]
         is_converging = disparity_gold < prev_dis_gold
 
-        # TYPE 2 조건: 이격 범위(-2~8%) 내에서 185선이 안정적일 때
-        if is_185_stable and -2.0 <= dis_gold_pct <= 8.0:
-            is_converging = disparity_gold < prev_dis_gold
+        # TYPE 2 조건: 이격 범위(-2~8%) 내에서 이격 수렴 중 185선이 안정적일 때
+        if is_185_stable and -2.0 <= dis_gold_pct <= 8.0 and is_converging:
             prev_ma5 = df['ma5'].iloc[-2]
             
-            # [S급] 수렴 중 5/40 골든크로스 돌파 (+ 가중치 적용)
-            if is_converging and prev_ma5 <= prev_ma40 and ma5_val > ma40_val:
+            # [S급] 5/40 골든크로스 돌파 (+ 가중치 적용)
+            if  prev_ma5 <= prev_ma40 and ma5_val > ma40_val:
                 grade = "S+" if is_40_90_gc else "S"
                 data_dict['grade'] = grade
                 return True, f"💎 [TYPE2-{grade}] 185선 수렴 중 5/40 돌파", grade, data_dict
-            
+            else:
+                logger.info(f"DEBUG: {symbol} | [TYPE2-{grade}] 탈락 이유 | 조건1(prev_ma5-prev_ma40) : {prev_ma5-prev_ma40} <= 0 and 조건2(ma5_val-ma40_val): {ma5_val-ma40_val} > 0 | 둘 중 하나 False")
+
             # [A급] 40선 기울기 0 이상 전환 (+ 가중치 적용)
-            elif curr_slope_40 >= 0:
+            if curr_slope_40 >= 0:
                 grade = "A+" if is_40_90_gc else "A"
                 data_dict['grade'] = grade
                 return True, f"🚀 [TYPE2-{grade}] 40선 기울기 우상향 전환", grade, data_dict
 
-            # [B급] 알림용: 이격 수렴 중이거나 40선 하락 감속 (진입 대기)
-            if is_converging or curr_slope_40 > prev_slope_40:
+            # [B급] 알림용: 40선 하락 감속 (진입 대기)
+            if curr_slope_40 > prev_slope_40:
                 # 거래량은 참고용으로만 체크하여 알림 빈도 확보
                 data_dict['grade'] = 'B'
                 return True, "📢 [TYPE2-B] B급 알림: 수렴 진행 및 추세 개선", "B", data_dict
