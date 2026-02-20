@@ -497,8 +497,7 @@ async def buy_scan_task(app):
                                     if success:
                                         final_buy_cost = retry_cost # 성공 시 표시 금액 갱신
                             if success:
-                                display_grade = "A급" if "[A]" in reason or "A급" in reason else ("S급" if "[S]" in reason or "S급" in reason else "B급")
-                    
+                                display_grade = f"{current_grade}급"
                                 await app.bot.send_message(
                                     config.CHAT_ID,
                                         f"🤖 [{display_grade} 즉시매수 완료] {symbol}\n"
@@ -508,7 +507,7 @@ async def buy_scan_task(app):
                                 if symbol in pending_s_buys: del pending_s_buys[symbol]
                     else:
                         display_grade = f"{current_grade}급"
-                        # if display_grade == "B급":    continue
+                        if display_grade == "B급":    continue
                         status_tag = f"💎 [매수포착 - {display_grade}]" if not is_s_class_check else "🔥 [S급 포착/수동대기]"
                         is_auto_btn = (indiv_mode == 'AUTO')
                         await app.bot.send_message(
@@ -1448,6 +1447,7 @@ async def process_report_logic(update, context, query=None):
 
         # [핵심] 필터링(continue) 없이 assets에 있는 모든 종목을 순회
         for symbol, data in assets.items():
+            sym_only = symbol.split('/')[0]
             ticker = await asyncio.to_thread(exchange.fetch_ticker, symbol)
             this_curr_p = float(ticker.get('last') or ticker.get('close') or 0)
             
