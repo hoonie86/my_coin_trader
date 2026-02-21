@@ -729,6 +729,10 @@ async def sell_monitor_task(app):
                 if this_profit >= 10.0 or emergency_mode.get(symbol, False):
                     current_loop_sleep = 10      # 긴급 모드는 5초마다 조회
                 ##############################################
+                if emergency_mode.get(symbol) and rsi_val < 60:
+                    emergency_mode.pop(symbol, None)
+                    logger.info(f"✅ {symbol} RSI 안정 확인({rsi_val:.1f}) -> 긴급 모드 해제")
+                    
                 this_profit_krw = (this_curr_p - this_avg_p) * this_qty
 
                 # [수정] 인벤토리에서 등급 가져오기

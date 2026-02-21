@@ -335,7 +335,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     curr_max_high_low = max(curr['open'], curr['close'])
     upper_wick = (curr['high'] - curr_max_high_low) / curr_max_high_low * 100
     
-    if volatility >= 6.0:
+    if volatility >= 8.0:
         print(f"DEBUG: {symbol} 매수 탈락 - 변동성 과다({volatility:.1f}%)")
         return False, f"🚫 [상단방어] 구간 변동성({volatility:.1f}%) 및 저항 포착", "F", {}
         
@@ -346,7 +346,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         print(f"DEBUG: {symbol} 매수 탈락 - 윗꼬리 과다({volatility:.1f}%)")
         return False, f"🚫 [윗꼬리 방어] 가격 변동성({volatility:.1f}%) 설거지 포착", "F", {}    
     # [가격 필터] 10원 미만 또는 10,000원 이상 → BTC 마켓 동전주/비정상 차단
-    if curr_price < 10 or curr_price >= 10000:
+    if curr_price < 1 or curr_price >= 10000:
         return False, "가격필터(BTC마켓)", "", data_dict
 
     # [유의 종목] 수급 돌파(S/S+) 포함 모든 매수 신호에서 투자유의 종목 제외 (먼저 검사)
@@ -391,8 +391,8 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         # 구간 내 변동폭 계산
         dynamic_rise = ((win_high - win_low) / win_low * 100) if win_low > 0 else 0
         #print(f"DEBUG: {symbol} | 골크 발생. 골크점 : {199-gold_index} | 시작점 : {199-check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
-        # 5% 이상 급등락이 있었으면 탈락
-        if dynamic_rise >= 5.0:
+        # 7% 이상 급등락이 있었으면 탈락
+        if dynamic_rise >= 8.0:
             data_dict['dynamic_rise_YN'] = 'Y'
             print(f"DEBUG: {symbol} | 골크 발생. 골크점 : {199-gold_index} | 시작점 : {199-check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise:.2f}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
             return False, f"🚫 [제외] 골크 전후 변동성 과다({dynamic_rise:.1f}% >= 5%)", "B", data_dict
@@ -417,8 +417,8 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         # 구간 내 변동폭 계산
         dynamic_rise = ((win_high - win_low) / win_low * 100) if win_low > 0 else 0
         # print(f"DEBUG: {symbol} | 골크 미발생. 시작점: {check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
-        # 5% 이상 급등락이 있었으면 탈락
-        if dynamic_rise >= 5.0:
+        # 7% 이상 급등락이 있었으면 탈락
+        if dynamic_rise >= 8.0:
             data_dict['dynamic_rise_YN'] = 'Y'
             return False, f"🚫 [제외] 골크 미발생 변동성 과다({dynamic_rise:.1f}% >= 5%)", "B", data_dict
     bars_since_gold = len(df) - gold_index if gold_index != -1 else -1
@@ -591,6 +591,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     data_dict['disparity_gold'] = disparity_gold
     
     if rsi_val > 65:
+        logger.info(f"DEBUG: {symbol} RSI 과열({rsi_val:.1f} > 65, 현재가:{curr_price:,.0f})")
         reason = f"RSI 과열({rsi_val:.1f} > 65, 현재가:{curr_price:,.0f})"
         data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
         return False, reason, "", data_dict
@@ -782,12 +783,18 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
     global emergency_mode
     high_price = max(max_price, df['high'].tail(6).max())
     # [유지] 지표 계산
+    df['ma5'] = df['close'].rolling(5).mean()
     df['ma40'] = df['close'].rolling(40).mean()
     df['ma90'] = df['close'].rolling(90).mean()
     df['ma185'] = df['close'].rolling(185).mean()
 
     curr = df.iloc[-1]
     prev = df.iloc[-2] # [추가] 급등 감지용
+
+    ma5_val = float(curr['ma5'])
+    prev_ma5 = float(prev['ma5'])
+    ma40_val = float(curr['ma40'])
+
     curr_p = realtime_p if realtime_p is not None else curr['close']
 
     # [보정] RSI 및 수익률 계산
@@ -836,11 +843,18 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
 
     # 2. [회귀 로직] 긴급 상황 종료 및 일반 모드(30m) 복귀
     # 수익률 5% 미만 AND RSI 60 미만 AND (TYPE 3 제외) 시 일반 모드로 회귀
-    if is_emergency and profit_rate_pct < 5.0 and rsi_val < 60 and str(buy_type) != '3':
+    is_recovering_general = (str(buy_type) != '3' and profit_rate_pct < 5.0 and rsi_val < 60)
+    is_recovering_type3 = (str(buy_type) == '3' and ma5_val > ma40_val and ma5_val >= prev_ma5)
+
+    if is_emergency and (is_recovering_general or is_recovering_type3):
         emergency_mode[symbol] = False
         is_emergency = False
-        logger.info(f"☕ {symbol} 안정화 확인: 일반 모드(30m)로 회귀합니다.")
+        # 해제 사유를 로그에 기록
+        log_msg = "TYPE3 안정기 진입 확인" if str(buy_type) == '3' else "지표 안정화 확인"
+        logger.info(f"✅ {symbol} {log_msg}: 일반 모드(30m)로 회귀합니다.")
+        
     elif is_emergency:
+        # 회복 조건을 만족하지 못한 '진짜 비상' 상태인 경우에만 기록 유지
         emergency_mode[symbol] = True
 
     # 3. 기존 is_rush_mode와 통합하여 3m/30m 분기 결정
@@ -999,8 +1013,13 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
     # 수익 10% 이상이거나 RSI 80 이상이면 3분봉 정밀 감시 가동
     if profit_rate_pct >= 10.0 or emergency_mode.get(symbol, False):
         try:
-            ###### [ADD START] 3분봉 모드 가동 콘솔 출력 ######
-            mode_reason = "수익률 10%↑" if profit_rate_pct >= 10.0 else "RSI 과열"
+            ###### [수정] 엔진 가동 사유 레이블링 정교화 ######
+            if profit_rate_pct >= 10.0:
+                mode_reason = "수익률 10%↑"
+            elif str(buy_type) == '3':
+                mode_reason = "TYPE3 정밀감시" # ###### [변경] 더 이상 RSI 과열로 오해하지 않음 ######
+            else:
+                mode_reason = "RSI 과열"
             # print(f"🔥 [3분봉 엔진 가동] {symbol} | 사유: {mode_reason} | 현재가: {curr_p:,.0f}")
             logger.info(f"DEBUG: 🔥 [3분봉 엔진 가동] {symbol} | 사유: {mode_reason} | 현재가: {curr_p:,.0f}")
             # 3분봉 데이터 호출 (노이즈 방지를 위해 여기서 직접 fetch)
