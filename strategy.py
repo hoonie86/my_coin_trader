@@ -956,12 +956,12 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
             max_profit_rate_pct = ((high_price - purchase_price) / purchase_price * 100) if purchase_price > 0 else 0
 
             # 1. 본절 방어 (1.2% 미만)
-            if 0.5 <= max_profit_rate_pct < 1.2:
-                if curr_p <= purchase_price * 1.005:
-                    return True, f"🛡️ [S-TS-0.5] 본절방어", False
+            # if 0.5 <= max_profit_rate_pct < 1.2:
+            #     if curr_p <= purchase_price * 1.005:
+            #         return True, f"🛡️ [S-TS-0.5] 본절방어", False
 
             # 2. 익절 구간 A (1.2% ~ 2.0% 미만): 고점 대비 1% 하락 시 매도
-            elif 1.2 <= max_profit_rate_pct < 2.0:
+            if 1.2 <= max_profit_rate_pct < 2.0:
                 if drop_from_peak >= 1.0:
                     return True, f"💰 [S-TS-1.2] 익절 A (낙폭 1.0%)", False
 
