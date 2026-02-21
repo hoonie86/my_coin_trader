@@ -28,7 +28,7 @@ pending_s_buys = {}
 # [사후분석] 미지 패턴 기록 종목의 60분 후 수익률 추적용 { symbol: (recorded_at, price_at_record) }
 missed_60m_tracker = {}
 # [추가] 비상 체제 상태를 저장할 딕셔너리 선언
-emergency_mode = {}
+emergency_mode = strategy.emergency_mode
 # [평단가 로컬 관리용]
 INV_FILE = "trades/inventory.json"
 

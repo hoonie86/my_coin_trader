@@ -829,32 +829,28 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
     parallel_window = df.iloc[-20:]
     support_idx = (parallel_window['ma40'].diff().abs()).idxmin()
     support_price = df.loc[support_idx, 'ma40']
-    ################################################################################
-    ######### [신규: 30분봉 시가 기준 급등 즉시 처단 시스템] #########
-    ################################################################################
-    ###### [수정] 30m/3m 가변 모드 및 회귀 로직 삽입 (지지선 로직 유지) ######
-    # 1. 상태 진단용 변수
+
+    # [추가] TYPE3 안정기 판정 (5/40 GC 유지 + 5일선 기울기 평행/우상향)
+    ma5_val, ma40_val, prev_ma5 = float(curr['ma5']), float(curr['ma40']), float(prev['ma5'])
+    is_type3_stable = (str(buy_type) == '3' and ma5_val > ma40_val and ma5_val >= prev_ma5)
+
+    # 1. 상태 진단: 이미 안정기라면 TYPE3라도 비상 모드를 켜지 않음 (재기동 시 무한 비상 방지)
     soaring_rate = (curr_p - curr['open']) / curr['open'] * 100
     rsi_val = rsi_series.iloc[-1]
-    
-    # 긴급 모드 판단: 기존 이력 OR 수익 10%↑ OR RSI 80↑ OR 30분봉 급등 2%↑ OR TYPE 3
     is_emergency = (emergency_mode.get(symbol, False) or profit_rate_pct >= 10.0 or 
-                    has_rsi_spike or soaring_rate >= 2.0 or str(buy_type) == '3')
+                    has_rsi_spike or soaring_rate >= 2.0 or 
+                    (str(buy_type) == '3' and not is_type3_stable))
 
-    # 2. [회귀 로직] 긴급 상황 종료 및 일반 모드(30m) 복귀
-    # 수익률 5% 미만 AND RSI 60 미만 AND (TYPE 3 제외) 시 일반 모드로 회귀
+    # 2. [회귀 로직] 일반 종목 혹은 TYPE3 안정기 도달 시 비상 모드 즉시 해제
     is_recovering_general = (str(buy_type) != '3' and profit_rate_pct < 5.0 and rsi_val < 60)
-    is_recovering_type3 = (str(buy_type) == '3' and ma5_val > ma40_val and ma5_val >= prev_ma5)
+    is_recovering_type3 = (str(buy_type) == '3' and is_type3_stable)
 
     if is_emergency and (is_recovering_general or is_recovering_type3):
         emergency_mode[symbol] = False
         is_emergency = False
-        # 해제 사유를 로그에 기록
-        log_msg = "TYPE3 안정기 진입 확인" if str(buy_type) == '3' else "지표 안정화 확인"
-        logger.info(f"✅ {symbol} {log_msg}: 일반 모드(30m)로 회귀합니다.")
-        
+        reason_msg = "TYPE3 안정기 진입 확인" if str(buy_type) == '3' else "지표 안정 확인"
+        logger.info(f"✅ {symbol} {reason_msg} -> 비상 모드 해제 및 30분봉 복귀")
     elif is_emergency:
-        # 회복 조건을 만족하지 못한 '진짜 비상' 상태인 경우에만 기록 유지
         emergency_mode[symbol] = True
 
     # 3. 기존 is_rush_mode와 통합하여 3m/30m 분기 결정
@@ -1000,12 +996,6 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
                 logger.error(f"TYPE3 3분봉 분석 에러: {e}")
         else:
             logger.info(f"DEBUG: {symbol} | TYPE: {buy_type} | 작업 패스")
-    ################################################################################
-    # 0순위: 긴급 감시 스위치 작동
-    if has_rsi_spike:
-        if not emergency_mode.get(symbol, False):
-            emergency_mode[symbol] = True
-            logger.info(f"🔥 [비상] {symbol} 최근 14봉 내 RSI 80 돌파 이력 포착! 비상 모드 진입")
 
     # ---------------------------------------------------------
     ######### [신규: 급등 시 3분봉 비상 체제 전환] #########
