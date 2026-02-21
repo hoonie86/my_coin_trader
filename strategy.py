@@ -695,39 +695,50 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     # 집중: 골든크로스 이후 40선(노란선) 밀착 및 지지 확인
     # ==========================================================================
     if 4 <= bars_since_gold <= 40:
-        # 40일선 기울기 가속도 및 이격도 계산
-        prev_ma40_2 = df['ma40'].iloc[-3]
-        prev_slope_40 = ((prev_ma40 - prev_ma40_2) / prev_ma40_2) * 100 if prev_ma40_2 > 0 else 0
-        curr_slope_40 = ((ma40_val - prev_ma40) / prev_ma40) * 100 if prev_ma40 > 0 else 0
-        dis_gold_pct = (ma40_val - ma185_val) / ma185_val * 100 if ma185_val > 0 else 0
+        # 1. 역사적 순결성 (최근 150봉 내 40/185 골든크로스 딱 1번 & 185선 10봉 연속 유지 
+        gc_count_150 = 0
+        for i in range(1, 150):
+            if i+1 < len(df):
+                if df['ma40'].iloc[-i-1] <= df['ma185'].iloc[-i-1] and df['ma40'].iloc[-i] > df['ma185'].iloc[-i]:
+                    gc_count_150 += 1
+        
+        # 2. 185선 10봉 무결성 (최근 10봉 동안 ma185가 단 한 번도 하락하지 않음)
+        is_185_10bar_stable = all(df['ma185'].iloc[-i] >= df['ma185'].iloc[-i-1] for i in range(1, 11))
 
-        ###### 185선 상태 및 이격도 수렴 여부 (핵심 전제)
-        is_185_stable = ma185_val >= df['ma185'].iloc[-2]
-        is_converging = disparity_gold < prev_dis_gold
+        if gc_count_150 == 1 and is_185_10bar_stable:
+            # 40일선 기울기 가속도 및 이격도 계산
+            prev_ma40_2 = df['ma40'].iloc[-3]
+            prev_slope_40 = ((prev_ma40 - prev_ma40_2) / prev_ma40_2) * 100 if prev_ma40_2 > 0 else 0
+            curr_slope_40 = ((ma40_val - prev_ma40) / prev_ma40) * 100 if prev_ma40 > 0 else 0
+            dis_gold_pct = (ma40_val - ma185_val) / ma185_val * 100 if ma185_val > 0 else 0
 
-        # TYPE 2 조건: 이격 범위(-2~8%) 내에서 이격 수렴 중 185선이 안정적일 때
-        if is_185_stable and -2.0 <= dis_gold_pct <= 8.0 and is_converging:
-            prev_ma5 = df['ma5'].iloc[-2]
-            
-            # [S급] 5/40 골든크로스 돌파 (+ 가중치 적용)
-            if  prev_ma5 <= prev_ma40 and ma5_val > ma40_val:
-                grade = "S+" if is_40_90_gc else "S"
-                data_dict['grade'] = grade
-                return True, f"💎 [TYPE2-{grade}] 185선 수렴 중 5/40 돌파", grade, data_dict
-            else:
-                logger.info(f"DEBUG: {symbol} | [TYPE2-{grade}] 탈락 이유 | 조건1(prev_ma5-prev_ma40) : {prev_ma5-prev_ma40:.2f} <= 0 and 조건2(ma5_val-ma40_val): {ma5_val-ma40_val:.2f} > 0")
+            ###### 185선 상태 및 이격도 수렴 여부 (핵심 전제)
+            is_185_stable = ma185_val >= df['ma185'].iloc[-2]
+            is_converging = disparity_gold < prev_dis_gold
 
-            # [A급] 40선 기울기 0 이상 전환 (+ 가중치 적용)
-            if curr_slope_40 >= 0:
-                grade = "A+" if is_40_90_gc else "A"
-                data_dict['grade'] = grade
-                return True, f"🚀 [TYPE2-{grade}] 40선 기울기 우상향 전환", grade, data_dict
+            # TYPE 2 조건: 이격 범위(-2~8%) 내에서 이격 수렴 중 185선이 안정적일 때
+            if is_185_stable and -2.0 <= dis_gold_pct <= 8.0 and is_converging:
+                prev_ma5 = df['ma5'].iloc[-2]
+                
+                # [S급] 5/40 골든크로스 돌파 (+ 가중치 적용)
+                if  prev_ma5 <= prev_ma40 and ma5_val > ma40_val:
+                    grade = "S+" if is_40_90_gc else "S"
+                    data_dict['grade'] = grade
+                    return True, f"💎 [TYPE2-{grade}] 185선 수렴 중 5/40 돌파", grade, data_dict
+                else:
+                    logger.info(f"DEBUG: {symbol} | [TYPE2-{grade}] 탈락 이유 | 조건1(prev_ma5-prev_ma40) : {prev_ma5-prev_ma40:.2f} <= 0 and 조건2(ma5_val-ma40_val): {ma5_val-ma40_val:.2f} > 0")
 
-            # [B급] 알림용: 40선 하락 감속 (진입 대기)
-            if curr_slope_40 > prev_slope_40:
-                # 거래량은 참고용으로만 체크하여 알림 빈도 확보
-                data_dict['grade'] = 'B'
-                return True, "📢 [TYPE2-B] B급 알림: 수렴 진행 및 추세 개선", "B", data_dict
+                # [A급] 40선 기울기 0 이상 전환 (+ 가중치 적용)
+                if curr_slope_40 >= 0:
+                    grade = "A+" if is_40_90_gc else "A"
+                    data_dict['grade'] = grade
+                    return True, f"🚀 [TYPE2-{grade}] 40선 기울기 우상향 전환", grade, data_dict
+
+                # [B급] 알림용: 40선 하락 감속 (진입 대기)
+                if curr_slope_40 > prev_slope_40:
+                    # 거래량은 참고용으로만 체크하여 알림 빈도 확보
+                    data_dict['grade'] = 'B'
+                    return True, "📢 [TYPE2-B] B급 알림: 수렴 진행 및 추세 개선", "B", data_dict
                 
     # [B등급] 급등 후 거래량이 줄어들며 20일선에서 지지받는 눌림목: 현재가가 ma20 근처이고 거래량 감소 시 B
     # if ma20_val and base_avg_vol and curr_vol < base_avg_vol * 0.9 and abs(curr_price - ma20_val) / ma20_val <= 0.03 and data_dict.get('dynamic_rise_YN') != 'Y':
@@ -818,8 +829,15 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
             return True, f"🚨 [긴급손절] 진입초기 -3% 도달", True
         return False, f"진입 초기 유예({symbol_inventory_age}봉)", False
 
+    ########## [수정 시작] 최고 수익률을 기준으로 감시 구간을 고정하여 급락 시 이탈 방지 ##########
     max_profit_rate_pct = ((high_price - purchase_price) / purchase_price * 100) if purchase_price > 0 else 0
-    if 0.5 <= max_profit_rate_pct < 1.2 and curr_p <= purchase_price * 1.005:
+
+    ###### [수정] 2틱 본절 유예: 최소 2틱 수익(또는 0.5%) 달성 시에만 본절방어 가동 ######
+    one_tick_pct = (get_bithumb_tick_size(purchase_price) / purchase_price * 100) if purchase_price > 0 else 0
+    profit_threshold = max(0.5, 2 * one_tick_pct)
+
+    # 1. 본절 방어 (수정된 동적 기준 적용)
+    if profit_threshold <= max_profit_rate_pct < 1.2 and curr_p <= purchase_price * 1.005:
         cooldown_dict[symbol] = datetime.now() + timedelta(hours=6)
         return True, f"🛡️ [S-TS-0.5] 본절방어(즉시)", True
 
