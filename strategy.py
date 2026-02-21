@@ -251,6 +251,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     Returns:
         tuple: (is_buy: bool, reason: str, grade: str, data_dict: dict)
     """
+    grade = ""
     # [시장 방어막 체크]
     global is_buy_locked, market_ref_rate
     # [[ UPDATE: 잔고 및 데이터 오류, 재매수 제한 필터 ]]

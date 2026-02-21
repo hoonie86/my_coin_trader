@@ -545,7 +545,7 @@ async def buy_scan_task(app):
                     ohlcv_final = await asyncio.to_thread(exchange.fetch_ohlcv, sym, '30m', limit=200)
                     df_final = pd.DataFrame(ohlcv_final, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
                     is_still_good, final_reason, final_grade, final_data_dict = await strategy.check_buy_signal(exchange, df_final, sym, w_list)
-                    extracted_type = "1" if "TYPE1" in reason else ("2" if "TYPE2" in reason else ("3" if "TYPE3" in reason else "1"))
+                    extracted_type = "1" if "TYPE1" in final_reason else ("2" if "TYPE2" in final_reason else ("3" if "TYPE3" in final_reason else "1"))
                     if is_still_good:
                         success, msg = await safe_market_buy(sym, info['cost'], "S", extracted_type)
                         if success:
