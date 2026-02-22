@@ -597,11 +597,11 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 # 1. (not has_prior_gc) : 바닥 확인 후 지금까지 단 한 번도 뚫은 적이 없어야 함 (무결점)
                 # 2. prev_ma5 <= prev_ma40 : 직전 봉까지는 아래에 있었어야 함 (지각 매수 차단)
                 # 3. ma5_slope > 0, curr_slope_40 > -0.09, disparity_5_40 > -0.5 : 수치 필터
-                if (not has_prior_gc) and (prev_ma5 <= prev_ma40) and (ma5_slope > 0) and (curr_slope_40 > -0.09) and (disparity_5_40 > -0.5):
+                if (not has_prior_gc) and (prev_ma5 <= prev_ma40) and (ma5_slope > 0) and (curr_slope_40 > -0.1) and (disparity_5_40 > -1.0):
                     data_dict['grade'] = 'S'
                     return True, f"💎 [TYPE3-S] 무결점 바닥 격돌 ({disparity_5_40:.2f}%)", "S", data_dict
                 else:
-                    logger.info(f"DEBUG: {symbol} | [TYPE3-S] 탈락 이유 | 조건1(골크 미존재) :  {not has_prior_gc} and 조건2(prev_ma5-prev_ma40): {prev_ma5 - prev_ma40:.2f} <= 0 and 조건3(ma5_slope): {ma5_slope:.2f} > 0 and 조건4(curr_slope_40): {curr_slope_40 + 0.09:.2f} > 0 and 조건5(ma5, 40 이격): {disparity_5_40 + 0.5:.2f} > 0")
+                    logger.info(f"DEBUG: {symbol} | [TYPE3-S] 탈락 이유 | 조건1(골크 미존재) :  {not has_prior_gc} and 조건2(prev_ma5-prev_ma40): {prev_ma5 - prev_ma40:.2f} <= 0 and 조건3(ma5_slope): {ma5_slope:.2f} > 0 and 조건4(curr_slope_40): {curr_slope_40 + 0.1:.2f} > 0 and 조건5(ma5, 40 이격): {disparity_5_40 + 1.0:.2f} > 0")
                 # [A급] 40선 기울기가 0 이상으로 전환 (추세 반전 확인)
                 if curr_slope_40 >= 0:
                     data_dict['grade'] = 'A'
