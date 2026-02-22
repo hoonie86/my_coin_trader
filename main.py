@@ -890,72 +890,8 @@ async def sell_monitor_task(app):
                 ############################################################################
                 if is_sell_signal and is_urgent:
                     logger.info(f"🚨🚨🚨 {symbol} 긴급 매도 신호 감지! 유예 없이 즉시 집행: {sell_reason}")
-                    
-                    # 1. 즉시 시장가 매도 실행 (유예 리스트 등록 과정 생략)
-                    balance = await asyncio.to_thread(exchange.fetch_balance)
-                    base = symbol.split('/')[0]
-                    free_qty = float(balance['free'].get(base, 0))
-                    sell_qty = min(this_qty, free_qty)
-                    
-                    if sell_qty > 0:
-                        # 호가창 분석 후 가격 결정
-                        orderbook = await asyncio.to_thread(exchange.fetch_order_book, symbol)
-                        bids = orderbook.get('bids', [])
-                        if len(bids) >= 3:
-                            top_bid_p = float(bids[0][0])
-                            if this_curr_p <= 0:
-                                this_curr_p = top_bid_p if top_bid_p > 0 else (float(df.iloc[-1]['close']) if not df.empty else 0)
-                            
-                            if this_curr_p <= 0:
-                                logger.error(f"❌ {symbol} 최종 데이터 부재로 매도 불가")
-                                continue
-                            gap_ratio = abs(this_curr_p - top_bid_p) / this_curr_p
-                            # 갭 0.3% 미만이면 1호가, 이상이면 현재가 -1호가
-                            sell_price = top_bid_p if gap_ratio < 0.003 else strategy.get_bithumb_tick_size(this_curr_p, direction='down')
-                            order_result = await asyncio.to_thread(exchange.create_limit_sell_order, symbol, sell_qty, sell_price)
-                            # 10초간 체결 대기 후 미체결 시 시장가 전환
-                            await asyncio.sleep(10) 
-                            order_info = await asyncio.to_thread(exchange.fetch_order, order_result['id'], symbol)
-                            
-                            if order_info['status'] == 'open':
-                                # 아직 안 팔렸다면 주문 취소 후 시장가로 즉시 투척
-                                await asyncio.to_thread(exchange.cancel_order, order_result['id'], symbol)
-                                print(f"⚠️ [RETRY] {symbol} 지정가 미체결 -> 시장가 강제 매도 전환")
-                                await asyncio.to_thread(exchange.create_market_sell_order, symbol, order_info['remaining'])
-                        else:
-                            order_result = await asyncio.to_thread(exchange.create_market_sell_order, symbol, sell_qty)
-                        
-                        if order_result and 'id' in order_result:
-                            order_id = order_result['id']
-                            # 빗썸은 즉시 응답이 None인 경우가 많으므로 재조회 시도
-                            exec_price = order_result.get('average') or order_result.get('price')
-                            
-                            if exec_price is None:
-                                await asyncio.sleep(1) # 잠시 대기 후 재조회
-                                updated_order = await asyncio.to_thread(exchange.fetch_order, order_id, symbol)
-                                exec_price = updated_order.get('average') or updated_order.get('price') or this_curr_p
-                            
-                            exec_price = float(exec_price or 0)
-                            
-                            # 수익률 재계산 (정확한 로그용)
-                            if exec_price > 0 and this_avg_p > 0:
-                                this_profit = ((exec_price - this_avg_p) / this_avg_p * 100)
-
-                            # [추가] CSV 기록 및 최종 알림
-                            save_trade_log(symbol, this_grade, this_avg_p, exec_price, this_profit, f"[긴급]{sell_reason}")
-                            # 2. 자산 목록에서 즉시 제거 및 알림
-                            if symbol in assets: del assets[symbol]
-                            if symbol in pending_approvals: del pending_approvals[symbol]
-                            
-                            await app.bot.send_message(
-                                config.CHAT_ID, 
-                                f"🔥 [긴급 즉시 매도 완료]\n종목: {symbol}\n사유: {sell_reason}\n현재수익: {this_profit:+.2f}%"
-                            )
-                            logger.info(f"✅ {symbol} 긴급 매도 성공")
-                            continue # 다음 종목으로 점프
-                    else:
-                        logger.error(f"❌ {symbol} 긴급 매도 실패: 잔고 부족")
-                ############################################################################
+                    await execute_sell(app, symbol, f"[긴급]{sell_reason}")
+                    continue # 다음 종목으로 점프
 
                 # [추가 로직: 3번 타입 하락 후 상승 종목 전용 방어막] #####
                 if is_sell_signal and this_buy_type == 3:
@@ -1018,13 +954,6 @@ async def sell_monitor_task(app):
                             reply_markup=kb
                         )
 
-                        pending_approvals[symbol] = {
-                            'status': 'NOTIFIED',
-                            'start_time': datetime.now(),
-                            'entry_profit': this_profit,
-                            'reason': sell_reason,
-                            'wait_limit': wait_limit
-                        }
                     else:
                         wait_data = pending_approvals[symbol]
                         # [기존 로직] 수익률 회복 시 유예 취소
@@ -1036,44 +965,6 @@ async def sell_monitor_task(app):
                             current_limit = wait_data.get('wait_limit', 30)
                             if elapsed_min >= current_limit:
                                 is_sell_final = True
-                                # [추가] 자동 모드일 경우 여기서 직접 매도 호출
-                                if sell_mute_status.get(symbol) == 'AUTO':
-                                    orderbook = await asyncio.to_thread(exchange.fetch_order_book, symbol)
-                                    bids = orderbook.get('bids', [])
-                                    sell_price = this_curr_p # 기본값
-                                    if len(bids) >= 3:
-                                        top_bid_p = float(bids[0][0])
-                                        gap_ratio = abs(this_curr_p - top_bid_p) / this_curr_p
-                                        sell_price = top_bid_p if gap_ratio < 0.003 else strategy.get_bithumb_tick_size(this_curr_p, direction='down')
-                                    
-                                    # execute_sell 내부가 시장가라면, 여기서 직접 limit으로 쏘거나 execute_sell을 수정해야 함
-                                    await asyncio.to_thread(exchange.create_limit_sell_order, symbol, this_qty, sell_price)
-                                    # 10초간 체결 대기 후 미체결 시 시장가 전환
-                                    await asyncio.sleep(10) 
-                                    order_info = await asyncio.to_thread(exchange.fetch_order, order_result['id'], symbol)
-                                    
-                                    if order_info['status'] == 'open':
-                                        # 아직 안 팔렸다면 주문 취소 후 시장가로 즉시 투척
-                                        await asyncio.to_thread(exchange.cancel_order, order_result['id'], symbol)
-                                        print(f"⚠️ [RETRY] {symbol} 지정가 미체결 -> 시장가 강제 매도 전환")
-                                        await asyncio.to_thread(exchange.create_market_sell_order, symbol, order_info['remaining'])
-                                    ###### [ADD START] 매도 결과 알림 및 CSV 기록 ######
-                                    sell_final_p = this_curr_p  # 시장가 매도이므로 현재가 기준
-                                    final_reason = wait_data.get('reason') or "유예 종료 자동 매도"
-                                    save_trade_log(symbol, this_grade, this_avg_p, sell_final_p, this_profit, f"[유예 종료]{final_reason}")
-                                    logger.info(f"DEBUG: **[자동 매도 완료]** 종목: {symbol} | 등급: {this_grade}) | 사유: {wait_data.get('reason', '유예 종료')} | 최종수익률: **{this_profit:+.2f}%**")
-                                    finish_msg = (
-                                        f"✅ **[자동 매도 완료]**\n"
-                                        f"종목: {symbol} (등급: {this_grade})\n"
-                                        f"사유: {wait_data.get('reason', '유예 종료')}\n"
-                                        f"최종수익률: **{this_profit:+.2f}%**\n"
-                                        f"결과가 CSV에 기록되었습니다."
-                                    )
-                                    await app.bot.send_message(config.CHAT_ID, finish_msg, parse_mode='Markdown')
-                                    ###### [ADD END] ######
-                                    if symbol in pending_approvals: del pending_approvals[symbol]
-                                    continue
-
                 else:
                     if symbol in pending_approvals: del pending_approvals[symbol]
 
@@ -1104,100 +995,9 @@ async def sell_monitor_task(app):
                     # 이미 위에서 execute_sell을 했다면 중복 실행 방지 로직 필요
                     await execute_sell(app, symbol, sell_reason)
                     if symbol in pending_approvals: del pending_approvals[symbol]
-                    if status == 'AUTO' or is_night or "0순위" in sell_reason:
-                        balance = await asyncio.to_thread(exchange.fetch_balance)
-                        base = symbol.split('/')[0]
-                        free_qty = float(balance['free'].get(base, 0))
-                        sell_qty = min(this_qty, free_qty)
-                        if sell_qty <= 0:
-                            logger.info(f"매도 건너뜀(잔고 부족): {symbol}")
-                        else:
-                            # [사후분석] 손절 시 직전 3분 봉(하락 속도) 수집 후 매도 실행
-                            last_3m_open, last_3m_close = None, None
-                            if this_profit < 0:
-                                try:
-                                    ohlcv_3m = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '3m', limit=3)
-                                    if ohlcv_3m and len(ohlcv_3m) >= 2:
-                                        last_3m_open = float(ohlcv_3m[-2][1])
-                                        last_3m_close = float(ohlcv_3m[-2][4])
-                                except Exception:
-                                    pass
-                            orderbook = await asyncio.to_thread(exchange.fetch_order_book, symbol)
-                            bids = orderbook.get('bids', [])
-                            if len(bids) >= 3:
-                                top_bid_p = float(bids[0][0])
-                                gap_ratio = abs(this_curr_p - top_bid_p) / this_curr_p
-                                sell_price = top_bid_p if gap_ratio < 0.003 else strategy.get_bithumb_tick_size(this_curr_p, direction='down')
-                                order_result = await asyncio.to_thread(exchange.create_limit_sell_order, symbol, sell_qty, sell_price)
-                                # 10초간 체결 대기 후 미체결 시 시장가 전환
-                                await asyncio.sleep(10) 
-                                order_info = await asyncio.to_thread(exchange.fetch_order, order_result['id'], symbol)
-                                
-                                if order_info['status'] == 'open':
-                                    # 아직 안 팔렸다면 주문 취소 후 시장가로 즉시 투척
-                                    await asyncio.to_thread(exchange.cancel_order, order_result['id'], symbol)
-                                    print(f"⚠️ [RETRY] {symbol} 지정가 미체결 -> 시장가 강제 매도 전환")
-                                    await asyncio.to_thread(exchange.create_market_sell_order, symbol, order_info['remaining'])
-                            else:
-                                order_result = await asyncio.to_thread(exchange.create_market_sell_order, symbol, sell_qty)
-                            ######### [신규 추가 시작: 매도 성공 시 중복 알람 차단 로직] #########
-                            # 1. 주문 성공 여부 확인 (id가 있으면 성공)
-                            if order_result and 'id' in order_result:
-                                order_id = order_result['id']
-                                # 빗썸은 즉시 응답이 None인 경우가 많으므로 재조회 시도
-                                exec_price = order_result.get('average') or order_result.get('price')
-                                
-                                if exec_price is None:
-                                    await asyncio.sleep(1) # 잠시 대기 후 재조회
-                                    updated_order = await asyncio.to_thread(exchange.fetch_order, order_id, symbol)
-                                    exec_price = updated_order.get('average') or updated_order.get('price') or this_curr_p
-                                
-                                exec_price = float(exec_price or 0)
-                                
-                                # 수익률 재계산 (정확한 로그용)
-                                if exec_price > 0 and this_avg_p > 0:
-                                    this_profit = ((exec_price - this_avg_p) / this_avg_p * 100)
-
-                                # [추가] CSV 기록 및 최종 알림
-                                save_trade_log(symbol, this_grade, this_avg_p, exec_price, this_profit, f"[최종 집행]{sell_reason}")
-                                
-                                finish_msg = (
-                                    f"🔴 **[매도 완료]**\n"
-                                    f"종목: {symbol} (등급: {this_grade})\n"
-                                    f"사유: {sell_reason}\n"
-                                    f"수익률: **{this_profit:+.2f}%** | 매도가: {exec_price:,.0f}원"
-                                )
-                                await app.bot.send_message(config.CHAT_ID, finish_msg, parse_mode='Markdown')
-                                # 2. 감시 목록(assets)에서 즉시 제거 (이게 있어야 아래쪽 알람이 안 뜸)
-                                if symbol in assets:
-                                    del assets[symbol]
-                                    logger.info(f"✅ {symbol} 매도 성공 확인: assets에서 제거됨")
-
-                                # 3. 매도 성공 알림 (기존에 아래 있던 메시지 코드를 이 안으로 이동)
-                                await app.bot.send_message(config.CHAT_ID, f"🔴 [매도 집행]\n{symbol} | 사유: {sell_reason} | 📊 최종 수익률: {this_profit:+.2f}%")
-
-                                # 4. 이번 종목 처리는 끝났으니 즉시 다음 종목으로 (아래쪽 '긴급 권고' 로직 스킵)
-                                continue 
-
-                            else:
-                                # 매도 주문이 실패했을 경우의 로그 (선택 사항)
-                                logger.error(f"❌ {symbol} 매도 주문 실패 또는 응답 없음: {order_result}")
-                            exec_price = float(order_result.get('average') or order_result.get('price') or this_curr_p)
-                            if this_profit < 0 and this_avg_p and this_avg_p > 0:
-                                target_stop = this_avg_p * 0.98
-                                slippage_pct = (exec_price - target_stop) / target_stop * 100
-                                analyzer.record_loss_review(symbol, exec_price, target_stop, slippage_pct, last_1m_open, last_1m_close)
-                            if symbol in pending_approvals: del pending_approvals[symbol]
-                    else:
-                        limit = pending_approvals.get(symbol, {}).get('wait_limit', 30)
-                        if elapsed_min >= limit:
-                            await app.bot.send_message(
-                                config.CHAT_ID,
-                                f"🚨🚨 [긴급 매도 권고] {symbol}\n"
-                                f"유예 시간이 {int(elapsed_min)}분 경과했습니다!\n"
-                                f"직접 판단해 주세요! 🔔"
-                            )
-
+                    continue
+                elif not is_sell_signal:
+                    if symbol in pending_approvals: del pending_approvals[symbol]
             # 정기 리포트 발송 (기존 로직 유지)
             if (datetime.now() - last_report_time).total_seconds() >= config.REPORT_INTERVAL:
                 if report_lines:

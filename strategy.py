@@ -87,33 +87,39 @@ def get_warning_list():
         logger.error(f"Warning List Fetch Error: {e}")
         return []
 
-def get_updated_emergency_level(symbol, current_level, profit_pct, rsi, soaring_rate, buy_type, is_type3_stable, max_profit_pct, has_rsi_spike):
+def get_updated_emergency_level(symbol, current_level, buy_type, rsi, is_3m_below_ma40, ma40_slope, is_converging, profit_pct, soaring_rate, has_rsi_spike, max_profit_pct, is_type3_stable):
     """
-    Level 2 (EMERGENCY): 수익 10%↑, RSI 80↑, 급등 2%↑, 수익 5%↑ 도달, 또는 TYPE3 불안정기 (3분봉 엔진)
-    Level 1 (CAUTION): Level 2 진입 후 기존 회귀 조건 만족 시 전환 (3분봉 엔진 유지)
-    Level 0 (NORMAL): RSI 60 미만 등 지표 완전 안정화 시 복귀 (30분봉 엔진)
+    Level 2 -> 1 (하향): 타입별 분기된 조건 적용
+    Level 1 -> 0 (해제): 타입별 독립 기준 적용
     """
-    # [기존 회귀 로직 변수 100% 유지]
-    is_recovering_general = (str(buy_type) != '3' and profit_pct < 5.0 and rsi < 60)
+    # [교정] 타입별 하향(2->1) 조건 정의
+    is_recovering_general = (str(buy_type) != '3' and is_3m_below_ma40)
     is_recovering_type3 = (str(buy_type) == '3' and is_type3_stable)
 
-    # 1. 트리거 (0 -> 2): 기존 비상/급등 조건 발생 시 즉시 레벨 2 진입
+    # 1. 트리거 (0 -> 2): 진입 조건 (기존 유지)
     if current_level == 0:
         if (profit_pct >= 10.0 or has_rsi_spike or soaring_rate >= 2.0 or 
             (str(buy_type) == '3' and not is_type3_stable) or max_profit_pct >= 5.0):
             return 2
     
-    # 2. 하향 (2 -> 1): 기존 회귀 조건 만족 시 Caution으로 하향하여 3분봉 밀착 감시 유지
+    # 2. 하향 (Level 2 -> 1): 타입별로 분기된 변수에 따라 전환
     if current_level == 2:
         if is_recovering_general or is_recovering_type3:
             logger.info(f"✅ {symbol} 지표 안정화 시작 -> Level 1(CAUTION) 전환")
             return 1
                 
-    # 3. 해제 (1 -> 0): Caution 상태에서 RSI 60 미만 도달 시 일반 모드(30m) 복귀
-    elif current_level == 1:
-        if rsi < 60:
-            logger.info(f"✨ {symbol} 지표 완전 안정 확인 -> Level 0(NORMAL) 해제")
-            return 0
+    # 3. 해제 (Level 1 -> 0): 타입별 독립 기준 적용
+    if current_level == 1:
+        if str(buy_type) == '3':
+            # [Type 3 해제] 40선 우상향 및 185선 이격 축소
+            if ma40_slope > 0 and is_converging and (not is_3m_below_ma40):
+                logger.info(f"✨ {symbol} [Type 3 안정] 40선 반등 및 안착 확인으로 해제")
+                return 0
+        else:
+            # [Type 1, 2 해제] RSI 50 미만 도달
+            if rsi < 50:
+                logger.info(f"✨ {symbol} [Type 1,2 안정] RSI 50 미만으로 해제")
+                return 0
             
     return current_level
 
@@ -879,8 +885,9 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
 
 
     ###### [수정] 통합 비상 레벨 판정 및 고성능 3분봉 엔진 (기존 로직 100% 보존) ######
-    ma5_val, ma40_val, prev_ma5 = float(curr['ma5']), float(curr['ma40']), float(prev['ma5'])
+    ma5_val, ma40_val, ma185_val = float(curr['ma5']), float(curr['ma40']), float(curr['ma185'])
     is_type3_stable = (str(buy_type) == '3' and ma5_val > ma40_val and ma5_val >= prev_ma5)
+    prev_ma5, prev_ma40, prev_ma185 = float(prev['ma5']), float(prev['ma40']), float(prev['ma185'])
     soaring_rate = (curr_p - curr['open']) / curr['open'] * 100
     rsi_val = rsi_series.iloc[-1]
     
@@ -888,14 +895,33 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
     old_lvl = emergency_mode.get(symbol, 0)
     if old_lvl is True: old_lvl = 2 # 하위 호환성 보정
     
+    # 타입별 판정용 변수 계산
+    df_3m = None
+    is_3m_below_ma40 = False
+
+        # Level 1 이상일 때만 실시간 3분봉 체크
+    if old_lvl >= 1 or profit_rate_pct >= 10.0:
+        try:
+            ohlcv_3m = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '3m', limit=50)
+            df_3m = pd.DataFrame(ohlcv_3m, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
+            df_3m['ma40'] = df_3m['close'].rolling(40).mean()
+            if df_3m['close'].iloc[-1] < df_3m['ma40'].iloc[-1]:
+                is_3m_below_ma40 = True
+        except Exception as e:
+            logger.error(f"3분봉 데이터 조회 실패: {e}")
+
+    ma40_slope = (ma40_val - prev_ma40) / prev_ma40 if prev_ma40 > 0 else 0
+    is_converging = abs(ma40_val - ma185_val) < abs(prev_ma40 - prev_ma185)
+    
     new_lvl = get_updated_emergency_level(
-        symbol, old_lvl, profit_rate_pct, rsi_val, soaring_rate, 
-        buy_type, is_type3_stable, max_profit_rate_pct, has_rsi_spike
+        symbol, old_lvl, buy_type, rsi_val, is_3m_below_ma40, 
+        ma40_slope, is_converging, profit_rate_pct, soaring_rate, 
+        has_rsi_spike, max_profit_rate_pct, is_type3_stable
     )
     emergency_mode[symbol] = new_lvl
 
     # Level 1, 2 모두 3분봉 엔진 가동 (사용자 요청: 하락 시 즉시 대응)
-    if new_lvl >= 1:
+    if new_lvl >= 1 and df_3m is not None:
         logger.info(f"DEBUG: 🔥 [L{new_lvl} 엔진 가동] {symbol} | 수익: {profit_rate_pct:.2f}%")
         try:
             # [기존 ATOM 사례 대응 로직 유지]
@@ -903,8 +929,6 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
             if vol_30m < 1.2 and profit_rate_pct > 7.0:
                 if new_lvl == 2: emergency_mode[symbol] = 1 # 안정적 우상향 시 레벨 다운 유도
             else:
-                ohlcv_3m = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '3m', limit=50)
-                df_3m = pd.DataFrame(ohlcv_3m, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
                 high_10_3m = df_3m['high'].tail(10).max()
                 curr_3m_p, curr_3m_data = df_3m['close'].iloc[-1], df_3m.iloc[-1]
 
@@ -1003,7 +1027,7 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
     # ---------------------------------------------------------
     ######### [급등 모드 : 수익 10% 이상이거나 RSI 80 이상이면 3분봉 정밀 감시 가동] #########
     # ---------------------------------------------------------
-    if profit_rate_pct >= 10.0 or emergency_mode.get(symbol, False):
+    if (profit_rate_pct >= 10.0 or emergency_mode.get(symbol, False)) and df_3m is not None:
         try:
             ###### [수정] 엔진 가동 사유 레이블링 정교화 ######
             if profit_rate_pct >= 10.0:
@@ -1014,10 +1038,6 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
                 mode_reason = "RSI 과열"
             # print(f"🔥 [3분봉 엔진 가동] {symbol} | 사유: {mode_reason} | 현재가: {curr_p:,.0f}")
             logger.info(f"DEBUG: 🔥 [3분봉 엔진 가동] {symbol} | 사유: {mode_reason} | 현재가: {curr_p:,.0f}")
-            # 3분봉 데이터 호출 (노이즈 방지를 위해 여기서 직접 fetch)
-            ohlcv_3m = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '3m', limit=50)
-            df_3m = pd.DataFrame(ohlcv_3m, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
-            df_3m['ma40'] = df_3m['close'].rolling(40).mean()
             curr_3m = df_3m.iloc[-1]
 
             # A. 3분봉 기준 2음봉 세력 이탈 감지
