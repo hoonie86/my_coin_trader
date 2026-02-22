@@ -943,7 +943,7 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
         logger.info(f"DEBUG: {symbol} | 일반 매도 모드")
         current_type = str(buy_type)
 
-        if current_type == '1' or current_type == '2':
+        if current_type in ['1', '2', '3']:
         ####### [추가] TYPE3 예외 처리: 30분봉 지표(90선/지지선) 로직 진입 차단 #######
             logger.info(f"DEBUG: {symbol} | TYPE: {buy_type} | 매도 조건 탐지 시작")
             # [0순위] 절대 손절 (최우선 생존 로직)
@@ -963,17 +963,17 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
             # 2. 익절 구간 A (1.2% ~ 2.0% 미만): 고점 대비 1% 하락 시 매도
             if 1.2 <= max_profit_rate_pct < 2.0:
                 if drop_from_peak >= 1.0:
-                    return True, f"💰 [S-TS-1.2] 익절 A (낙폭 1.0%)", False
+                    return True, f"💰 [S-TS-1.2] 익절 A (낙폭 1.0%)", True
 
             # 3. 익절 구간 B (2.0% ~ 3.5% 미만): 고점 대비 1.5% 하락 시 매도
             elif 2.0 <= max_profit_rate_pct < 3.5:
                 if drop_from_peak >= 1.5:
-                    return True, f"💰 [S-TS-2.0] 익절 B (낙폭 1.5%)", False
+                    return True, f"💰 [S-TS-2.0] 익절 B (낙폭 1.5%)", True
 
-            # 4. 익절 구간 C (3.5% 이상): 고점 대비 3.0% 하락 시 매도
+            # 4. 익절 구간 C (3.5% 이상): 고점 대비 3.0% 하락 시 즉시 매도
             elif max_profit_rate_pct >= 3.5:
                 if drop_from_peak >= 3.0:
-                    return True, f"🚀 [S-TS-3.5] 익절 C (낙폭 3.0%)", False
+                    return True, f"🚀 [S-TS-3.5] 익절 C (낙폭 3.0%)", True
 
             # ---------------------------------------------------------
             # [정비 2] 40 지지선 및 S+급 보호 (상향->평행->상향 로직)
@@ -997,28 +997,9 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
                 # 상승 초입 눌림목(지지선의 98%)은 유예해줌
                 if not (is_early_stage and curr_p >= support_price * 0.98):
                     return True, f"📉 40선 지지선({support_price:,.2f}) 이탈", False
-        elif current_type == '3':
-            logger.info(f"DEBUG: {symbol} | TYPE: {buy_type} | 매도 조건 탐지 시작")
-            # -3% 손절선만 공통으로 체크하고, 나머지는 3분봉 로직으로 넘깁니다.
-            if profit_rate_pct <= -3.0:
-                return True, f"🚨 [TYPE3-긴급손절] -3% 도달 ({profit_rate_pct:.2f}%)", True
-
-            ######## [추가 라인] TYPE3 전용 3분봉 날카로운 대응 ########
-            try:
-                ohlcv_3m = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '3m', limit=50)
-                df_3m = pd.DataFrame(ohlcv_3m, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
-                is_3_2_neg_3m, r_3m = check_3_2_negative_candles(df_3m)
-                if is_3_2_neg_3m:
-                    return True, f"🚨 [TYPE3-3m] 3중 2음봉 이탈: {r_3m}", True
-            except Exception as e:
-                logger.error(f"TYPE3 3분봉 분석 에러: {e}")
-        else:
-            logger.info(f"DEBUG: {symbol} | TYPE: {buy_type} | 작업 패스")
-
     # ---------------------------------------------------------
-    ######### [신규: 급등 시 3분봉 비상 체제 전환] #########
+    ######### [급등 모드 : 수익 10% 이상이거나 RSI 80 이상이면 3분봉 정밀 감시 가동] #########
     # ---------------------------------------------------------
-    # 수익 10% 이상이거나 RSI 80 이상이면 3분봉 정밀 감시 가동
     if profit_rate_pct >= 10.0 or emergency_mode.get(symbol, False):
         try:
             ###### [수정] 엔진 가동 사유 레이블링 정교화 ######
