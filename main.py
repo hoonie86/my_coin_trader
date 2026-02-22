@@ -567,79 +567,84 @@ async def buy_scan_task(app):
 
 async def execute_sell(app, symbol, reason):
     """
-    실제 거래소 매도 주문을 실행하고 사용자에게 알림을 보냅니다.
+    실제 거래소 매도 주문을 실행하고, 인벤토리 정리 및 거래 로그를 기록한 뒤 알림을 보냅니다.
     """
     try:
-        # [1] 실제 매도 실행 (이미 구현된 매도 로직이 있다면 그 함수를 호출)
-        # 예: await exchange.create_market_sell_order(symbol, quantity)
         # 1. 현재 잔고 확인
         balance = await asyncio.to_thread(exchange.fetch_balance)
         base = symbol.split('/')[0]
         quantity = float(balance['free'].get(base, 0))
 
-        # 2. 최소 주문 수량 체크 (잔고가 거의 없으면 무시)
-        if quantity <= 0:
-            logger.warning(f"⚠️ {symbol} 매도 실패: 잔고가 0입니다.")
+        # 최소 주문 수량 체크 (먼지 잔고 방지)
+        if quantity <= 0.0001:
+            logger.warning(f"⚠️ {symbol} 매도 스킵: 잔고가 부족합니다.")
             return
 
-        # 3. 실제 시장가 매도 주문 던지기
-        # 주문이 완료될 때까지 await로 기다립니다.
+        # 2. 시장가 매도 주문 집행
         order_result = await asyncio.to_thread(exchange.create_market_sell_order, symbol, quantity)
-        logger.info(f"DEBUG: {symbol} | sell order_result: {order_result}")
         logger.info(f"DEBUG: 💰 {symbol} 매도 집행 완료: {reason} | 수량: {quantity}")
 
-        ###### [수정] 비상 모드(L1, L2) 판정 및 6시간 쿨다운/알림 헤더 설정 ######
+        # 3. 비상 모드 판정 및 6시간 쿨다운 설정
         lvl = emergency_mode.get(symbol, 0)
         if lvl >= 1:
             strategy.cooldown_dict[symbol] = datetime.now() + timedelta(hours=6)
             alert_header = f"🚨 [비상 엔진 L{lvl} 익절]"
-            emergency_mode.pop(symbol, None)
+            emergency_mode.pop(symbol, None) # 비상 모드 즉시 해제
             logger.info(f"✨ {symbol} 비상 체제(L{lvl}) 종료 및 6시간 쿨다운 적용")
         else:
             alert_header = "💰 [매도 완료]"
 
+        # 4. 수익률 계산을 위한 평단가 확보
         inv = load_inventory()
         item = inv.get(symbol, {})
-        avg_buy_price = float(item.get('avg_price', item.get('purchase_price', 0)))
+        avg_buy_price = float(item.get('avg_price') or item.get('purchase_price') or 0)
+        
+        if avg_buy_price == 0:
+            current_assets = await get_my_assets()
+            avg_buy_price = current_assets.get(symbol, {}).get('avg_price', 0)
 
-        # 상위 3호가 중 최고가 및 0.3% 편차 확인 로직
+        # 5. 실제 체결가(sell_price) 산출 로직
         orderbook = await asyncio.to_thread(exchange.fetch_order_book, symbol)
-        best_ask = max([float(a[0]) for a in orderbook['asks'][:3]])
-        curr_p = float(orderbook['bids'][0][0])
-        final_p = curr_p if (best_ask - curr_p) / curr_p >= 0.003 else best_ask
-
+        curr_bid = float(orderbook['bids'][0][0]) # 시장가 매도는 매수 1호가(bid)에 체결됨
+        
         sell_price = float(order_result.get('average') or order_result.get('price') or 0)
         
-        # 빗썸 응답이 0(None)이면 fetch_order로 실제 체결가 재확인
+        # 빗썸 체결가 지연 대응 (fetch_order 재조회)
         if sell_price == 0 and order_result.get('id'):
             try:
-                await asyncio.sleep(0.5)  # 빗썸 서버 반영 대기
+                await asyncio.sleep(0.5) 
                 updated_order = await asyncio.to_thread(exchange.fetch_order, order_result['id'], symbol)
-                sell_price = float(updated_order.get('average') or updated_order.get('price') or final_p)
-            except Exception as e:
-                logger.error(f"⚠️ 매도 재조회 실패: {e}")
-                sell_price = final_p  # 재조회 실패 시 위에서 계산한 호가 기준가 사용
+                sell_price = float(updated_order.get('average') or updated_order.get('price') or curr_bid)
+            except:
+                sell_price = curr_bid
         
-        # 만약 여기까지 왔는데도 0이면 최후의 보루로 final_p 사용 (수익률 0% 방지)
-        if sell_price == 0: sell_price = final_p
+        if sell_price == 0: sell_price = curr_bid
         
-        # [추가] 수익률 계산 (평단가가 있을 때만)
-        this_profit = 0.0
-        if avg_buy_price > 0 and sell_price > 0:
-            this_profit = ((sell_price - avg_buy_price) / avg_buy_price) * 100
+        # 6. 최종 수익률 및 로그 기록
+        this_profit = ((sell_price - avg_buy_price) / avg_buy_price * 100) if avg_buy_price > 0 else 0
         
-        # [수정] 텔레그램 알림: 비상 엔진 작동 여부와 사유를 명확히 표시
+        # [누락방지 1] 거래 내역 CSV 저장 (이미 main.py에 있는 save_trade_log 호출)
+        save_trade_log(symbol, item.get('grade', 'A'), avg_buy_price, sell_price, this_profit, reason)
+
+        # [누락방지 2] 로컬 인벤토리 파일에서 해당 종목 삭제 (중요)
+        if symbol in inv:
+            del inv[symbol]
+            with open("trades/inventory.json", "w") as f:
+                json.dump(inv, f, indent=4)
+            logger.info(f"💾 [인벤토리 정리] {symbol} 데이터 삭제 완료")
+
+        # 7. 텔레그램 최종 알림
         await app.bot.send_message(
             config.CHAT_ID, 
             f"{alert_header} {symbol}\n사유: {reason} | 📊 최종 수익률: {this_profit:+.2f}%"
         )
         
-        # [3] 유예 목록에서 제거
+        # 8. 유예 목록 정리
         if symbol in pending_approvals:
             del pending_approvals[symbol]
             
     except Exception as e:
-        logger.error(f"❌ {symbol} 매도 집행 중 에러: {e}")
+        logger.error(f"❌ {symbol} 매도 집행 중 치명적 에러: {e}")
 
 async def monitor_sell_loop(exchange):
     """들고 있는 종목들을 매수 루프와 상관없이 실시간으로 감시해서 팝니다."""
@@ -727,6 +732,9 @@ async def sell_monitor_task(app):
             symbol_buttons = []
 
             for symbol, data in list(assets.items()):
+                # [추가] 비상 루프(L1, L2)에서 관리 중인 종목은 일반 루프에서 스킵
+                if strategy.emergency_mode.get(symbol, 0) >= 1:
+                    continue
                 # 0단계: 기본 데이터 수집
                 ticker = await asyncio.to_thread(exchange.fetch_ticker, symbol)
                 this_curr_p = float(ticker.get('last') or ticker.get('close') or 0)
@@ -1800,7 +1808,7 @@ async def main():
 
     try:
         # 두 타스크가 종료될 때까지 대기 (사실상 무한 루프)
-        await asyncio.gather(buy_task, sell_task)
+        await asyncio.gather(buy_task, sell_task, emergency_task, pending_task)
     except Exception as e:
         logger.error(f"시스템 루프 에러 발생: {e}")
     finally:
