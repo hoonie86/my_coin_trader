@@ -526,7 +526,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             p_val, c_val = df['ma185'].iloc[i-1], df['ma185'].iloc[i]
             bar_slope = ((c_val - p_val) / p_val) * 100
             # 기울기 $Slope = \frac{C - P}{P} \times 100$
-            if bar_slope >= -0.05:  # 요동(반등)이나 완만한 구간이 단 하나라도 있으면 즉시 탈락
+            if bar_slope > 0:  # 요동(반등)이나 완만한 구간이 단 하나라도 있으면 즉시 탈락
                 is_was_descending = False
                 break
     else: is_was_descending = False
@@ -535,7 +535,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     for i in range(len(df)-10, len(df)):
         p_val, c_val = df['ma185'].iloc[i-1], df['ma185'].iloc[i]
         bar_slope = ((c_val - p_val) / p_val) * 100
-        if bar_slope < -0.05:  # 다시 하락세로 꺾이는 구간이 있으면 즉시 탈락
+        if bar_slope < 0:  # 다시 하락세로 꺾이는 구간이 있으면 즉시 탈락
             is_now_stabilized = False
             break
 
@@ -724,7 +724,8 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             # [B급] 상승 대기 (골드 안착)
             data_dict['grade'] = 'B'
             return True, "🚀 [TYPE1-B] 상승대기(골드안착)", "B", data_dict
-
+        else:
+            logger.info(f"DEBUG: {symbol} TYPE1 탈락 이유 | strict_descending :{strict_descending}, strict_stabilized:{strict_stabilized}")
     # ==========================================================================
     # [TYPE2: 눌림목 및 40선 지지 (에너지 응축)]
     # 집중: 골든크로스 이후 40선(노란선) 밀착 및 지지 확인
