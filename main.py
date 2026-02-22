@@ -588,15 +588,13 @@ async def execute_sell(app, symbol, reason):
         logger.info(f"DEBUG: {symbol} | sell order_result: {order_result}")
         logger.info(f"DEBUG: 💰 {symbol} 매도 집행 완료: {reason} | 수량: {quantity}")
 
-        # [수정] 비상 모드(L1, L2) 매도 시 6시간 쿨다운 적용 및 알림 강화
-        if symbol in emergency_mode:
-            lvl = emergency_mode.get(symbol, 0)
+        ###### [수정] 비상 모드(L1, L2) 판정 및 6시간 쿨다운/알림 헤더 설정 ######
+        lvl = emergency_mode.get(symbol, 0)
+        if lvl >= 1:
             strategy.cooldown_dict[symbol] = datetime.now() + timedelta(hours=6)
+            alert_header = f"🚨 [비상 엔진 L{lvl} 익절]"
             emergency_mode.pop(symbol, None)
             logger.info(f"✨ {symbol} 비상 체제(L{lvl}) 종료 및 6시간 쿨다운 적용")
-            
-            # 비상 엔진 전용 텔레그램 헤더 설정
-            alert_header = f"🚨 [비상 엔진 L{lvl} 익절]" if "L" in str(lvl) else "💰 [매도 완료]"
         else:
             alert_header = "💰 [매도 완료]"
 
@@ -633,10 +631,7 @@ async def execute_sell(app, symbol, reason):
         # [수정] 텔레그램 알림: 비상 엔진 작동 여부와 사유를 명확히 표시
         await app.bot.send_message(
             config.CHAT_ID, 
-            f"{alert_header} {symbol}\n"
-            f"사유: {reason}\n"
-            f"📊 최종 수익률: {this_profit:+.2f}%\n"
-            f"⏱ 6시간 재진입 금지(Cooldown) 적용"
+            f"{alert_header} {symbol}\n사유: {reason} | 📊 최종 수익률: {this_profit:+.2f}%"
         )
         
         # [3] 유예 목록에서 제거
@@ -690,12 +685,22 @@ async def emergency_monitor_task(app):
                     strategy.emergency_mode.pop(symbol, None) # 팔렸으면 목록 제거
                     continue
 
-                # 비상 루프는 오직 매도 로직만 빠르게 실행 (유예 없음)
-                # check_sell_signal 내부에서 3분봉 엔진이 이미 돌아감
+                ###### [완성] 비상 종목용 실시간 데이터 수집 및 매도 엔진 호출 ######
+                inv_item = load_inventory().get(symbol, {})
                 ticker = await asyncio.to_thread(exchange.fetch_ticker, symbol)
                 curr_p = float(ticker.get('last') or 0)
                 
-                # ... (이후 매도 엔진 호출 및 execute_sell 실행 로직)
+                ohlcv = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '30m', limit=200)
+                df = pd.DataFrame(ohlcv, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
+                
+                # 비상 루프는 유예(age=99) 없이 즉시 판단
+                is_sell, reason, is_urgent = await strategy.check_sell_signal(
+                    exchange, df, symbol, inv_item.get('avg_price', 0), 
+                    inv_item.get('max_price', curr_p), 'S', 99, 'AUTO', curr_p, inv_item.get('buy_type', 1)
+                )
+
+                if is_sell:
+                    await execute_sell(app, symbol, reason)
                 
             await asyncio.sleep(1) 
         except Exception as e:
@@ -1784,6 +1789,7 @@ async def main():
     # sell_monitor_task는 전혀 방해받지 않고 자기 할 일을 합니다.
     buy_task = asyncio.create_task(buy_scan_task(app))
     sell_task = asyncio.create_task(sell_monitor_task(app))
+    emergency_task = asyncio.create_task(emergency_monitor_task(app))
     pending_task = asyncio.create_task(pending_buy_task(app))
 
     # 텔레그램 인터페이스 시작
