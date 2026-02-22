@@ -740,14 +740,35 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         
         # 2. 185선 10봉 무결성 (최근 10봉 동안 ma185가 단 한 번도 하락하지 않음)
         is_185_10bar_stable = all(df['ma185'].iloc[-i] >= df['ma185'].iloc[-i-1] for i in range(1, 11))
+        ###### [신규 추가] 3일(144봉) 내 T1 이력 전수 조사 (횡보 허용) ######
+        has_t1_history = False
+        if gc_count_150 == 1:
+            for lookback in range(1, 145): # 최근 3일(144봉) 스캔
+                if len(df) < lookback + 97: break
+                past_idx = len(df) - lookback
+                is_t1_area = True
+                # Phase 1: 내리막 (상승 시 탈락, 0/하락 허용)
+                for j in range(past_idx-96, past_idx-10):
+                    p_v, c_v = df['ma185'].iloc[j-1], df['ma185'].iloc[j]
+                    if ((c_v - p_v) / p_v) * 100 > 0: 
+                        is_t1_area = False; break
+                # Phase 2: 안착 (하락 시 탈락, 0/상승 허용)
+                if is_t1_area:
+                    for j in range(past_idx-10, past_idx):
+                        p_v, c_v = df['ma185'].iloc[j-1], df['ma185'].iloc[j]
+                        if ((c_v - p_v) / p_v) * 100 < 0:
+                            is_t1_area = False; break
+                if is_t1_area:
+                    has_t1_history = True; break
 
-        if gc_count_150 == 1 and is_185_10bar_stable:
+        # [수정] has_t1_history 조건 추가 (이후 S, A, B 등급 판정은 내부에서 그대로 유지)
+        if gc_count_150 == 1 and is_185_10bar_stable and has_t1_history:
             # 40일선 기울기 가속도 및 이격도 계산
             prev_ma40_2 = df['ma40'].iloc[-3]
             prev_slope_40 = ((prev_ma40 - prev_ma40_2) / prev_ma40_2) * 100 if prev_ma40_2 > 0 else 0
             curr_slope_40 = ((ma40_val - prev_ma40) / prev_ma40) * 100 if prev_ma40 > 0 else 0
             dis_gold_pct = (ma40_val - ma185_val) / ma185_val * 100 if ma185_val > 0 else 0
-
+        
             ###### 185선 상태 및 이격도 수렴 여부 (핵심 전제)
             is_185_stable = ma185_val >= df['ma185'].iloc[-2]
             is_converging = disparity_gold < prev_dis_gold
