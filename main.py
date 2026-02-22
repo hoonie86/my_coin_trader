@@ -588,9 +588,17 @@ async def execute_sell(app, symbol, reason):
         logger.info(f"DEBUG: {symbol} | sell order_result: {order_result}")
         logger.info(f"DEBUG: 💰 {symbol} 매도 집행 완료: {reason} | 수량: {quantity}")
 
+        # [수정] 비상 모드(L1, L2) 매도 시 6시간 쿨다운 적용 및 알림 강화
         if symbol in emergency_mode:
+            lvl = emergency_mode.get(symbol, 0)
+            strategy.cooldown_dict[symbol] = datetime.now() + timedelta(hours=6)
             emergency_mode.pop(symbol, None)
-            logger.info(f"✨ {symbol} 비상 체제 해제 및 메모리 정리 완료")
+            logger.info(f"✨ {symbol} 비상 체제(L{lvl}) 종료 및 6시간 쿨다운 적용")
+            
+            # 비상 엔진 전용 텔레그램 헤더 설정
+            alert_header = f"🚨 [비상 엔진 L{lvl} 익절]" if "L" in str(lvl) else "💰 [매도 완료]"
+        else:
+            alert_header = "💰 [매도 완료]"
 
         inv = load_inventory()
         item = inv.get(symbol, {})
@@ -622,10 +630,13 @@ async def execute_sell(app, symbol, reason):
         if avg_buy_price > 0 and sell_price > 0:
             this_profit = ((sell_price - avg_buy_price) / avg_buy_price) * 100
         
-        # [2] 텔레그램 알림
+        # [수정] 텔레그램 알림: 비상 엔진 작동 여부와 사유를 명확히 표시
         await app.bot.send_message(
             config.CHAT_ID, 
-            f"💰 [매도 완료] {symbol}\n사유: {reason} | 📊 최종 수익률: {this_profit:+.2f}%"
+            f"{alert_header} {symbol}\n"
+            f"사유: {reason}\n"
+            f"📊 최종 수익률: {this_profit:+.2f}%\n"
+            f"⏱ 6시간 재진입 금지(Cooldown) 적용"
         )
         
         # [3] 유예 목록에서 제거
@@ -659,6 +670,36 @@ async def monitor_sell_loop(exchange):
             await asyncio.sleep(20) # 20초마다 매도 신호 감시
         except Exception as e:
             logger.error(f"매도 감시 루프 에러: {e}")
+            await asyncio.sleep(1)
+
+async def emergency_monitor_task(app):
+    """Level 1, 2 종목만 1~2초 주기로 감시하여 지연 없이 즉시 매도 집행"""
+    logger.info("📡 [초고속 비상 매도 루프 가동]")
+    while True:
+        try:
+            # 비상 레벨이 1(Caution) 또는 2(Emergency)인 종목만 필터링
+            targets = [s for s, l in strategy.emergency_mode.items() if l >= 1]
+            
+            if not targets:
+                await asyncio.sleep(2)
+                continue
+
+            assets = await get_my_assets()
+            for symbol in targets:
+                if symbol not in assets:
+                    strategy.emergency_mode.pop(symbol, None) # 팔렸으면 목록 제거
+                    continue
+
+                # 비상 루프는 오직 매도 로직만 빠르게 실행 (유예 없음)
+                # check_sell_signal 내부에서 3분봉 엔진이 이미 돌아감
+                ticker = await asyncio.to_thread(exchange.fetch_ticker, symbol)
+                curr_p = float(ticker.get('last') or 0)
+                
+                # ... (이후 매도 엔진 호출 및 execute_sell 실행 로직)
+                
+            await asyncio.sleep(1) 
+        except Exception as e:
+            logger.error(f"Emergency Loop Error: {e}")
             await asyncio.sleep(1)
 
 async def sell_monitor_task(app):

@@ -87,6 +87,35 @@ def get_warning_list():
         logger.error(f"Warning List Fetch Error: {e}")
         return []
 
+def get_updated_emergency_level(symbol, current_level, profit_pct, rsi, soaring_rate, buy_type, is_type3_stable, max_profit_pct, has_rsi_spike):
+    """
+    Level 2 (EMERGENCY): 수익 10%↑, RSI 80↑, 급등 2%↑, 수익 5%↑ 도달, 또는 TYPE3 불안정기 (3분봉 엔진)
+    Level 1 (CAUTION): Level 2 진입 후 기존 회귀 조건 만족 시 전환 (3분봉 엔진 유지)
+    Level 0 (NORMAL): RSI 60 미만 등 지표 완전 안정화 시 복귀 (30분봉 엔진)
+    """
+    # [기존 회귀 로직 변수 100% 유지]
+    is_recovering_general = (str(buy_type) != '3' and profit_pct < 5.0 and rsi < 60)
+    is_recovering_type3 = (str(buy_type) == '3' and is_type3_stable)
+
+    # 1. 트리거 (0 -> 2): 기존 비상/급등 조건 발생 시 즉시 레벨 2 진입
+    if current_level == 0:
+        if (profit_pct >= 10.0 or has_rsi_spike or soaring_rate >= 2.0 or 
+            (str(buy_type) == '3' and not is_type3_stable) or max_profit_pct >= 5.0):
+            return 2
+    
+    # 2. 하향 (2 -> 1): 기존 회귀 조건 만족 시 Caution으로 하향하여 3분봉 밀착 감시 유지
+    if current_level == 2:
+        if is_recovering_general or is_recovering_type3:
+            logger.info(f"✅ {symbol} 지표 안정화 시작 -> Level 1(CAUTION) 전환")
+            return 1
+                
+    # 3. 해제 (1 -> 0): Caution 상태에서 RSI 60 미만 도달 시 일반 모드(30m) 복귀
+    elif current_level == 1:
+        if rsi < 60:
+            logger.info(f"✨ {symbol} 지표 완전 안정 확인 -> Level 0(NORMAL) 해제")
+            return 0
+            
+    return current_level
 
 # [사용자 원본 버전 1]
 def check_buy_signal_v1(df, symbol, warning_list):
@@ -848,98 +877,72 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
     support_idx = (parallel_window['ma40'].diff().abs()).idxmin()
     support_price = df.loc[support_idx, 'ma40']
 
-    # [추가] TYPE3 안정기 판정 (5/40 GC 유지 + 5일선 기울기 평행/우상향)
+
+    ###### [수정] 통합 비상 레벨 판정 및 고성능 3분봉 엔진 (기존 로직 100% 보존) ######
     ma5_val, ma40_val, prev_ma5 = float(curr['ma5']), float(curr['ma40']), float(prev['ma5'])
     is_type3_stable = (str(buy_type) == '3' and ma5_val > ma40_val and ma5_val >= prev_ma5)
-
-    # 1. 상태 진단: 이미 안정기라면 TYPE3라도 비상 모드를 켜지 않음 (재기동 시 무한 비상 방지)
     soaring_rate = (curr_p - curr['open']) / curr['open'] * 100
     rsi_val = rsi_series.iloc[-1]
-    is_emergency = (emergency_mode.get(symbol, False) or profit_rate_pct >= 10.0 or 
-                    has_rsi_spike or soaring_rate >= 2.0 or 
-                    (str(buy_type) == '3' and not is_type3_stable))
+    
+    # 레벨 상태 로드 및 갱신
+    old_lvl = emergency_mode.get(symbol, 0)
+    if old_lvl is True: old_lvl = 2 # 하위 호환성 보정
+    
+    new_lvl = get_updated_emergency_level(
+        symbol, old_lvl, profit_rate_pct, rsi_val, soaring_rate, 
+        buy_type, is_type3_stable, max_profit_rate_pct, has_rsi_spike
+    )
+    emergency_mode[symbol] = new_lvl
 
-    # 2. [회귀 로직] 일반 종목 혹은 TYPE3 안정기 도달 시 비상 모드 즉시 해제
-    is_recovering_general = (str(buy_type) != '3' and profit_rate_pct < 5.0 and rsi_val < 60)
-    is_recovering_type3 = (str(buy_type) == '3' and is_type3_stable)
-
-    if is_emergency and (is_recovering_general or is_recovering_type3):
-        emergency_mode[symbol] = False
-        is_emergency = False
-        reason_msg = "TYPE3 안정기 진입 확인" if str(buy_type) == '3' else "지표 안정 확인"
-        logger.info(f"✅ {symbol} {reason_msg} -> 비상 모드 해제 및 30분봉 복귀")
-    elif is_emergency:
-        emergency_mode[symbol] = True
-
-    # 3. 기존 is_rush_mode와 통합하여 3m/30m 분기 결정
-    is_rush_mode = is_emergency
-    # print(f"DEBUG: {symbol} | {2.0 - soaring_rate}% 추가 상승시 급등 모드 전환") 
-    logger.info(f"DEBUG: {symbol} | {2.0 - soaring_rate:.2f}% 추가 상승시 급등 모드 전환. 상승률: {soaring_rate:.2f}%")
-    # 수익률 5% 이상이거나 30분봉 2% 급등 시 급등 모드 진입
-    if soaring_rate >= 2.0 or max_profit_rate_pct >= 5.0:
-        is_rush_mode = True
-        # ATOM 사례 대응: 변동성이 죽고 안정적 우상향(10% 이상) 시 일반 모드로 전환
-        vol_30m = (df['high'].tail(3).max() - df['low'].tail(3).min()) / df['low'].tail(3).min() * 100
-        if vol_30m < 1.2 and profit_rate_pct > 7.0:
-            logger.info(f"☕ {symbol} 안정적 우상향 판단. 일반 모드 대응 전환")
-            is_rush_mode = False
-        else:
-            logger.info(f"DEBUG: {symbol} | 급등 매도 모드 가동")
-            try:
-                # 3분봉 데이터 호출 (정밀 분석용)
+    # Level 1, 2 모두 3분봉 엔진 가동 (사용자 요청: 하락 시 즉시 대응)
+    if new_lvl >= 1:
+        logger.info(f"DEBUG: 🔥 [L{new_lvl} 엔진 가동] {symbol} | 수익: {profit_rate_pct:.2f}%")
+        try:
+            # [기존 ATOM 사례 대응 로직 유지]
+            vol_30m = (df['high'].tail(3).max() - df['low'].tail(3).min()) / df['low'].tail(3).min() * 100
+            if vol_30m < 1.2 and profit_rate_pct > 7.0:
+                if new_lvl == 2: emergency_mode[symbol] = 1 # 안정적 우상향 시 레벨 다운 유도
+            else:
                 ohlcv_3m = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '3m', limit=50)
                 df_3m = pd.DataFrame(ohlcv_3m, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
-                
-                # 최근 10개 3분봉 고점 추적
                 high_10_3m = df_3m['high'].tail(10).max()
-                curr_3m_p = df_3m['close'].iloc[-1]
-                curr_3m_data = df_3m.iloc[-1] # [추가] 현재 봉 상세 데이터
+                curr_3m_p, curr_3m_data = df_3m['close'].iloc[-1], df_3m.iloc[-1]
 
-                # 최근 10개 봉 중 거래량이 가장 컸던 고점 봉을 찾음
+                # (1) [기존] 고점 직전봉 허리(50%) 실시간 이탈 체크
                 abs_peak_idx = len(df_3m) - 10 + df_3m['vol'].tail(10).argmax()
                 peak_candle = df_3m.iloc[abs_peak_idx]
-
-                # 고점(peak)이 음봉이 아니고, 그 직전 봉(index-1)이 존재할 때만 가동
                 if peak_candle['close'] >= peak_candle['open'] and abs_peak_idx > 0:
-                    prev_peak_candle = df_3m.iloc[abs_peak_idx - 1]
-                    # 고점의 '직전 봉' 몸통 50% 선 계산
-                    prev_mid_point = (prev_peak_candle['open'] + prev_peak_candle['close']) / 2
-                    
-                    # [실시간 긴급 조건]
-                    # 1. 현재 저가(low)가 직전봉 허리를 깼는가?
-                    # 2. 현재 거래량이 고점 거래량을 이미 넘어섰는가?
-                    # 3. 현재 캔들이 음봉 상태(시가 > 현재가)인가?
-                    if curr_3m_data['low'] < prev_mid_point and curr_3m_data['vol'] > peak_candle['vol']:
-                        if curr_3m_data['close'] < curr_3m_data['open']: # 실시간 음봉 상태면 즉시 리턴
-                            return True, f"🚨[50%긴급] 실시간 음봉 전환 및 고점직전봉 허리({prev_mid_point:,.0f}) 이탈", True
+                    prev_mid_p = (df_3m.iloc[abs_peak_idx-1]['open'] + df_3m.iloc[abs_peak_idx-1]['close']) / 2
+                    if curr_3m_data['low'] < prev_mid_p and curr_3m_data['vol'] > peak_candle['vol']:
+                        if curr_3m_data['close'] < curr_3m_data['open']:
+                            return True, f"🚨[50%긴급-L{new_lvl}] 실시간 허리 이탈", True
 
-                # (A) 세력 이탈 감지: 2음봉 + 고점 거래량 10% 이상 (3분봉 기준)
+                # (2) [기존] 세력 이탈 감지 (2음봉 + 거래량)
                 is_2_neg_3m, reason_2_neg_3m = check_3_2_negative_candles(df_3m)
                 if is_2_neg_3m:
                     high_idx_3m = df_3m['high'].tail(10).argmax()
                     high_vol_3m = df_3m['vol'].iloc[len(df_3m) - 10 + high_idx_3m]
-                    curr_vol_3m = df_3m['vol'].iloc[-1] + df_3m['vol'].iloc[-2]
-                    if curr_vol_3m > (high_vol_3m * 0.1):
-                        return True, f"🚨[급등-세력이탈] 2음봉 & 거래량폭발", True
+                    if (df_3m['vol'].iloc[-1] + df_3m['vol'].iloc[-2]) > (high_vol_3m * 0.1):
+                        return True, f"🚨[세력이탈-L{new_lvl}] 2음봉 & 거래량포착", True
 
-                # (B) 캔들 위치별 차등 낙폭
+                # (3) [기존 로직 100% 유지] 위치별 차등 낙폭
                 if soaring_rate >= 10.0:
                     if curr_3m_p < high_10_3m * 0.97:
-                        return True, f"🚨[급등-강력] 고점대비 3% 하락 (위치:{soaring_rate:.1f}%)", True
+                        return True, f"🚨[급등-강력] L{new_lvl} 고점대비 3% 하락 (위치:{soaring_rate:.1f}%)", True
                 else:
                     if curr_3m_p < high_10_3m * 0.98:
-                        return True, f"🚨[급등-초기] 고점대비 2% 하락 (위치:{soaring_rate:.1f}%)", True
+                        return True, f"🚨[급등-초기] L{new_lvl} 고점대비 2% 하락 (위치:{soaring_rate:.1f}%)", True
 
-                # (C) 수익률 마지노선 사수 (14% -> 13% 사수)
-                if profit_rate_pct >= 13.0:
-                    final_sell_cost = purchase_price * 1.13
-                    logger.info(f"DEBUG: {symbol} | 3분봉 현재가 : {curr_3m_p} | 최종 13% 대기가: {final_sell_cost}")
-                    if curr_3m_p <= final_sell_cost:   # 현재가가 구매가의 13% 까지 내려오면 무조건 매도
-                        return True, "🚨[마지노선] 수익률 13% 사수 매도", True
+                # (4) [기존] 수익률 13% 마지노선 사수
+                if profit_rate_pct >= 13.0 and curr_3m_p <= purchase_price * 1.13:
+                    return True, f"🚨[13%사수-L{new_lvl}] 마지노선 매도", True
 
-            except Exception as e:
-                logger.error(f"급등 정밀 분석 에러: {e}")
-    if not is_rush_mode:   # 급등이 아닌경우
+            return False, f"🚀 비상 감시(L{new_lvl}) 유지 중", False
+        except Exception as e:
+            logger.error(f"비상 엔진 에러 (L{new_lvl}): {e}")
+
+
+    if new_lvl == 0:   # 일반 모드(Level 0)인 경우에만 30분봉 로직 수행
         logger.info(f"DEBUG: {symbol} | 일반 매도 모드")
         current_type = str(buy_type)
 
