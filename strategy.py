@@ -319,12 +319,13 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         return False, "데이터부족", "", data_dict
 
     # [기존 유지] 40/185일선 + RSI
-    df['ma40'] = df['close'].rolling(40).mean()
-    df['ma185'] = df['close'].rolling(185).mean()
-    df['rsi'] = calculate_rsi(df)
+    df.loc[df.index[-1], 'close'] = curr_price
     df['ma5'] = df['close'].rolling(5).mean()
     df['ma20'] = df['close'].rolling(20).mean()
+    df['ma40'] = df['close'].rolling(40).mean()
     df['ma90'] = df['close'].rolling(90).mean()
+    df['ma185'] = df['close'].rolling(185).mean()
+    df['rsi'] = calculate_rsi(df)
 
     curr = df.iloc[-1]
     prev = df.iloc[-2]
@@ -810,7 +811,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                     data_dict['grade'] = 'B'
                     return True, "📢 [TYPE2-B] B급 알림: 수렴 진행 및 추세 개선", "B", data_dict
         else: 
-            logger.info(f"DEBUG: {symbol} | [TYPE2] 초기 진입 탈락 이유 | 조건1(150봉동안 골크 횟수) : {gc_count_150} <= 0 and 조건2(최근10봉 185하락여부): {is_185_10bar_stable} and 3일(144봉)동안 T1존재여부:{has_t1_history} ")
+            logger.info(f"DEBUG: {symbol} | [TYPE2] 초기 진입 탈락 이유 | 조건1(150봉동안 골크 횟수) : {gc_count_150} == 1 and 조건2(최근10봉 185하락여부): {is_185_10bar_stable} and 3일(144봉)동안 T1존재여부:{has_t1_history} ")
     # else: 
     #     logger.info(f"DEBUG: {symbol} | TYPE2 탈락 이유-진입 실패: bars_since_gold={bars_since_gold}")
     # [B등급] 급등 후 거래량이 줄어들며 20일선에서 지지받는 눌림목: 현재가가 ma20 근처이고 거래량 감소 시 B
@@ -867,6 +868,7 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
     global emergency_mode
     high_price = max(max_price, df['high'].tail(6).max())
     # [유지] 지표 계산
+    df.loc[df.index[-1], 'close'] = curr_p
     df['ma5'] = df['close'].rolling(5).mean()
     df['ma40'] = df['close'].rolling(40).mean()
     df['ma90'] = df['close'].rolling(90).mean()
@@ -921,8 +923,21 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
         current_age = int(symbol_inventory_age)
     except (ValueError, TypeError):
         current_age = 99  # 변환 실패 시 유예 기간을 통과하도록 안전값 설정
+    # [신규] 인벤토리에 없거나 99인 경우, 빗썸 API에서 실제 매수 시점을 찾아 age 복구
+    if current_age >= 90:
+        try:
+            # 최근 거래 내역 중 마지막 'buy' 기록의 시간을 가져옴
+            trades = await asyncio.to_thread(exchange.fetch_my_trades, symbol, limit=10)
+            buy_trades = [t for t in trades if t['side'] == 'buy']
+            if buy_trades:
+                last_buy_time = datetime.fromtimestamp(buy_trades[-1]['timestamp'] / 1000)
+                diff_min = (datetime.now() - last_buy_time).total_seconds() / 60
+                current_age = int(diff_min // 30) # 30분봉 기준 age 변환
+                logger.info(f"🔍 [수동매수감지] {symbol} 매수 이력 확인: {current_age}봉 경과")
+        except Exception as e:
+            logger.error(f"⚠️ {symbol} 매수 이력 조회 실패: {e}")    
     if current_age < 6:
-        return False, f"진입 초기 유예({symbol_inventory_age}봉)", False
+        return False, f"진입 초기 유예({current_age}봉)", False
 
         # 1. 본절 방어 (수정된 동적 기준 적용)
     if profit_threshold <= max_profit_rate_pct < 1.2 and purchase_price <= curr_p <= purchase_price * 1.005:
