@@ -877,19 +877,7 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
     profit_rate_pct = profit_rate * 100
     
     ###### [수정 시작] 1순위: 즉시 매도 신호 처리 및 Cooldown 기록 ######
-    ###### [출력] 유예 로직 통과 여부 확인 ######
-    # print(f"DEBUG: {symbol} | age: {symbol_inventory_age} | profit: {profit_rate_pct:.2f}%")
-    logger.info(f"DEBUG: {symbol} | age: {symbol_inventory_age} | profit: {profit_rate_pct:.2f}%")
-    ###### [신규 추가] 매수 후 6캔들 유예: 진입 초기 휩소 방지 (단, -3% 손절은 즉시 집행)
-    try:
-        current_age = int(symbol_inventory_age)
-    except (ValueError, TypeError):
-        current_age = 99  # 변환 실패 시 유예 기간을 통과하도록 안전값 설정
-    if current_age < 6:
-        if profit_rate_pct <= -3.0:
-            return True, f"🚨 [긴급손절] 진입초기 -3% 도달", True
-        return False, f"진입 초기 유예({symbol_inventory_age}봉)", False
-
+    
     ########## [수정 시작] 최고 수익률을 기준으로 감시 구간을 고정하여 급락 시 이탈 방지 ##########
     max_profit_rate_pct = ((high_price - purchase_price) / purchase_price * 100) if purchase_price > 0 else 0
 
@@ -917,6 +905,17 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
         else:
             # 횡보/하락 시 팔겠다는 의사(True)를 주고, 즉시 탈출
             return True, f"⚠️ [패닉매도발생] 시장 폭락 및 반등 실패로 인한 정리", True
+
+    ###### [출력] 유예 로직 통과 여부 확인 ######
+    # print(f"DEBUG: {symbol} | age: {symbol_inventory_age} | profit: {profit_rate_pct:.2f}%")
+    logger.info(f"DEBUG: {symbol} | age: {symbol_inventory_age} | profit: {profit_rate_pct:.2f}%")
+    ###### [신규 추가] 매수 후 6캔들 유예: 진입 초기 휩소 방지 (단, -3% 손절은 즉시 집행)
+    try:
+        current_age = int(symbol_inventory_age)
+    except (ValueError, TypeError):
+        current_age = 99  # 변환 실패 시 유예 기간을 통과하도록 안전값 설정
+    if current_age < 6:
+        return False, f"진입 초기 유예({symbol_inventory_age}봉)", False
 
     ma40_val = curr['ma40']
     ma185_val = curr['ma185'] if not pd.isna(curr['ma185']) else 0
