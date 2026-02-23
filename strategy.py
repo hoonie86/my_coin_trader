@@ -356,9 +356,9 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     prev_disparity = (prev_ma5 - prev_ma185) / prev_ma185 * 100 if prev_ma185 > 0 else 0
     # [[ UPDATE: 골든크로스 기반 가변 윈도우 상단 방어 ]]
     gold_index = -1
-    ###### [수정] bars_since_gold 초기값 선언 ######
+    ###### [수정] bars_since_gold 초기값 선언 ###### 144봉(3일)
     bars_since_gold = 999 
-    for i in range(1, 97):
+    for i in range(1, 145):
         if i+1 < len(df):
             if df['ma40'].iloc[-i-1] < df['ma185'].iloc[-i-1] and df['ma40'].iloc[-i] > df['ma185'].iloc[-i]:
                 gold_index = len(df) - i
@@ -596,16 +596,23 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 # [추가] 격돌 판정을 위한 보조 지표 계산 (5선 기울기 및 5/40 이격도) ######
                 ma5_slope = ((ma5_val - prev_ma5) / prev_ma5) * 100 if prev_ma5 > 0 else 0
                 disparity_5_40 = ((ma5_val - ma40_val) / ma40_val) * 100 if ma40_val > 0 else 0
-                
-                # [수정] S급: 40선 격돌(이격 -0.5% 이내) 및 우상향 조건 추가 (골크 발생 전후 찰나만 허용) ######
-                # 1. (not has_prior_gc) : 바닥 확인 후 지금까지 단 한 번도 뚫은 적이 없어야 함 (무결점)
-                # 2. prev_ma5 <= prev_ma40 : 직전 봉까지는 아래에 있었어야 함 (지각 매수 차단)
-                # 3. ma5_slope > 0, curr_slope_40 > -0.09, disparity_5_40 > -0.5 : 수치 필터
-                if (not has_prior_gc) and (prev_ma5 <= prev_ma40) and (ma5_slope > 0) and (curr_slope_40 > -0.1) and (disparity_5_40 > -0.085):
-                    data_dict['grade'] = 'S'
-                    return True, f"💎 [TYPE3-S] 무결점 바닥 격돌 ({disparity_5_40:.2f}%)", "S", data_dict
+                 
+                # [신규] 최근 5봉 이격도(5선-40선) 수렴 여부 체크 (5선이 40선에 점점 붙는지 확인)
+                disps_5b = [abs(df['ma5'].iloc[-i] - df['ma40'].iloc[-i]) / df['ma40'].iloc[-i] * 100 if df['ma40'].iloc[-i] > 0 else 999 for i in range(1, 6)]
+                is_converging_5b = all(disps_5b[i] < disps_5b[i+1] for i in range(4))
+
+                # [수정] S급: 하한선(-0.5) 확장 + 상한선(0.03) 제한 + 5봉 수렴 조건(is_converging_5b) 추가
+                if (not has_prior_gc) and (prev_ma5 <= prev_ma40) and (ma5_slope > 0) and (curr_slope_40 > -0.1) and (-0.5 < disparity_5_40 < 0.5) and is_converging_5b:
+                    if disparity_5_40 <= 0:
+                        # [S+급] 40선 아래에서 격돌 중 (골크 전)
+                        data_dict['grade'] = 'S+'
+                        return True, f"💎 [TYPE3-S+] 골크 전 바닥 격돌 ({disparity_5_40:.2f}%)", "S+", data_dict
+                    else:
+                        # [S급] 40선 위로 막 돌파 (골크 후, 상한 0.5% 제한)
+                        data_dict['grade'] = 'S'
+                        return True, f"💎 [TYPE3-S] 골크 후 바닥 안착 ({disparity_5_40:.2f}%)", "S", data_dict
                 else:
-                    logger.info(f"DEBUG: {symbol} | [TYPE3-S] 탈락 이유 | 조건1(골크 미존재) :  {not has_prior_gc} and 조건2(prev_ma5-prev_ma40): {prev_ma5 - prev_ma40:.2f} <= 0 and 조건3(ma5_slope): {ma5_slope:.2f} > 0 and 조건4(curr_slope_40): {curr_slope_40 + 0.1:.2f} > 0 and 조건5(ma5, 40 이격): {disparity_5_40 + 1.0:.2f} > 0")
+                    logger.info(f"DEBUG: {symbol} | [TYPE3-S] 탈락 이유 | 조건1(골크 미존재) :  {not has_prior_gc} and 조건2(prev_ma5-prev_ma40): {prev_ma5 - prev_ma40:.2f} <= 0 and 조건3(ma5_slope): {ma5_slope:.2f} > 0 and 조건4(curr_slope_40): {curr_slope_40 + 0.1:.2f} > 0 and 조건5(5/40 수렴): {is_converging_5b} and 조건6(이격): {disparity_5_40:.2f}")
                 # [A급] 40선 기울기가 0 이상으로 전환 (추세 반전 확인)
                 if curr_slope_40 >= 0:
                     data_dict['grade'] = 'A'
@@ -674,20 +681,21 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         if len(df) >= 97:
             for i in range(len(df)-96, len(df)-10):
                 p_v, c_v = df['ma185'].iloc[i-1], df['ma185'].iloc[i]
-                if ((c_v - p_v) / p_v) * 100 >= -0.05:
+                if ((c_v - p_v) / p_v) * 100 > 0:
                     strict_descending = False
                     break
         else: strict_descending = False
 
         for i in range(len(df)-10, len(df)):
             p_v, c_v = df['ma185'].iloc[i-1], df['ma185'].iloc[i]
-            if ((c_v - p_v) / p_v) * 100 < -0.05:
+            if ((c_v - p_v) / p_v) * 100 < 0:
                 strict_stabilized = False
                 break
         
         # 전수 조사를 통과한 깨끗한 밥그릇만 아래 등급 판정 진행
         if strict_descending and strict_stabilized:
             if is_high_pos_185:
+                logger.info(f"DEBUG: {symbol} | [TYPE1] 탈락 이유-진입 실패 | 185선 고점 구간({pos_185*100:.1f}%)")
                 return False, f"🚫 [TYPE1-제외] 185선 고점 구간({pos_185*100:.1f}%)", "B", data_dict
             
             data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
@@ -724,17 +732,18 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 # [B+급] 185선 평행/우상향 전환 초기
                 data_dict['grade'] = 'B+'
                 return True, "🚀 [TYPE1-B+] 185선 평행/우상향 전환", "B+", data_dict
-            
+            else:
+                logger.info(f"DEBUG: {symbol} | [TYPE1] 탈락 이유-진입 실패 | 185선 기울기 ({slope_rate} >= -0.01)")
             # [B급] 상승 대기 (골드 안착)
             data_dict['grade'] = 'B'
             return True, "🚀 [TYPE1-B] 상승대기(골드안착)", "B", data_dict
         else:
-            logger.info(f"DEBUG: {symbol} TYPE1 탈락 이유 | strict_descending :{strict_descending}, strict_stabilized:{strict_stabilized}")
+            logger.info(f"DEBUG: {symbol} TYPE1 탈락 이유 | 185선 96봉~10봉 내리막: :{strict_descending}, 185선 최근 10봉 우상향:{strict_stabilized}")
     # ==========================================================================
     # [TYPE2: 눌림목 및 40선 지지 (에너지 응축)]
     # 집중: 골든크로스 이후 40선(노란선) 밀착 및 지지 확인
     # ==========================================================================
-    if 4 <= bars_since_gold <= 40:
+    if 4 <= bars_since_gold <= 144:  # 4봉전부터 144봉(3일)
         # 1. 역사적 순결성 (최근 150봉 내 40/185 골든크로스 딱 1번 & 185선 10봉 연속 유지 
         gc_count_150 = 0
         for i in range(1, 150):
@@ -787,7 +796,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                     data_dict['grade'] = grade
                     return True, f"💎 [TYPE2-{grade}] 185선 수렴 중 5/40 돌파", grade, data_dict
                 else:
-                    logger.info(f"DEBUG: {symbol} | [TYPE2-{grade}] 탈락 이유 | 조건1(prev_ma5-prev_ma40) : {prev_ma5-prev_ma40:.2f} <= 0 and 조건2(ma5_val-ma40_val): {ma5_val-ma40_val:.2f} > 0")
+                    logger.info(f"DEBUG: {symbol} | [TYPE2-S] 탈락 이유 | 조건1(prev_ma5-prev_ma40) : {prev_ma5-prev_ma40:.2f} <= 0 and 조건2(ma5_val-ma40_val): {ma5_val-ma40_val:.2f} > 0")
 
                 # [A급] 40선 기울기 0 이상 전환 (+ 가중치 적용)
                 if curr_slope_40 >= 0:
@@ -800,7 +809,10 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                     # 거래량은 참고용으로만 체크하여 알림 빈도 확보
                     data_dict['grade'] = 'B'
                     return True, "📢 [TYPE2-B] B급 알림: 수렴 진행 및 추세 개선", "B", data_dict
-                
+        else: 
+            logger.info(f"DEBUG: {symbol} | [TYPE2] 초기 진입 탈락 이유 | 조건1(150봉동안 골크 횟수) : {gc_count_150} <= 0 and 조건2(최근10봉 185하락여부): {is_185_10bar_stable} and 3일(144봉)동안 T1존재여부:{has_t1_history} ")
+    # else: 
+    #     logger.info(f"DEBUG: {symbol} | TYPE2 탈락 이유-진입 실패: bars_since_gold={bars_since_gold}")
     # [B등급] 급등 후 거래량이 줄어들며 20일선에서 지지받는 눌림목: 현재가가 ma20 근처이고 거래량 감소 시 B
     # if ma20_val and base_avg_vol and curr_vol < base_avg_vol * 0.9 and abs(curr_price - ma20_val) / ma20_val <= 0.03 and data_dict.get('dynamic_rise_YN') != 'Y':
     #     data_dict['grade'] = 'B'
@@ -885,11 +897,6 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
     one_tick_pct = (get_bithumb_tick_size(purchase_price) / purchase_price * 100) if purchase_price > 0 else 0
     profit_threshold = max(0.5, 2 * one_tick_pct)
 
-    # 1. 본절 방어 (수정된 동적 기준 적용)
-    if profit_threshold <= max_profit_rate_pct < 1.2 and purchase_price <= curr_p <= purchase_price * 1.005:
-        cooldown_dict[symbol] = datetime.now() + timedelta(hours=6)
-        return True, f"🛡️ [S-TS-0.5] 본절방어(즉시)", True
-
     profit_rate = (curr_p - purchase_price) / purchase_price if purchase_price > 0 else 0
     profit_rate_pct = profit_rate * 100
     
@@ -916,6 +923,11 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
         current_age = 99  # 변환 실패 시 유예 기간을 통과하도록 안전값 설정
     if current_age < 6:
         return False, f"진입 초기 유예({symbol_inventory_age}봉)", False
+
+        # 1. 본절 방어 (수정된 동적 기준 적용)
+    if profit_threshold <= max_profit_rate_pct < 1.2 and purchase_price <= curr_p <= purchase_price * 1.005:
+        cooldown_dict[symbol] = datetime.now() + timedelta(hours=6)
+        return True, f"🛡️ [S-TS-0.5] 본절방어(즉시)", True
 
     ma40_val = curr['ma40']
     ma185_val = curr['ma185'] if not pd.isna(curr['ma185']) else 0
