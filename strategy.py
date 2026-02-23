@@ -866,6 +866,9 @@ def check_3_2_negative_candles(target_df):
 # ---------------------------------------------------------
 async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, grade='A', symbol_inventory_age=99, status=None, realtime_p=None, buy_type=1):
     global emergency_mode
+    curr = df.iloc[-1]
+    prev = df.iloc[-2] # [추가] 급등 감지용
+    curr_p = realtime_p if realtime_p is not None else float(curr['close'])
     high_price = max(max_price, df['high'].tail(6).max())
     # [유지] 지표 계산
     df.loc[df.index[-1], 'close'] = curr_p
@@ -874,14 +877,9 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
     df['ma90'] = df['close'].rolling(90).mean()
     df['ma185'] = df['close'].rolling(185).mean()
 
-    curr = df.iloc[-1]
-    prev = df.iloc[-2] # [추가] 급등 감지용
-
     ma5_val = float(curr['ma5'])
     prev_ma5 = float(prev['ma5'])
     ma40_val = float(curr['ma40'])
-
-    curr_p = realtime_p if realtime_p is not None else curr['close']
 
     # [보정] RSI 및 수익률 계산
     rsi_series = calculate_rsi(df)
