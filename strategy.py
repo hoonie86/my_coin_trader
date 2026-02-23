@@ -23,6 +23,7 @@ async def update_market_panic_status(current_avg):
     if not is_buy_locked and current_avg <= -3.0:
         is_buy_locked = True
         market_ref_rate = current_avg
+        logger.info(f"🚨 [시장잠금] 패닉 상태 감지 (기준점: {market_ref_rate:.2f}%)")
     # 2. 잠금 상태일 때 (해제 또는 바닥 갱신)
     elif is_buy_locked:
         # 1. 차등 해제 기준 설정
@@ -299,11 +300,14 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         if is_in_cooldown(symbol):
             return False, "⏱️ [Cooldown] 매도 후 재진입 제한 중", "", {}
 
-        balance = await asyncio.to_thread(exchange.fetch_free_balance)
+        # asyncio.wait_for를 사용하여 10초 응답 지연 시 강제 탈출
+        balance = await asyncio.wait_for(asyncio.to_thread(exchange.fetch_free_balance), timeout=10)
         if balance.get('KRW', 0) < 5500:
             return False, "🚫 [잔고부족] 가용 KRW 부족 (수수료 포함 매수 루프 차단)", "", {}
+    except asyncio.TimeoutError:
+        return False, "⚠️ [네트워크지연] 빗썸 잔고조회 타임아웃", "", {}
     except Exception as e:
-        return False, f"⚠️ 초기 필터링 에러: {e}", "", {}   
+        return False, f"⚠️ 초기 필터링 에러: {e}", "", {}  
 
     if is_buy_locked:
         return False, f"DEBUG: 🚫 [시장잠금] Panic Filter 작동 중 (해제 기준:{-1 - market_ref_rate:.2f}% 상승)", "", {}
@@ -597,7 +601,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 # 1. (not has_prior_gc) : 바닥 확인 후 지금까지 단 한 번도 뚫은 적이 없어야 함 (무결점)
                 # 2. prev_ma5 <= prev_ma40 : 직전 봉까지는 아래에 있었어야 함 (지각 매수 차단)
                 # 3. ma5_slope > 0, curr_slope_40 > -0.09, disparity_5_40 > -0.5 : 수치 필터
-                if (not has_prior_gc) and (prev_ma5 <= prev_ma40) and (ma5_slope > 0) and (curr_slope_40 > -0.1) and (disparity_5_40 > -1.0):
+                if (not has_prior_gc) and (prev_ma5 <= prev_ma40) and (ma5_slope > 0) and (curr_slope_40 > -0.1) and (disparity_5_40 > -0.085):
                     data_dict['grade'] = 'S'
                     return True, f"💎 [TYPE3-S] 무결점 바닥 격돌 ({disparity_5_40:.2f}%)", "S", data_dict
                 else:
@@ -894,9 +898,25 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
     profit_threshold = max(0.5, 2 * one_tick_pct)
 
     # 1. 본절 방어 (수정된 동적 기준 적용)
-    if profit_threshold <= max_profit_rate_pct < 1.2 and curr_p <= purchase_price * 1.005:
+    if profit_threshold <= max_profit_rate_pct < 1.2 and purchase_price <= curr_p <= purchase_price * 1.005:
         cooldown_dict[symbol] = datetime.now() + timedelta(hours=6)
         return True, f"🛡️ [S-TS-0.5] 본절방어(즉시)", True
+
+    profit_rate = (curr_p - purchase_price) / purchase_price if purchase_price > 0 else 0
+    profit_rate_pct = profit_rate * 100
+    
+    # [1단계] 최우선 생존: 패닉 여부 상관없이 -3% 도달 시 즉시 탈출 (Emergency=True)
+    if profit_rate_pct <= -3.0:
+        return True, f"🚨 [절대손절] 진입가 대비 -3% 도달 (즉시)", True
+
+    # [2단계] 패닉 대응: 상승 시 보류, 횡보/하락 시 유예 매도 (Emergency=False)
+    if is_buy_locked:
+        if curr_p > float(prev['close']):
+            # 상승 중이면 패닉이라도 수익을 위해 일단 홀딩 (유예)
+            return False, "🚀 [패닉유예] 상승 흐름 유지 중 (매도 보류)", False
+        else:
+            # 횡보/하락 시 팔겠다는 의사(True)를 주고, 즉시 탈출
+            return True, f"⚠️ [패닉매도발생] 시장 폭락 및 반등 실패로 인한 정리", True
 
     ma40_val = curr['ma40']
     ma185_val = curr['ma185'] if not pd.isna(curr['ma185']) else 0
@@ -995,9 +1015,6 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
         if current_type in ['1', '2', '3']:
         ####### [추가] TYPE3 예외 처리: 30분봉 지표(90선/지지선) 로직 진입 차단 #######
             logger.info(f"DEBUG: {symbol} | TYPE: {buy_type} | 매도 조건 탐지 시작")
-            # [0순위] 절대 손절 (최우선 생존 로직)
-            if profit_rate_pct <= -3.0:
-                return True, f"🚨 [절대손절] 진입가 대비 -3% 도달", True
 
             drop_from_peak = ((high_price - curr_p) / high_price * 100) if high_price > 0 else 0
 
