@@ -866,39 +866,38 @@ def check_3_2_negative_candles(target_df):
 # ---------------------------------------------------------
 async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, grade='A', symbol_inventory_age=99, status=None, realtime_p=None, buy_type=1):
     global emergency_mode
-    curr = df.iloc[-1]
-    prev = df.iloc[-2] # [추가] 급등 감지용
-    curr_p = realtime_p if realtime_p is not None else float(curr['close'])
-    high_price = max(max_price, df['high'].tail(6).max())
-    # [유지] 지표 계산
+    
+        # 1. 실시간 현재가 확정
+    temp_curr = df.iloc[-1]
+    curr_p = realtime_p if realtime_p is not None else float(temp_curr['close'])
+
+    # 2. [핵심] 실시간 가격 주입 및 모든 지표 재계산
     df.loc[df.index[-1], 'close'] = curr_p
     df['ma5'] = df['close'].rolling(5).mean()
     df['ma40'] = df['close'].rolling(40).mean()
     df['ma90'] = df['close'].rolling(90).mean()
     df['ma185'] = df['close'].rolling(185).mean()
+    rsi_series = calculate_rsi(df)
 
+    # 3. [중요] 지표가 반영된 최신 행(row) 재정의 (이걸 안 하면 지표가 과거값임)
+    curr = df.iloc[-1] 
+    prev = df.iloc[-2]
+    
+    # 4. 주요 수치 변수 할당 (중복 제거)
     ma5_val = float(curr['ma5'])
     prev_ma5 = float(prev['ma5'])
     ma40_val = float(curr['ma40'])
-
-    # [보정] RSI 및 수익률 계산
-    rsi_series = calculate_rsi(df)
-    has_rsi_spike = (rsi_series.tail(14) >= 80).any()
+    high_price = max(max_price, df['high'].tail(6).max())
     
+    # 5. 수익률 및 RSI 스파이크 계산 (딱 한 번만 실행)
+    has_rsi_spike = (rsi_series.tail(14) >= 80).any()
     profit_rate = (curr_p - purchase_price) / purchase_price if purchase_price > 0 else 0
     profit_rate_pct = profit_rate * 100
-    
-    ###### [수정 시작] 1순위: 즉시 매도 신호 처리 및 Cooldown 기록 ######
-    
-    ########## [수정 시작] 최고 수익률을 기준으로 감시 구간을 고정하여 급락 시 이탈 방지 ##########
     max_profit_rate_pct = ((high_price - purchase_price) / purchase_price * 100) if purchase_price > 0 else 0
 
-    ###### [수정] 2틱 본절 유예: 최소 2틱 수익(또는 0.5%) 달성 시에만 본절방어 가동 ######
+    # 6. 본절방어 기준점(틱 사이즈 반영) 계산
     one_tick_pct = (get_bithumb_tick_size(purchase_price) / purchase_price * 100) if purchase_price > 0 else 0
     profit_threshold = max(0.5, 2 * one_tick_pct)
-
-    profit_rate = (curr_p - purchase_price) / purchase_price if purchase_price > 0 else 0
-    profit_rate_pct = profit_rate * 100
     
     # [1단계] 최우선 생존: 패닉 여부 상관없이 -3% 도달 시 즉시 탈출 (Emergency=True)
     if profit_rate_pct <= -3.0:
