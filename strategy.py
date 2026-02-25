@@ -300,10 +300,10 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         if is_in_cooldown(symbol):
             return False, "⏱️ [Cooldown] 매도 후 재진입 제한 중", "", {}
 
-        # asyncio.wait_for를 사용하여 10초 응답 지연 시 강제 탈출
-        balance = await asyncio.wait_for(asyncio.to_thread(exchange.fetch_free_balance), timeout=10)
-        if balance.get('KRW', 0) < 5500:
-            return False, "🚫 [잔고부족] 가용 KRW 부족 (수수료 포함 매수 루프 차단)", "", {}
+        # # asyncio.wait_for를 사용하여 10초 응답 지연 시 강제 탈출
+        # balance = await asyncio.wait_for(asyncio.to_thread(exchange.fetch_free_balance), timeout=10)
+        # if balance.get('KRW', 0) < 5500:
+        #     return False, "🚫 [잔고부족] 가용 KRW 부족 (수수료 포함 매수 루프 차단)", "", {}
     except asyncio.TimeoutError:
         return False, "⚠️ [네트워크지연] 빗썸 잔고조회 타임아웃", "", {}
     except Exception as e:
@@ -375,7 +375,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     curr_max_high_low = max(curr['open'], curr['close'])
     upper_wick = (curr['high'] - curr_max_high_low) / curr_max_high_low * 100
     
-    if volatility >= 8.0:
+    if volatility >= 15.0:
         print(f"DEBUG: {symbol} 매수 탈락 - 변동성 과다({volatility:.1f}%)")
         return False, f"🚫 [상단방어] 구간 변동성({volatility:.1f}%) 및 저항 포착", "F", {}
         
@@ -432,7 +432,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         dynamic_rise = ((win_high - win_low) / win_low * 100) if win_low > 0 else 0
         #print(f"DEBUG: {symbol} | 골크 발생. 골크점 : {199-gold_index} | 시작점 : {199-check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
         # 7% 이상 급등락이 있었으면 탈락
-        if dynamic_rise >= 8.0:
+        if dynamic_rise >= 15.0:
             data_dict['dynamic_rise_YN'] = 'Y'
             print(f"DEBUG: {symbol} | 골크 발생. 골크점 : {199-gold_index} | 시작점 : {199-check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise:.2f}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
             return False, f"🚫 [제외] 골크 전후 변동성 과다({dynamic_rise:.1f}% >= 5%)", "B", data_dict
@@ -458,7 +458,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         dynamic_rise = ((win_high - win_low) / win_low * 100) if win_low > 0 else 0
         # print(f"DEBUG: {symbol} | 골크 미발생. 시작점: {check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
         # 7% 이상 급등락이 있었으면 탈락
-        if dynamic_rise >= 8.0:
+        if dynamic_rise >= 15.0:
             data_dict['dynamic_rise_YN'] = 'Y'
             return False, f"🚫 [제외] 골크 미발생 변동성 과다({dynamic_rise:.1f}% >= 5%)", "B", data_dict
     bars_since_gold = len(df) - gold_index if gold_index != -1 else -1
@@ -607,6 +607,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                     if  -0.5 <= disparity_5_40 < 0:
                         # [S+급] 40선 아래에서 격돌 중 (골크 전)
                         data_dict['grade'] = 'S+'
+                        data_dict['multiplier'] = 2.0  # S급 이상일 때 2배 금액 배정
                         return True, f"💎 [TYPE3-S+] 골크 전 바닥 격돌 ({disparity_5_40:.2f}%)", "S+", data_dict
                     else:
                         # [S급] 40선 위로 막 돌파 (골크 후, 상한 0.5% 제한)
@@ -752,8 +753,8 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 if df['ma40'].iloc[-i-1] <= df['ma185'].iloc[-i-1] and df['ma40'].iloc[-i] > df['ma185'].iloc[-i]:
                     gc_count_150 += 1
         
-        # 2. 185선 10봉 무결성 (최근 10봉 동안 ma185가 단 한 번도 하락하지 않음)
-        is_185_10bar_stable = all(df['ma185'].iloc[-i] >= df['ma185'].iloc[-i-1] for i in range(1, 11))
+        # 2. 185선 5봉 무결성 (최근 5봉 동안 ma185가 단 한 번도 하락하지 않음)
+        is_185_5bar_stable = all(df['ma185'].iloc[-i] >= df['ma185'].iloc[-i-1] for i in range(1, 6))
         ###### [신규 추가] 3일(144봉) 내 T1 이력 전수 조사 (횡보 허용) ######
         has_t1_history = False
         if gc_count_150 == 1:
@@ -776,7 +777,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                     has_t1_history = True; break
 
         # [수정] has_t1_history 조건 추가 (이후 S, A, B 등급 판정은 내부에서 그대로 유지)
-        if gc_count_150 == 1 and is_185_10bar_stable and has_t1_history:
+        if gc_count_150 == 1 and is_185_5bar_stable and has_t1_history:
             # 40일선 기울기 가속도 및 이격도 계산
             prev_ma40_2 = df['ma40'].iloc[-3]
             prev_slope_40 = ((prev_ma40 - prev_ma40_2) / prev_ma40_2) * 100 if prev_ma40_2 > 0 else 0
@@ -811,7 +812,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                     data_dict['grade'] = 'B'
                     return True, "📢 [TYPE2-B] B급 알림: 수렴 진행 및 추세 개선", "B", data_dict
         else: 
-            logger.info(f"DEBUG: {symbol} | [TYPE2] 초기 진입 탈락 이유 | 조건1(150봉동안 골크 횟수) : {gc_count_150} == 1 and 조건2(최근10봉 185하락여부): {is_185_10bar_stable} and 3일(144봉)동안 T1존재여부:{has_t1_history} ")
+            logger.info(f"DEBUG: {symbol} | [TYPE2] 초기 진입 탈락 이유 | 조건1(150봉동안 골크 횟수) : {gc_count_150} == 1 and 조건2(최근5봉 185 미하락): {is_185_5bar_stable} and 3일(144봉)동안 T1존재여부:{has_t1_history} ")
     # else: 
     #     logger.info(f"DEBUG: {symbol} | TYPE2 탈락 이유-진입 실패: bars_since_gold={bars_since_gold}")
     # [B등급] 급등 후 거래량이 줄어들며 20일선에서 지지받는 눌림목: 현재가가 ma20 근처이고 거래량 감소 시 B
