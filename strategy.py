@@ -603,7 +603,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 is_converging_5b = all(disps_5b[i] < disps_5b[i+1] for i in range(4))
 
                 # [수정] S급: 하한선(-0.5) 확장 + 상한선(0.03) 제한 + 5봉 수렴 조건(is_converging_5b) 추가
-                if (not has_prior_gc) and (prev_ma5 <= prev_ma40) and (ma5_slope > 0) and (curr_slope_40 > -0.1) and (-0.5 < disparity_5_40 < 0.5) and is_converging_5b:
+                if (not has_prior_gc) and (prev_ma5 <= prev_ma40) and (ma5_slope > 0) and (curr_slope_40 >= 0) and (-0.5 < disparity_5_40 < 0.5) and is_converging_5b:
                     if disparity_5_40 <= 0:
                         # [S+급] 40선 아래에서 격돌 중 (골크 전)
                         data_dict['grade'] = 'S+'
