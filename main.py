@@ -469,8 +469,8 @@ async def buy_scan_task(app):
                     can_auto_buy = False
                     if curr_mode == "AUTO":
                         if current_market_avg >= 2.0:   # 시장이 2% 상승
-                            if current_grade in ["S", "A"]: can_auto_buy = True # 호황일 때 A급까지
-                        else:
+                            # if current_grade in ["S", "A"]: can_auto_buy = True # 호황일 때 A급까지
+                        # else:
                             if current_grade == "S": can_auto_buy = True # 일반 시황 S급만
 
                     if can_auto_buy:

@@ -382,7 +382,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     if curr_price < curr['high'] * 0.985:
         return False, f"🚫 [설거지방어] 고가대비 이탈(-1.5%↑)", "F", {}
 
-    if upper_wick >= 2.0:
+    if upper_wick >= 3.5:
         print(f"DEBUG: {symbol} 매수 탈락 - 윗꼬리 과다({volatility:.1f}%)")
         return False, f"🚫 [윗꼬리 방어] 가격 변동성({volatility:.1f}%) 설거지 포착", "F", {}    
     # [가격 필터] 10원 미만 또는 10,000원 이상 → BTC 마켓 동전주/비정상 차단
@@ -395,7 +395,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     # 현재가(close) 대비 고가(high)의 순수 물리적 거리를 계산 (양봉 기준)
     upper_wick_dist_pct = (curr['high'] - curr_price) / curr_price * 100
     
-    if upper_wick_dist_pct >= 2.0:
+    if upper_wick_dist_pct >= 3.5:
         return False, f"🚫 [저항과다] 윗꼬리(현재가대비):{upper_wick_dist_pct:.2f}%", "F", data_dict
         
     ###### [신규 추가] 스테이블 코인 및 185일선 고점(상위 30%) 원천 차단 ######
@@ -415,7 +415,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     if max_185 > min_185 > 0:
         pos_185 = (curr_185 - min_185) / (max_185 - min_185)
         # 상위 30% (0.7 이상) 위치에 있다면 밥그릇 바닥이 아님
-        is_high_pos_185 = pos_185 >= 0.7    # 상위 30%이면 is_high_pos_185 True
+        is_high_pos_185 = pos_185 >= 0.5    # 상위 30%이면 is_high_pos_185 True
 
     # [수정] 골든크로스 여부 확인 후 '구간 변동성' 체크 수행
     if gold_index != -1:
@@ -603,15 +603,15 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 is_converging_5b = all(disps_5b[i] < disps_5b[i+1] for i in range(4))
 
                 # [수정] S급: 하한선(-0.5) 확장 + 상한선(0.03) 제한 + 5봉 수렴 조건(is_converging_5b) 추가
-                if (not has_prior_gc) and (prev_ma5 <= prev_ma40) and (ma5_slope > 0) and (curr_slope_40 >= 0) and (-0.5 < disparity_5_40 < 0.5) and is_converging_5b:
-                    if disparity_5_40 <= 0:
+                if (not has_prior_gc) and (prev_ma5 <= prev_ma40) and (ma5_slope > 0) and (curr_slope_40 > -0.07) and (-0.8 < disparity_5_40 < 0) and is_converging_5b:
+                    if  -0.5 <= disparity_5_40 < 0:
                         # [S+급] 40선 아래에서 격돌 중 (골크 전)
                         data_dict['grade'] = 'S+'
                         return True, f"💎 [TYPE3-S+] 골크 전 바닥 격돌 ({disparity_5_40:.2f}%)", "S+", data_dict
                     else:
                         # [S급] 40선 위로 막 돌파 (골크 후, 상한 0.5% 제한)
                         data_dict['grade'] = 'S'
-                        return True, f"💎 [TYPE3-S] 골크 후 바닥 안착 ({disparity_5_40:.2f}%)", "S", data_dict
+                        return True, f"💎 [TYPE3-S] 골크 전 바닥 위치 ({disparity_5_40:.2f}%)", "S", data_dict
                 else:
                     logger.info(f"DEBUG: {symbol} | [TYPE3-S] 탈락 이유 | 조건1(골크 미존재) :  {not has_prior_gc} and 조건2(prev_ma5-prev_ma40): {prev_ma5 - prev_ma40:.2f} <= 0 and 조건3(ma5_slope): {ma5_slope:.2f} > 0 and 조건4(curr_slope_40): {curr_slope_40 + 0.1:.2f} > 0 and 조건5(5/40 수렴): {is_converging_5b} and 조건6(이격): {disparity_5_40:.2f}")
                 # [A급] 40선 기울기가 0 이상으로 전환 (추세 반전 확인)
@@ -680,18 +680,18 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         strict_stabilized = True
 
         if len(df) >= 97:
+            descending_count = 0
             for i in range(len(df)-96, len(df)-10):
                 p_v, c_v = df['ma185'].iloc[i-1], df['ma185'].iloc[i]
-                if ((c_v - p_v) / p_v) * 100 > 0:
-                    strict_descending = False
-                    break
+                if ((c_v - p_v) / p_v) * 100 <= 0: descending_count += 1
+            strict_descending = True if descending_count >= 60 else False # 86봉 중 약 70% 하락 시 인정
         else: strict_descending = False
 
+        stabilized_count = 0
         for i in range(len(df)-10, len(df)):
             p_v, c_v = df['ma185'].iloc[i-1], df['ma185'].iloc[i]
-            if ((c_v - p_v) / p_v) * 100 < 0:
-                strict_stabilized = False
-                break
+            if ((c_v - p_v) / p_v) * 100 >= 0: stabilized_count += 1
+        strict_stabilized = True if stabilized_count >= 7 else False # 10봉 중 7봉 이상 우상향 시 인정
         
         # 전수 조사를 통과한 깨끗한 밥그릇만 아래 등급 판정 진행
         if strict_descending and strict_stabilized:
