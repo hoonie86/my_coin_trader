@@ -680,7 +680,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         strict_descending = True
         strict_stabilized = True
 
-        if len(df) >= 97:
+        if len(df) >= 281:
             descending_count = 0
             for i in range(len(df)-96, len(df)-10):
                 p_v, c_v = df['ma185'].iloc[i-1], df['ma185'].iloc[i]
@@ -740,7 +740,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             data_dict['grade'] = 'B'
             return True, "🚀 [TYPE1-B] 상승대기(골드안착)", "B", data_dict
         else:
-            logger.info(f"DEBUG: {symbol} TYPE1 탈락 이유 | 185선 96봉~10봉 내리막: :{strict_descending}, 185선 최근 10봉 우상향:{strict_stabilized}")
+            logger.info(f"DEBUG: {symbol} TYPE1 탈락 이유 | 185선 96봉~10봉 내리막: :{strict_descending}({descending_count}개 하락), 185선 최근 10봉 우상향:{strict_stabilized}({stabilized_count}개 상승)")
     # ==========================================================================
     # [TYPE2: 눌림목 및 40선 지지 (에너지 응축)]
     # 집중: 골든크로스 이후 40선(노란선) 밀착 및 지지 확인
