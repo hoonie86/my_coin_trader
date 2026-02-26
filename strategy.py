@@ -760,8 +760,9 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 if df['ma40'].iloc[-i-1] <= df['ma185'].iloc[-i-1] and df['ma40'].iloc[-i] > df['ma185'].iloc[-i]:
                     gc_count_150 += 1
         
-        # 2. 185선 5봉 무결성 (최근 5봉 동안 ma185가 단 한 번도 하락하지 않음)
-        is_185_5bar_stable = all(df['ma185'].iloc[-i] >= df['ma185'].iloc[-i-1] for i in range(1, 6))
+        # 2. 185선 10봉 안정성 (최근 10봉 중 80% 이상 ma185가 유지/상승)
+        s185_cnt = sum(1 for i in range(1, 11) if df['ma185'].iloc[-i] >= df['ma185'].iloc[-i-1])
+        is_185_stable_check = s185_cnt >= 8
 
         ###### [교정] 144봉 전수 조사 대신 '골든크로스 발생 지점'만 정밀 타격 ######
         has_t1_history = False
@@ -785,7 +786,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                     has_t1_history = True
 
         # [수정] has_t1_history 조건 추가 (이후 S, A, B 등급 판정은 내부에서 그대로 유지)
-        if gc_count_150 == 1 and is_185_5bar_stable and has_t1_history:
+        if gc_count_150 == 1 and is_185_stable_check and has_t1_history:
             # 40일선 기울기 가속도 및 이격도 계산
             prev_ma40_2 = df['ma40'].iloc[-3]
             prev_slope_40 = ((prev_ma40 - prev_ma40_2) / prev_ma40_2) * 100 if prev_ma40_2 > 0 else 0
