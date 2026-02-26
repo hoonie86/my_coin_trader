@@ -315,7 +315,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     # 기본 data_dict 초기화 (조건 탈락 여부와 관계없이 끝까지 계산해 빈칸 채움)
     data_dict = {}
     
-    if len(df) < 185:
+    if len(df) < 285:
         return False, "데이터부족", "", data_dict
 
     # [기존 유지] 40/185일선 + RSI
@@ -382,7 +382,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     if curr_price < curr['high'] * 0.985:
         return False, f"🚫 [설거지방어] 고가대비 이탈(-1.5%↑)", "F", {}
 
-    if upper_wick >= 3.5:
+    if upper_wick >= 2.0:
         print(f"DEBUG: {symbol} 매수 탈락 - 윗꼬리 과다({volatility:.1f}%)")
         return False, f"🚫 [윗꼬리 방어] 가격 변동성({volatility:.1f}%) 설거지 포착", "F", {}    
     # [가격 필터] 10원 미만 또는 10,000원 이상 → BTC 마켓 동전주/비정상 차단
@@ -395,7 +395,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     # 현재가(close) 대비 고가(high)의 순수 물리적 거리를 계산 (양봉 기준)
     upper_wick_dist_pct = (curr['high'] - curr_price) / curr_price * 100
     
-    if upper_wick_dist_pct >= 3.5:
+    if upper_wick_dist_pct >= 2.0:
         return False, f"🚫 [저항과다] 윗꼬리(현재가대비):{upper_wick_dist_pct:.2f}%", "F", data_dict
         
     ###### [신규 추가] 스테이블 코인 및 185일선 고점(상위 30%) 원천 차단 ######
@@ -670,10 +670,19 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     # [TYPE1: 밥그릇 바닥 탈출 및 변곡점 포착]
     # 집중: 40선/185선 골든크로스 전후의 기울기 변화와 수렴도
     # ==========================================================================
-    # 1. 40일선 위이거나, 아래라도 -3% 이내 근접 시 허용 (RON 사례)
+        # 1. 40일선 위이거나, 아래라도 -3% 이내 근접 시 허용
     is_near_ma40 = abs(curr_price - ma40_val) / ma40_val <= 0.03 if ma40_val > 0 else False
-    # 2. 이탈 방지: 40일선 기울기가 양수(우상향)이고 현재 캔들이 양봉이거나 거래량 실렸을 때
-    is_upward_trend = ma40_val > df['ma40'].iloc[-2] and (curr_price >= df['close'].iloc[-2] or has_volume_surge)
+    
+    ###### [이식] 타점을 왼쪽으로 전진: 5일선-40일선 격돌(Collision) 로직 주입 ######
+    ma5_slope = ((ma5_val - prev_ma5) / prev_ma5) * 100 if prev_ma5 > 0 else 0
+    disparity_5_40 = ((ma5_val - ma40_val) / ma40_val) * 100 if ma40_val > 0 else 0
+    # 5봉 연속 수렴 확인 (점점 선에 붙는 중인지 확인)
+    disps_5b = [abs(df['ma5'].iloc[-i] - df['ma40'].iloc[-i]) / df['ma40'].iloc[-i] * 100 if df['ma40'].iloc[-i] > 0 else 999 for i in range(1, 6)]
+    is_converging_5b = all(disps_5b[i] < disps_5b[i+1] for i in range(4))
+
+        # 2. 이탈 방지: 40일선 기울기가 양수(우상향)이고 반드시 양봉 + 5일선 상승 중일 것
+    # [교정] '하락 중 거래량 터짐' 오판 방지 및 방향성 확정
+    is_upward_trend = (ma40_val > df['ma40'].iloc[-2]) and (ma5_slope > 0) and (curr_price >= curr['open'])
 
     if is_near_ma40 and is_upward_trend and disparity_40 <= 0.07 and data_dict.get('dynamic_rise_YN') != 'Y':
         ###### [신규] TYPE 1 전용: 185일선 밥그릇 흐름(지속 하락 후 안착) 전수 조사 ######
@@ -703,28 +712,26 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
             
             if slope_rate >= -0.01:
-                # [S+급] 밥그릇 수렴 + 40/90 골든크로스 (최상의 변곡점)
-                if disparity_gold <= 0.005 and is_40_90_gc:
-                    data_dict['grade'] = 'S+'
-                    return True, "💎 [TYPE1-S+] 밥그릇 수렴 및 40/90 골든크로스 확정", "S+", data_dict
+                ###### [정밀화] 5/40 격돌(-0.8~0.1%) 시점에 S/S+ 등급 부여 (파란 동그라미 타점) ######
+                if disparity_gold <= 0.005 and is_converging_5b and (-0.8 <= disparity_5_40 <= 0.1):
+                    if is_40_90_gc:
+                        # [S+급] 밥그릇 수렴 + 5/40 격돌 + 40/90 골든크로스 확정
+                        data_dict['grade'] = 'S+'
+                        return True, "💎 [TYPE1-S+] 밥그릇 수렴 및 40/90 골든크로스 확정", "S+", data_dict
+                    else:
+                        # [S급] 격돌 중이지만 40/90 골크는 아직인 최선행 타점
+                        data_dict['grade'] = 'S'
+                        return True, "💎 [TYPE1-S] 밥그릇 바닥 수렴 및 5/40선 안착 확인", "S", data_dict
                 else:
-                    logger.info(f"DEBUG: {symbol} | [TYPE1-S+] 탈락 이유 | 조건1(disparity_gold): {disparity_gold:.2f} <= 0.005 and 조건2(is_40_90_gc): {is_40_90_gc}")
-                # [S급] 밥그릇 바닥 완전 수렴 (기존 S)
-                if disparity_gold <= 0.005:
-                    data_dict['grade'] = 'S'
-                    return True, "💎 [TYPE1-S] 밥그릇 바닥 완전 수렴", "S", data_dict
-                else:
-                    logger.info(f"DEBUG: {symbol} | [TYPE1-S] 탈락 이유 | 조건1(disparity_gold) : {disparity_gold:.2f} <= 0")
-                
-                # [A+급] 바닥 탈출 + 40/90 정배열 (추세 가속 확인)
-                if disparity_gold <= 0.010 and is_40_above_90:
-                    # 40일선과 현재가의 이격이 2%를 초과하면 추격주의로 판단하여 등급 하향
-                    if (curr_price - ma40_val) / ma40_val > 0.02:
-                        data_dict['grade'] = 'A'
-                        return True, "🚀 [TYPE1-A] 상승대기(골드안착/추격주의)", "A", data_dict
+                    logger.info(f"DEBUG: {symbol} | [TYPE1-S/S+] 격돌 실패 | 5/40이격: {disparity_5_40:.2f}% | 수렴도: {is_converging_5b}")
 
-                    data_dict['grade'] = 'A+'
-                    return True, "⭐ [TYPE1-A+] 밥그릇 탈출 및 40/90 정배열 안착", "A+", data_dict
+                # [A+급] 바닥 탈출 + 40/90 정배열 가속 (추세 가속 확인)
+                # S+가 '골든크로스 순간'이라면, A+는 '정배열 유지 + 수급' 타점으로 차별화
+                if is_40_above_90 and disparity_gold <= 0.015:
+                    # 현재가가 40일선 위에서 안착하고 거래량이 전봉보다 실렸을 때
+                    if curr_price > ma40_val and has_volume_surge:
+                        data_dict['grade'] = 'A+'
+                        return True, "⭐ [TYPE1-A+] 밥그릇 탈출 및 40/90 정배열 가속", "A+", data_dict
 
                 # [A급] 밥그릇 바닥 탈출 (기존 A+)
                 if disparity_gold <= 0.010:
@@ -755,26 +762,34 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         
         # 2. 185선 5봉 무결성 (최근 5봉 동안 ma185가 단 한 번도 하락하지 않음)
         is_185_5bar_stable = all(df['ma185'].iloc[-i] >= df['ma185'].iloc[-i-1] for i in range(1, 6))
-        ###### [신규 추가] 3일(144봉) 내 T1 이력 전수 조사 (횡보 허용) ######
+
+        ###### [교정] 144봉 전수 조사 대신 '골든크로스 발생 지점'만 정밀 타격 ######
         has_t1_history = False
         if gc_count_150 == 1:
-            for lookback in range(1, 145): # 최근 3일(144봉) 스캔
-                if len(df) < lookback + 97: break
-                past_idx = len(df) - lookback
+            gc_idx = -1
+            # 1. 최근 150봉 이내에서 실제 골든크로스가 일어난 정확한 위치(Index)를 찾음
+            for i in range(1, 150):
+                if i+1 < len(df):
+                    if df['ma40'].iloc[-i-1] <= df['ma185'].iloc[-i-1] and df['ma40'].iloc[-i] > df['ma185'].iloc[-i]:
+                        gc_idx = len(df) - i
+                        break
+            
+            # 2. 골든크로스 지점을 찾았다면, 그 시점이 '타입 1(밥그릇)' 족보인지 검증
+            if gc_idx != -1 and gc_idx >= 281:
                 is_t1_area = True
-                # Phase 1: 내리막 (상승 시 탈락, 0/하락 허용)
-                for j in range(past_idx-96, past_idx-10):
+                # Phase 1: 내리막 (gc_idx 시점 기준 86봉 조사)
+                for j in range(gc_idx-96, gc_idx-10):
                     p_v, c_v = df['ma185'].iloc[j-1], df['ma185'].iloc[j]
-                    if ((c_v - p_v) / p_v) * 100 > 0: 
-                        is_t1_area = False; break
-                # Phase 2: 안착 (하락 시 탈락, 0/상승 허용)
+                    if ((c_v - p_v) / p_v) * 100 > 0: is_t1_area = False; break
+                
+                # Phase 2: 안착 (gc_idx 시점 기준 10봉 조사)
                 if is_t1_area:
-                    for j in range(past_idx-10, past_idx):
+                    for j in range(gc_idx-10, gc_idx):
                         p_v, c_v = df['ma185'].iloc[j-1], df['ma185'].iloc[j]
-                        if ((c_v - p_v) / p_v) * 100 < 0:
-                            is_t1_area = False; break
+                        if ((c_v - p_v) / p_v) * 100 < 0: is_t1_area = False; break
+                
                 if is_t1_area:
-                    has_t1_history = True; break
+                    has_t1_history = True
 
         # [수정] has_t1_history 조건 추가 (이후 S, A, B 등급 판정은 내부에서 그대로 유지)
         if gc_count_150 == 1 and is_185_5bar_stable and has_t1_history:

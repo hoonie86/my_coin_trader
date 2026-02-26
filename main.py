@@ -407,7 +407,7 @@ async def buy_scan_task(app):
                     logger.info(f"지원하지 않는 마켓: {symbol}")
                     continue
 
-                ohlcv = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '30m', limit=400)
+                ohlcv = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '30m', limit=500)
                 if len(ohlcv) < 281: continue
 
                 df = pd.DataFrame(ohlcv, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
