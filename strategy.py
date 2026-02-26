@@ -774,21 +774,14 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                         gc_idx = len(df) - i
                         break
             
-            # 2. 골든크로스 지점을 찾았다면, 그 시점이 '타입 1(밥그릇)' 족보인지 검증
+            # 2. 골든크로스 지점을 찾았다면, 그 시점이 '타입 1(밥그릇)' 족보인지 검증 (70% 유연성 적용)
             if gc_idx != -1 and gc_idx >= 281:
-                is_t1_area = True
-                # Phase 1: 내리막 (gc_idx 시점 기준 86봉 조사)
-                for j in range(gc_idx-96, gc_idx-10):
-                    p_v, c_v = df['ma185'].iloc[j-1], df['ma185'].iloc[j]
-                    if ((c_v - p_v) / p_v) * 100 > 0: is_t1_area = False; break
+                # 하락 구간(86봉) 중 70% 이상(60봉) 하락/횡보 확인
+                d_cnt = sum(1 for k in range(gc_idx-96, gc_idx-10) if df['ma185'].iloc[k] <= df['ma185'].iloc[k-1])
+                # 안착 구간(10봉) 중 70% 이상(7봉) 유지/상승 확인
+                s_cnt = sum(1 for k in range(gc_idx-10, gc_idx) if df['ma185'].iloc[k] >= df['ma185'].iloc[k-1])
                 
-                # Phase 2: 안착 (gc_idx 시점 기준 10봉 조사)
-                if is_t1_area:
-                    for j in range(gc_idx-10, gc_idx):
-                        p_v, c_v = df['ma185'].iloc[j-1], df['ma185'].iloc[j]
-                        if ((c_v - p_v) / p_v) * 100 < 0: is_t1_area = False; break
-                
-                if is_t1_area:
+                if d_cnt >= 60 and s_cnt >= 7:
                     has_t1_history = True
 
         # [수정] has_t1_history 조건 추가 (이후 S, A, B 등급 판정은 내부에서 그대로 유지)
