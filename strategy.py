@@ -689,26 +689,26 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         strict_descending = True
         strict_stabilized = True
 
+        # 1. 골든크로스 횟수 체크 (TYPE 1은 0회여야 함)
+        gc_count_t1 = 0
+        for i in range(1, 150):
+            if i+1 < len(df):
+                if df['ma40'].iloc[-i-1] <= df['ma185'].iloc[-i-1] and df['ma40'].iloc[-i] > df['ma185'].iloc[-i]:
+                    gc_count_t1 += 1
+
+        # 2. 변곡점 포착: 최근 5봉은 상승 중이고, 10~5봉 전 구간은 하락/평행이었는지 확인
+        is_turning_up = (df['ma185'].iloc[-1] > df['ma185'].iloc[-5]) and (df['ma185'].iloc[-10] <= df['ma185'].iloc[-5])
+
         if len(df) >= 281:
             descending_count = 0
             for i in range(len(df)-96, len(df)-10):
                 p_v, c_v = df['ma185'].iloc[i-1], df['ma185'].iloc[i]
                 if ((c_v - p_v) / p_v) * 100 <= 0: descending_count += 1
-            strict_descending = True if descending_count >= 60 else False # 86봉 중 약 70% 하락 시 인정
+            strict_descending = True if descending_count >= 60 else False 
         else: strict_descending = False
 
-        # [가이드] 하락 밀도(Drop Density) 로직 도입: 10봉간 총 하락폭이 5틱 이내면 바닥 안착으로 인정
-        t1_current_tick = get_bithumb_tick_size(curr_price)
-        t1_total_drop = sum(max(0, df['close'].iloc[k-1] - df['close'].iloc[k]) for k in range(len(df)-10, len(df)))
-        is_t1_drop_stable = (t1_total_drop / t1_current_tick <= 5) if t1_current_tick > 0 else False
-
-        stabilized_count = 0
-        for i in range(len(df)-10, len(df)):
-            p_v, c_v = df['ma185'].iloc[i-1], df['ma185'].iloc[i]
-            if ((c_v - p_v) / p_v) * 100 >= 0: stabilized_count += 1
-        
-        # [수정] 기존 strict_stabilized 조건을 하락 밀도 조건과 결합 (둘 중 하나만 만족해도 통과)
-        strict_stabilized = (stabilized_count >= 7 or is_t1_drop_stable)
+        # [수정] GC가 0회이고 변곡점이거나 안정화되었을 때 통과
+        strict_stabilized = (is_turning_up or (stabilized_count >= 7)) and (gc_count_t1 == 0)
         
         # 전수 조사를 통과한 깨끗한 밥그릇만 아래 등급 판정 진행
         if strict_descending and strict_stabilized:
@@ -783,9 +783,12 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                         gc_idx = len(df) - i
                         break
             
-            # 2. 골든크로스 지점을 찾았다면, 그 시점이 '타입 1(밥그릇)' 족보인지 검증 (70% 유연성 적용)
-            if gc_idx != -1 and gc_idx >= 281:
-                # 하락 구간(86봉) 중 70% 이상(60봉) 하락/횡보 확인
+            # gc_idx >= 281 제약을 삭제하고, GC 이전에 충분한 데이터가 있는지만 확인
+            if gc_idx != -1 and gc_idx > 150:
+                # [추가] 높이 필터: 185선 바닥 대비 현재가가 5% 이상 높으면 상투(B급)로 강등
+                height_pct = (curr_price - ma185_val) / ma185_val * 100
+                is_low_altitude = height_pct <= 5.0
+                
                 d_cnt = sum(1 for k in range(gc_idx-96, gc_idx-10) if df['ma185'].iloc[k] <= df['ma185'].iloc[k-1])
                 
                 # [수정] 기존 s_cnt 폐기 -> 하락 밀도(Drop Density) 5틱 이하 기준 도입
@@ -793,7 +796,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 t1_v2_drop = sum(max(0, df['close'].iloc[k-1] - df['close'].iloc[k]) for k in range(gc_idx-10, gc_idx))
                 is_t1_v2_drop_stable = (t1_v2_drop / t1_v2_tick <= 5) if t1_v2_tick > 0 else False
                 
-                if d_cnt >= 60 and is_t1_v2_drop_stable:
+                if d_cnt >= 60 and is_t1_v2_drop_stable and is_low_altitude:
                     has_t1_history = True
 
         # 기존 변수명(is_185_5bar_stable)을 사용하여 조건문 구성
@@ -948,7 +951,7 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
                 logger.info(f"🔍 [수동매수감지] {symbol} 매수 이력 확인: {current_age}봉 경과")
         except Exception as e:
             logger.error(f"⚠️ {symbol} 매수 이력 조회 실패: {e}")    
-    if current_age < 6:
+    if current_age < 6 and profit_rate_pct < 1.2:
         return False, f"진입 초기 유예({current_age}봉)", False
 
         # 1. 본절 방어 (수정된 동적 기준 적용)
@@ -1196,8 +1199,11 @@ def get_report_visuals(this_profit, is_sell_signal, this_curr_p, ma40_val, sell_
         return "🔴", f"⚠️ 매도신호({sell_reason})"
 
     # [3] 40선 하단 (노랑 - 주의 단계)
+    # 현재가가 40선 아래여도 수익률이 -0.5% 이상(본절 근처)이면 초록색 유지
     if this_curr_p < ma40_val:
-        return "🟡", f"⚠️ 40선 하단(주의)"
+        if this_profit > -0.5:
+             return "🟢", f"✅ 차트양호({symbol})"
+        return "🟡", f"⚠️ 40선 하단({symbol})"
 
     # [4] 차트 양호 (초록 - 홀딩/안전 신호)
     # 매도 신호가 없고 40선 위라면 수익률과 관계없이 초록색으로 표시
