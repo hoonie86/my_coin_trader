@@ -695,7 +695,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             if i+1 < len(df):
                 if df['ma40'].iloc[-i-1] <= df['ma185'].iloc[-i-1] and df['ma40'].iloc[-i] > df['ma185'].iloc[-i]:
                     gc_count_t1 += 1
-
+        stabilized_count = sum(1 for i in range(1, 11) if i+1 <= len(df) and df['ma185'].iloc[-i] >= df['ma185'].iloc[-i-1])
         # 2. 변곡점 포착: 최근 5봉은 상승 중이고, 10~5봉 전 구간은 하락/평행이었는지 확인
         is_turning_up = (df['ma185'].iloc[-1] > df['ma185'].iloc[-5]) and (df['ma185'].iloc[-10] <= df['ma185'].iloc[-5])
 
@@ -785,22 +785,32 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             
             # gc_idx >= 281 제약을 삭제하고, GC 이전에 충분한 데이터가 있는지만 확인
             if gc_idx != -1 and gc_idx > 150:
-                # [추가] 높이 필터: 185선 바닥 대비 현재가가 5% 이상 높으면 상투(B급)로 강등
+                # [추가] 높이 필터: 185선 바닥 대비 현재가가 8% 이상 높으면 상투(B급)로 강등
                 height_pct = (curr_price - ma185_val) / ma185_val * 100
-                is_low_altitude = height_pct <= 5.0
+                is_low_altitude = height_pct <= 8.0
                 
                 d_cnt = sum(1 for k in range(gc_idx-96, gc_idx-10) if df['ma185'].iloc[k] <= df['ma185'].iloc[k-1])
                 
                 # [수정] 기존 s_cnt 폐기 -> 하락 밀도(Drop Density) 5틱 이하 기준 도입
-                t1_v2_tick = get_bithumb_tick_size(df['close'].iloc[gc_idx])
-                t1_v2_drop = sum(max(0, df['close'].iloc[k-1] - df['close'].iloc[k]) for k in range(gc_idx-10, gc_idx))
-                is_t1_v2_drop_stable = (t1_v2_drop / t1_v2_tick <= 5) if t1_v2_tick > 0 else False
+                # [수정] 틱 사이즈는 현재 185일선 가격 기준으로 산출
+                t1_v2_tick = get_bithumb_tick_size(ma185_val)
+
+###### [수정 시작] 185선 자체의 하락폭 계산 (가격 노이즈 제거) ######
+                # 가격(Close)의 변동이 아니라, 185일선의 순수 하락폭(11봉전 vs 현재)을 계산
+                # 185선은 매우 무거워서 10봉(5시간) 동안 몇 틱 이상 변하기 힘듭니다.
+                t1_v2_drop = max(0, df['ma185'].iloc[-11] - ma185_val)
                 
+                # 185선이 5시간 동안 '3틱' 이하로만 하락했다면 '안착(Stable)'으로 판정
+                is_t1_v2_drop_stable = (t1_v2_drop / t1_v2_tick <= 3) if t1_v2_tick > 0 else False
+                logger.info(f"DEBUG: {symbol} | [TYPE2] 최근10봉 185 미하락 탈락 이유 | 조건1(틱 크기) : {t1_v2_tick} and 조건2(최근10봉 하락 밀도): {t1_v2_drop} and 밀도 계산:{t1_v2_drop / t1_v2_tick} <= 5")
+
                 if d_cnt >= 60 and is_t1_v2_drop_stable and is_low_altitude:
                     has_t1_history = True
+                else:
+                    logger.info(f"DEBUG: {symbol} | [TYPE2] T1존재여부 탈락 이유 | 조건1(185선 내리막 비중) : {d_cnt} >= 60 and 조건2(최근10봉 185 미하락): {is_t1_v2_drop_stable} and 185선 바닥 대비 현재가:{height_pct}% <= 8")
 
         # 기존 변수명(is_185_5bar_stable)을 사용하여 조건문 구성
-        if gc_count_150 == 1 and is_185_5bar_stable and has_t1_history:
+        if gc_count_150 == 1 and has_t1_history:
             # 40일선 기울기 가속도 및 이격도 계산
             prev_ma40_2 = df['ma40'].iloc[-3]
 
@@ -810,19 +820,21 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         
             ###### 185선 상태 및 이격도 수렴 여부 (핵심 전제)
             is_185_stable = ma185_val >= df['ma185'].iloc[-2]
-            
+            # 1. 90선 기울기 밀도 계산 (최근 10봉 중 상승 횟수)
+            ma90_up_count = sum(1 for i in range(1, 11) if df['ma90'].iloc[-i] > df['ma90'].iloc[-i-1])
             # [수정] 수렴 조건(is_converging) 삭제 및 S급 정밀 타점 로직 적용
             # 조건: 이격도 ±1.0% 이내 + 5일선 우상향 + 현재가 양봉 필수
-            if is_185_5bar_stable and abs(dis_gold_pct) <= 1.0 and ma5_slope > 0 and curr_price >= curr['open']:
-                grade = "S+" if is_40_90_gc else "S"
+            if (bars_since_gold <= 72) and abs(dis_gold_pct) <= 1.0 and ma5_slope > 0 and curr_price >= curr['open']:
+                grade = "A+" if is_40_90_gc else "A"
                 data_dict['grade'] = grade
-                return True, f"💎 [TYPE2-{grade}] 40선 지지 및 5일선 반등 시작", grade, data_dict
+                return True, f"🚀 [TYPE2-{grade}] 5일선 반등 시작", grade, data_dict
                 # [A급] 40선 기울기 0 이상 전환 (+ 가중치 적용)
-                if curr_slope_40 >= 0:
-                    grade = "A+" if is_40_90_gc else "A"
+                if ma90_up_count >= 7:
+                    grade = "S+" if curr_price >= ma185_val else "S"
                     data_dict['grade'] = grade
-                    return True, f"🚀 [TYPE2-{grade}] 40선 기울기 우상향 전환", grade, data_dict
-
+                    return True, f"💎 [TYPE2-{grade}] 90선 기울기 유지 우상향 전환", grade, data_dict
+                else:
+                    logger.info(f"DEBUG: {symbol} | [TYPE2] 초기 진입 탈락 이유 | 조건1(90선 기울기 횟수) : {ma90_up_count} >= 7 and 조건2(185선 대비 종가 위치(양수)): {curr_price - ma185_val} ")
                 # [B급] 알림용: 40선 하락 감속 (진입 대기)
                 if curr_slope_40 > prev_slope_40:
                     # 거래량은 참고용으로만 체크하여 알림 빈도 확보
