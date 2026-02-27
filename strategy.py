@@ -824,22 +824,18 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             ma90_up_count = sum(1 for i in range(1, 11) if df['ma90'].iloc[-i] > df['ma90'].iloc[-i-1])
             # [수정] 수렴 조건(is_converging) 삭제 및 S급 정밀 타점 로직 적용
             # 조건: 이격도 ±1.0% 이내 + 5일선 우상향 + 현재가 양봉 필수
-            if (bars_since_gold <= 72) and abs(dis_gold_pct) <= 1.0 and ma5_slope > 0 and curr_price >= curr['open']:
-                grade = "A+" if is_40_90_gc else "A"
-                data_dict['grade'] = grade
-                return True, f"🚀 [TYPE2-{grade}] 5일선 반등 시작", grade, data_dict
-                # [A급] 40선 기울기 0 이상 전환 (+ 가중치 적용)
+            if (bars_since_gold <= 64) and abs(dis_gold_pct) <= 1.0 and ma5_slope > 0 and curr_price >= curr['open']:
                 if ma90_up_count >= 7:
                     grade = "S+" if curr_price >= ma185_val else "S"
                     data_dict['grade'] = grade
                     return True, f"💎 [TYPE2-{grade}] 90선 기울기 유지 우상향 전환", grade, data_dict
                 else:
                     logger.info(f"DEBUG: {symbol} | [TYPE2] 초기 진입 탈락 이유 | 조건1(90선 기울기 횟수) : {ma90_up_count} >= 7 and 조건2(185선 대비 종가 위치(양수)): {curr_price - ma185_val} ")
-                # [B급] 알림용: 40선 하락 감속 (진입 대기)
-                if curr_slope_40 > prev_slope_40:
-                    # 거래량은 참고용으로만 체크하여 알림 빈도 확보
-                    data_dict['grade'] = 'B'
-                    return True, "📢 [TYPE2-B] B급 알림: 수렴 진행 및 추세 개선", "B", data_dict
+
+                grade = "A+" if is_40_90_gc else "A"
+                data_dict['grade'] = grade
+                return True, f"🚀 [TYPE2-{grade}] 5일선 반등 시작", grade, data_dict
+
         else: 
             logger.info(f"DEBUG: {symbol} | [TYPE2] 초기 진입 탈락 이유 | 조건1(150봉동안 골크 횟수) : {gc_count_150} == 1 and 조건2(최근5봉 185 미하락): {is_185_5bar_stable} and 3일(144봉)동안 T1존재여부:{has_t1_history} ")
     # else: 
