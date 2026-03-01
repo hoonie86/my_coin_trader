@@ -715,7 +715,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         else: strict_descending = False
 
         # [수정] GC가 0회이고 변곡점이거나 안정화되었을 때 통과
-        strict_stabilized = (is_turning_up or (stabilized_count >= 4)) and (gc_count_t1 == 0)
+        strict_stabilized = (is_turning_up or (stabilized_count >= 0)) and (gc_count_t1 == 0)
         
         # 전수 조사를 통과한 깨끗한 밥그릇만 아래 등급 판정 진행
         if strict_descending and strict_stabilized:
@@ -761,7 +761,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             data_dict['grade'] = 'B'
             return True, "🚀 [TYPE1-B] 상승대기(골드안착)", "B", data_dict
         else:
-            logger.info(f"DEBUG: {symbol} TYPE1 탈락 이유 | 185선 96봉~10봉 내리막: :{strict_descending}({descending_count}개 하락), 185선 최근 10봉 우상향:{strict_stabilized}({stabilized_count} >= 4), gc횟수: {gc_count_t1}회")
+            logger.info(f"DEBUG: {symbol} TYPE1 탈락 이유 | 185선 96봉~10봉 내리막: :{strict_descending}({descending_count}개 하락), 185선 최근 10봉 우상향:{strict_stabilized}({stabilized_count} >= 0), gc횟수: {gc_count_t1}회")
     # ==========================================================================
     # [TYPE2: 눌림목 및 40선 지지 (에너지 응축)]
     # 집중: 골든크로스 이후 40선(노란선) 밀착 및 지지 확인

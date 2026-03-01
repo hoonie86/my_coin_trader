@@ -15,6 +15,24 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from config import logger, exchange
 
+class StreamToLogger:
+    def __init__(self, log_level):
+        self.log_level = log_level
+    def write(self, buf):
+        for line in buf.rstrip().splitlines():
+            if line.strip(): self.log_level(line.strip())
+    def flush(self): pass
+
+# 재기동 시 직전 로그 세션 백업 (trading_bot.log -> backups/bot_날짜.log)
+log_src = 'logs/trading_bot.log'
+if os.path.exists(log_src):
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    ###### [수정] 백업 확장자도 .log로 통일 ######
+    shutil.move(log_src, f'backups/bot_{ts}.log')
+
+sys.stdout = StreamToLogger(logger.info)
+sys.stderr = StreamToLogger(logger.error)
+
 # [전역 상태 관리] - 기존 로직 100% 유지 + 신규 토글 상태 반영
 sell_mute_status = {}  # [기능 19] 'AUTO' | 'WATCH'
 buy_individual_status = {}  # 종목별 매수 개별 상태
@@ -1526,7 +1544,7 @@ async def pending_buy_task(app):
                 report_mark = int(elapsed // 3)
                 if 0 < report_mark < 4 and report_mark > info.get('last_report_min', 0):
                     # 보고 시점에만 API 호출하여 부하 최소화
-                    ohlcv_now = await asyncio.to_thread(exchange.fetch_ohlcv, sym, '30m', limit=200)
+                    ohlcv_now = await asyncio.to_thread(exchange.fetch_ohlcv, sym, '30m', limit=300)
                     df_now = pd.DataFrame(ohlcv_now, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
                     still_ok, now_reason, now_grade, _ = await strategy.check_buy_signal(exchange, df_now, sym, w_list)
                     
@@ -1539,7 +1557,7 @@ async def pending_buy_task(app):
                         continue
                 # 10분 강제 집행 로직 (기존 buy_scan_task에서 분리됨)
                 if elapsed >= 10:
-                    ohlcv_final = await asyncio.to_thread(exchange.fetch_ohlcv, sym, '30m', limit=200)
+                    ohlcv_final = await asyncio.to_thread(exchange.fetch_ohlcv, sym, '30m', limit=300)
                     df_final = pd.DataFrame(ohlcv_final, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
                     is_still_good, final_reason, final_grade, final_data_dict = await strategy.check_buy_signal(exchange, df_final, sym, w_list)
                     extracted_type = "1" if "TYPE1" in final_reason else ("2" if "TYPE2" in final_reason else ("3" if "TYPE3" in final_reason else "1"))
@@ -1563,12 +1581,21 @@ async def pending_buy_task(app):
 
 async def main():
     print("🚀 가상화폐 자동 매매 시스템 가동...")
-    
-    # 2. 로그 파일 백업 (봇 재시작 시 기존 로그를 backups로 이동)
-    if os.path.exists('logs/bot.txt'):
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        shutil.move('logs/bot.txt', f'backups/bot_{timestamp}.txt')
-        print(f"📦 기존 로그 백업 완료: backups/bot_{timestamp}.txt")
+
+    try:
+        now_dt = datetime.now()
+        if os.path.exists('backups'):
+            for f in os.listdir('backups'):
+                f_path = os.path.join('backups', f)
+                ###### [수정] f.endswith('.log') 조건으로 정확히 타격 ######
+                if os.path.isfile(f_path) and f.startswith('bot_') and f.endswith('.log'):
+                    f_time = datetime.fromtimestamp(os.path.getmtime(f_path))
+                    if now_dt - f_time > timedelta(days=14):
+                        os.remove(f_path)
+                        print(f"🗑️ 14일 경과 백업 삭제 완료: {f}")
+    except Exception as e:
+        logger.error(f"⚠️ 로그 정리 중 오류: {e}")
+    ###### [수정 끝] ######
 
     # 텔레그램 봇 설정
     app = Application.builder().token(config.TELEGRAM_TOKEN)\
