@@ -346,7 +346,11 @@ async def buy_scan_task(app):
             
             if market_rates:
                 current_market_avg = sum(market_rates) / len(market_rates)
-                await strategy.update_market_panic_status(current_market_avg)
+                # [수정 시작] strategy에서 리턴하는 상태 변화 여부와 메시지를 변수에 담음
+                is_changed, panic_msg = await strategy.update_market_panic_status(current_market_avg)
+                if is_changed and panic_msg:
+                    await app.bot.send_message(config.CHAT_ID, panic_msg)
+                # [수정 끝]
                 
                 if strategy.is_buy_locked:
                     if not strategy.panic_msg_sent:
@@ -449,7 +453,7 @@ async def buy_scan_task(app):
                                 f"🔔 [S급 포착] 10분 자동매수 추적 시작\n종목: {symbol}\n사유: {reason}\n\n※ 3분마다 지표 재확인 후 10분 뒤 강제 매수합니다.",
                                 reply_markup=telegram_ui.get_buy_inline_kb(symbol, buy_cost, False)
                             )
-
+                        continue
                     # [매수 집행/알림 로직]
                     indiv_mode = buy_individual_status.get(symbol)
                     curr_mode = indiv_mode if indiv_mode else ("AUTO" if is_night else config.buy_mute_mode)
@@ -515,48 +519,6 @@ async def buy_scan_task(app):
                             f"{status_tag} {symbol}\n💡 등급: {reason}\n💰 설정금액: {buy_cost:,.0f}원\n💳 가용잔액: {free_krw:,.0f}원",
                             reply_markup=telegram_ui.get_buy_inline_kb(symbol, buy_cost, is_auto_btn)
                         )
-
-            # 2. S급 강제 매수 추적기 (스캔 루프 종료 후 독립 실행 - 들여쓰기 교정됨)
-            # ---------------------------------------------------------
-            for sym, info in list(pending_s_buys.items()):
-                if sym in owned_symbols:
-                    if sym in pending_s_buys: del pending_s_buys[sym]
-                    continue
-
-                elapsed = (datetime.now() - info['start_time']).total_seconds() / 60
-
-                # 지표 재확인 (3분)
-                current_mark = int(elapsed // 3) * 3
-                if 0 < current_mark < 10 and current_mark > info['last_check_min']:
-                    ohlcv_now = await asyncio.to_thread(exchange.fetch_ohlcv, sym, '30m', limit=200)
-                    df_now = pd.DataFrame(ohlcv_now, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
-                    still_buy, now_reason, now_grade, now_data_dict = await strategy.check_buy_signal(exchange, df_now, sym, w_list)
-
-                    if still_buy:
-                        info['last_check_min'] = current_mark
-                        await app.bot.send_message(config.CHAT_ID, f"ℹ️ [S급 추적] {sym} {current_mark}분 경과. 지표 양호 유지 중.")
-                    else:
-                        await app.bot.send_message(config.CHAT_ID, f"⚠️ [S급 취소] {sym} 지표 이탈로 자동 매수 대기를 취소합니다.")
-                        if sym in pending_s_buys: del pending_s_buys[sym]
-                        continue
-
-                # 10분 강제 집행
-                if elapsed >= 10:
-                    ohlcv_final = await asyncio.to_thread(exchange.fetch_ohlcv, sym, '30m', limit=200)
-                    df_final = pd.DataFrame(ohlcv_final, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
-                    is_still_good, final_reason, final_grade, final_data_dict = await strategy.check_buy_signal(exchange, df_final, sym, w_list)
-                    extracted_type = "1" if "TYPE1" in final_reason else ("2" if "TYPE2" in final_reason else ("3" if "TYPE3" in final_reason else "1"))
-                    if is_still_good:
-                        success, msg = await safe_market_buy(sym, info['cost'], "S", extracted_type)
-                        if success:
-                            logger.info(f"REPORT_DATA|{sym}|S|{info['cost']}")
-                            await app.bot.send_message(config.CHAT_ID, f"🤖 [S급 강제집행] 10분 경과 및 지표 유지로 자동 매수 완료: {sym}")
-                        else:
-                            await app.bot.send_message(config.CHAT_ID, f"❌ [강제집행 실패] {sym} 사유: {msg}")
-                    else:
-                        await app.bot.send_message(config.CHAT_ID, f"⚠️ [S급 취소] 10분 경과 시점 지표 부적합으로 취소합니다.")
-
-                    if sym in pending_s_buys: del pending_s_buys[sym]
 
             print(f"\n✅ 스캔 완료 | {datetime.now().strftime('%H:%M:%S')}")
             await asyncio.sleep(300)
@@ -1560,17 +1522,39 @@ async def pending_buy_task(app):
             now = datetime.now()
             for sym, info in list(pending_s_buys.items()):
                 elapsed = (now - info['start_time']).total_seconds() / 60
-                
+                # [수정 시작] 3, 6, 9분 중간 보고 및 실시간 지표 이탈 감시 로직 삽입
+                report_mark = int(elapsed // 3)
+                if 0 < report_mark < 4 and report_mark > info.get('last_report_min', 0):
+                    # 보고 시점에만 API 호출하여 부하 최소화
+                    ohlcv_now = await asyncio.to_thread(exchange.fetch_ohlcv, sym, '30m', limit=200)
+                    df_now = pd.DataFrame(ohlcv_now, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
+                    still_ok, now_reason, now_grade, _ = await strategy.check_buy_signal(exchange, df_now, sym, w_list)
+                    
+                    if still_ok:
+                        await app.bot.send_message(config.CHAT_ID, f"⏳ [S급 추적] {sym} ({report_mark*3}분 경과)\n지표 양호 유지 중 (등급: {now_grade})")
+                        info['last_report_min'] = report_mark
+                    else:
+                        await app.bot.send_message(config.CHAT_ID, f"⚠️ [S급 취소] {sym} 추적 중 지표 이탈\n사유: {now_reason}")
+                        pending_s_buys.pop(sym, None)
+                        continue
                 # 10분 강제 집행 로직 (기존 buy_scan_task에서 분리됨)
                 if elapsed >= 10:
                     ohlcv_final = await asyncio.to_thread(exchange.fetch_ohlcv, sym, '30m', limit=200)
                     df_final = pd.DataFrame(ohlcv_final, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
                     is_still_good, final_reason, final_grade, final_data_dict = await strategy.check_buy_signal(exchange, df_final, sym, w_list)
                     extracted_type = "1" if "TYPE1" in final_reason else ("2" if "TYPE2" in final_reason else ("3" if "TYPE3" in final_reason else "1"))
+                    
+                    if info.get('grade') == 'S' and final_grade == 'A':
+                        final_grade = 'S' # 강등 방지 로직
+
                     if is_still_good:
-                        success, msg = await safe_market_buy(sym, info['cost'], "S", extracted_type)
+                        success, msg = await safe_market_buy(sym, info['cost'], final_grade, extracted_type)
                         if success:
                             await app.bot.send_message(config.CHAT_ID, f"🤖 [S급 10분 정각집행] {sym} 자동 매수 완료")
+                    else:
+                        # [추가] 매수 취소 알림: 10분 대기 중 지표 이탈 시 사용자에게 보고 (무단 잠수 방지)
+                        await app.bot.send_message(config.CHAT_ID, f"⚠️ [매수취소] {sym} 지표 이탈로 10분 집행 포기 ({final_reason})")
+                    
                     pending_s_buys.pop(sym, None)
             await asyncio.sleep(10) # 10초 간격으로 가볍게 실행
         except Exception as e:

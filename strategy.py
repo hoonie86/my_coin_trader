@@ -24,6 +24,8 @@ async def update_market_panic_status(current_avg):
         is_buy_locked = True
         market_ref_rate = current_avg
         logger.info(f"🚨 [시장잠금] 패닉 상태 감지 (기준점: {market_ref_rate:.2f}%)")
+        msg = f"🚨 [시장잠금] 패닉 상태 감지\n기준점: {market_ref_rate:.2f}%\n현재 모든 매수가 중단됩니다."
+        return True, msg # 호출부(main.py)에서 이 메시지를 받아 알림 전송
     # 2. 잠금 상태일 때 (해제 또는 바닥 갱신)
     elif is_buy_locked:
         # 1. 차등 해제 기준 설정
@@ -49,6 +51,11 @@ async def update_market_panic_status(current_avg):
         if current_avg <= market_ref_rate - 2.0:
             is_buy_locked = True
             market_ref_rate = current_avg
+            # [추가] 상태 변화 시 메시지 리턴
+            return True, f"🚨 [재잠금] 데드캣 방지 필터 작동\n기준점: {market_ref_rate:.2f}%"
+
+    # [추가] 함수 맨 끝에 어떤 경우에도 에러 안 나게 빈 값 리턴
+    return False, None
 
 def get_bithumb_tick_size(price, direction=None):
     # [1] 기본 틱 사이즈 결정 (분석용 이격/기울기 계산의 기준점)
@@ -375,7 +382,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     curr_max_high_low = max(curr['open'], curr['close'])
     upper_wick = (curr['high'] - curr_max_high_low) / curr_max_high_low * 100
     
-    if volatility >= 15.0:
+    if volatility >= 10.0:
         print(f"DEBUG: {symbol} 매수 탈락 - 변동성 과다({volatility:.1f}%)")
         return False, f"🚫 [상단방어] 구간 변동성({volatility:.1f}%) 및 저항 포착", "F", {}
         
@@ -432,7 +439,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         dynamic_rise = ((win_high - win_low) / win_low * 100) if win_low > 0 else 0
         #print(f"DEBUG: {symbol} | 골크 발생. 골크점 : {199-gold_index} | 시작점 : {199-check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
         # 7% 이상 급등락이 있었으면 탈락
-        if dynamic_rise >= 15.0:
+        if dynamic_rise >= 10.0:
             data_dict['dynamic_rise_YN'] = 'Y'
             print(f"DEBUG: {symbol} | 골크 발생. 골크점 : {199-gold_index} | 시작점 : {199-check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise:.2f}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
             return False, f"🚫 [제외] 골크 전후 변동성 과다({dynamic_rise:.1f}% >= 5%)", "B", data_dict
@@ -458,7 +465,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         dynamic_rise = ((win_high - win_low) / win_low * 100) if win_low > 0 else 0
         # print(f"DEBUG: {symbol} | 골크 미발생. 시작점: {check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
         # 7% 이상 급등락이 있었으면 탈락
-        if dynamic_rise >= 15.0:
+        if dynamic_rise >= 10.0:
             data_dict['dynamic_rise_YN'] = 'Y'
             return False, f"🚫 [제외] 골크 미발생 변동성 과다({dynamic_rise:.1f}% >= 5%)", "B", data_dict
     bars_since_gold = len(df) - gold_index if gold_index != -1 else -1
@@ -708,7 +715,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         else: strict_descending = False
 
         # [수정] GC가 0회이고 변곡점이거나 안정화되었을 때 통과
-        strict_stabilized = (is_turning_up or (stabilized_count >= 7)) and (gc_count_t1 == 0)
+        strict_stabilized = (is_turning_up or (stabilized_count >= 4)) and (gc_count_t1 == 0)
         
         # 전수 조사를 통과한 깨끗한 밥그릇만 아래 등급 판정 진행
         if strict_descending and strict_stabilized:
@@ -754,7 +761,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             data_dict['grade'] = 'B'
             return True, "🚀 [TYPE1-B] 상승대기(골드안착)", "B", data_dict
         else:
-            logger.info(f"DEBUG: {symbol} TYPE1 탈락 이유 | 185선 96봉~10봉 내리막: :{strict_descending}({descending_count}개 하락), 185선 최근 10봉 우상향:{strict_stabilized}({stabilized_count}개 상승)")
+            logger.info(f"DEBUG: {symbol} TYPE1 탈락 이유 | 185선 96봉~10봉 내리막: :{strict_descending}({descending_count}개 하락), 185선 최근 10봉 우상향:{strict_stabilized}({stabilized_count} >= 4), gc횟수: {gc_count_t1}회")
     # ==========================================================================
     # [TYPE2: 눌림목 및 40선 지지 (에너지 응축)]
     # 집중: 골든크로스 이후 40선(노란선) 밀착 및 지지 확인
@@ -817,20 +824,36 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             prev_slope_40 = ((prev_ma40 - prev_ma40_2) / prev_ma40_2) * 100 if prev_ma40_2 > 0 else 0
             curr_slope_40 = ((ma40_val - prev_ma40) / prev_ma40) * 100 if prev_ma40 > 0 else 0
             dis_gold_pct = (ma40_val - ma185_val) / ma185_val * 100 if ma185_val > 0 else 0
-        
+            ###### [수정 시작: TYPE2 전용 설정 변수 및 안전 가드 계산] ######
+            # 1. 설정값 관리 (불기둥/윗꼬리/신선도 기준)
+            TYPE2_FRESH_LIMIT = 64     # 신선도 유효 기간 (32시간 = 64봉)
+            TYPE2_VOL_LIMIT  = 10.0    # 구간 내 허용 최대 변동폭 (%)
+
+            # 2. 64봉 구간 변동성(과열) 계산
+            window_data = df.iloc[-TYPE2_FRESH_LIMIT:]
+            vol_sectional = ((window_data['high'].max() - window_data['low'].min()) / window_data['low'].min()) * 100 if window_data['low'].min() > 0 else 0
+            
+            # 3. 90선 추세 및 지지/신선도 확인
+            # 90선 기울기 밀도 계산 (최근 10봉 중 상승 횟수)
+            ma90_up_count = sum(1 for i in range(1, 11) if df['ma90'].iloc[-i] > df['ma90'].iloc[-i-1])
+            is_fresh = (bars_since_gold <= TYPE2_FRESH_LIMIT)  # 36시간 이내 (신선도)
+
+            # 4. 최종 안전 가드 결합
+            is_type2_safe = (vol_sectional <= TYPE2_VOL_LIMIT) and is_fresh
+            ###### [수정 끝] ######
             ###### 185선 상태 및 이격도 수렴 여부 (핵심 전제)
             is_185_stable = ma185_val >= df['ma185'].iloc[-2]
-            # 1. 90선 기울기 밀도 계산 (최근 10봉 중 상승 횟수)
-            ma90_up_count = sum(1 for i in range(1, 11) if df['ma90'].iloc[-i] > df['ma90'].iloc[-i-1])
+            
+            
             # [수정] 수렴 조건(is_converging) 삭제 및 S급 정밀 타점 로직 적용
             # 조건: 이격도 ±1.0% 이내 + 5일선 우상향 + 현재가 양봉 필수
-            if (bars_since_gold <= 64) and abs(dis_gold_pct) <= 1.0 and ma5_slope > 0 and curr_price >= curr['open']:
+            if is_type2_safe and abs(dis_gold_pct) <= 1.0 and ma5_slope > 0 and curr_price >= curr['open']:
                 if ma90_up_count >= 7:
                     grade = "S+" if curr_price >= ma185_val else "S"
                     data_dict['grade'] = grade
                     return True, f"💎 [TYPE2-{grade}] 90선 기울기 유지 우상향 전환", grade, data_dict
                 else:
-                    logger.info(f"DEBUG: {symbol} | [TYPE2] 초기 진입 탈락 이유 | 조건1(90선 기울기 횟수) : {ma90_up_count} >= 7 and 조건2(185선 대비 종가 위치(양수)): {curr_price - ma185_val} ")
+                    logger.info(f"DEBUG: {symbol} | [TYPE2] S급 진입 탈락 이유 | 조건1(90선 기울기 횟수) : {ma90_up_count} >= 7 and 조건2(185선 대비 종가 위치(양수)): {curr_price - ma185_val} ")
 
                 grade = "A+" if is_40_90_gc else "A"
                 data_dict['grade'] = grade
