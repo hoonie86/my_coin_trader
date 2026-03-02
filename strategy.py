@@ -90,10 +90,22 @@ def get_warning_list():
         url = "https://api.bithumb.com/public/assetsstatus/ALL"
         res = requests.get(url, timeout=5).json()
         data = res.get('data', {})
-        return [coin for coin, info in data.items() if info.get('halt_status', 0) != 0]
+        
+        ###### [수정 시작: 거래중지(halt)뿐만 아니라 입출금 제한 종목까지 모두 차단] ######
+        warning_coins = []
+        for coin, info in data.items():
+            # halt_status가 0이 아니거나(중지), 입금/출금이 하나라도 막혀있으면(0) 유의/위험으로 간주
+            if info.get('halt_status', 0) != 0 or \
+               info.get('deposit_status', 1) == 0 or \
+               info.get('withdrawal_status', 1) == 0:
+                warning_coins.append(coin)
+        return warning_coins
+        ###### [수정 끝] ######
+        
     except Exception as e:
         logger.error(f"Warning List Fetch Error: {e}")
         return []
+
 
 def get_updated_emergency_level(symbol, current_level, buy_type, rsi, is_3m_below_ma40, ma40_slope, is_converging, profit_pct, soaring_rate, has_rsi_spike, max_profit_pct, is_type3_stable):
     """
@@ -838,16 +850,16 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             ma90_up_count = sum(1 for i in range(1, 11) if df['ma90'].iloc[-i] > df['ma90'].iloc[-i-1])
             is_fresh = (bars_since_gold <= TYPE2_FRESH_LIMIT)  # 36시간 이내 (신선도)
 
-            # 4. 최종 안전 가드 결합
+            # 4. 최종 안전 가드 결합 (과열 여부, 신선도)
             is_type2_safe = (vol_sectional <= TYPE2_VOL_LIMIT) and is_fresh
             ###### [수정 끝] ######
             ###### 185선 상태 및 이격도 수렴 여부 (핵심 전제)
             is_185_stable = ma185_val >= df['ma185'].iloc[-2]
             
-            
-            # [수정] 수렴 조건(is_converging) 삭제 및 S급 정밀 타점 로직 적용
             # 조건: 이격도 ±1.0% 이내 + 5일선 우상향 + 현재가 양봉 필수
+            # (과열 + 신선도) + 185, 40 이격도 + 5 기울기 상승 + (도지, 양봉)
             if is_type2_safe and abs(dis_gold_pct) <= 1.0 and ma5_slope > 0 and curr_price >= curr['open']:
+                # 90선 기울기 (평행+상향) 7개 이상
                 if ma90_up_count >= 7:
                     grade = "S+" if curr_price >= ma185_val else "S"
                     data_dict['grade'] = grade

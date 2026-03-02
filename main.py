@@ -4,13 +4,13 @@ import sys
 import json
 import os
 import shutil
+from datetime import datetime, timedelta
 # 1. 필수 폴더 생성
-for folder in ['logs', 'trades', 'backups']:
+for folder in ['logs', 'trades']:
     if not os.path.exists(folder):
         os.makedirs(folder)
         print(f"📁 폴더 생성 완료: {folder}")
 import strategy, config, telegram_ui, analyzer
-from datetime import datetime, timedelta
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from config import logger, exchange
@@ -19,16 +19,9 @@ class StreamToLogger:
     def __init__(self, log_level):
         self.log_level = log_level
     def write(self, buf):
-        for line in buf.rstrip().splitlines():
-            if line.strip(): self.log_level(line.strip())
+        content = buf.strip()
+        if content: self.log_level(content)
     def flush(self): pass
-
-# 재기동 시 직전 로그 세션 백업 (trading_bot.log -> backups/bot_날짜.log)
-log_src = 'logs/trading_bot.log'
-if os.path.exists(log_src):
-    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-    ###### [수정] 백업 확장자도 .log로 통일 ######
-    shutil.move(log_src, f'backups/bot_{ts}.log')
 
 sys.stdout = StreamToLogger(logger.info)
 sys.stderr = StreamToLogger(logger.error)
@@ -1181,7 +1174,6 @@ async def handle_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await query.edit_message_text(f"{query.message.text}\n\n✅ [알림] 모든 매도 설정 초기화 완료")
 
         elif action == "request_instant_report":
-            from main import process_report_logic
             await process_report_logic(update, context, query)
 
         elif action == "manage_asset":
@@ -1227,7 +1219,6 @@ async def handle_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE)
     elif update.message and update.message.text:
         # 기존 텍스트 메시지 처리 로직 100% 유지
         if msg == "📊 실시간 리포트":
-            from main import process_report_logic
             await process_report_logic(update, context)
         elif "평균매수가" in msg:
             try:
@@ -1581,22 +1572,6 @@ async def pending_buy_task(app):
 
 async def main():
     print("🚀 가상화폐 자동 매매 시스템 가동...")
-
-    try:
-        now_dt = datetime.now()
-        if os.path.exists('backups'):
-            for f in os.listdir('backups'):
-                f_path = os.path.join('backups', f)
-                ###### [수정] f.endswith('.log') 조건으로 정확히 타격 ######
-                if os.path.isfile(f_path) and f.startswith('bot_') and f.endswith('.log'):
-                    f_time = datetime.fromtimestamp(os.path.getmtime(f_path))
-                    if now_dt - f_time > timedelta(days=14):
-                        os.remove(f_path)
-                        print(f"🗑️ 14일 경과 백업 삭제 완료: {f}")
-    except Exception as e:
-        logger.error(f"⚠️ 로그 정리 중 오류: {e}")
-    ###### [수정 끝] ######
-
     # 텔레그램 봇 설정
     app = Application.builder().token(config.TELEGRAM_TOKEN)\
         .connect_timeout(30).read_timeout(30).build()
