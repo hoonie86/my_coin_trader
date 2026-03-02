@@ -821,14 +821,14 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 total_drop_ticks = diff_ticks.clip(lower=0).sum() # 하락한 것들만 합산
                 
                 # 10봉 동안 누적 하락폭이 3틱 이하이면 '안착'으로 판정
-                is_t1_v2_drop_stable = total_drop_ticks <= 3 if t1_v2_tick > 0 else False
+                is_t1_v2_drop_stable = total_drop_ticks <= 7 if t1_v2_tick > 0 else False
                 ###### [수정 끝] ######
 
                 if d_cnt >= 60 and is_t1_v2_drop_stable and is_low_altitude:
 
                     has_t1_history = True
                 else:
-                    logger.info(f"DEBUG: {symbol} | [TYPE2] 최근10봉 185 미하락 탈락 이유 | 조건1(틱 크기) : {t1_v2_tick} and 조건2(하락 밀도):{total_drop_ticks} <= 3")
+                    logger.info(f"DEBUG: {symbol} | [TYPE2] 최근10봉 185 미하락 탈락 이유 | 조건1(틱 크기) : {t1_v2_tick} and 조건2(하락 밀도):{total_drop_ticks} <= 7")
                     logger.info(f"DEBUG: {symbol} | [TYPE2] T1존재여부 탈락 이유 | 조건1(185선 내리막 비중) : {d_cnt} >= 60 and 조건2(최근10봉 185 미하락): {is_t1_v2_drop_stable} and 185선 바닥 대비 현재가:{height_pct}% <= 8")
 
         # 기존 변수명(is_185_5bar_stable)을 사용하여 조건문 구성
