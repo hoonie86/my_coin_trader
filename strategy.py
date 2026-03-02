@@ -1113,7 +1113,7 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
                         return True, f"🚨[세력이탈-L{new_lvl}] 2음봉 & 거래량포착", True
 
                 # (3) [기존 로직 100% 유지] 위치별 차등 낙폭
-                if soaring_rate >= 10.0:
+                if soaring_rate >= 6.0:
                     if curr_3m_p < high_10_3m * 0.97:
                         return True, f"🚨[급등-강력] L{new_lvl} 고점대비 3% 하락 (위치:{soaring_rate:.1f}%)", True
                 else:
