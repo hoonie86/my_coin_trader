@@ -781,6 +781,10 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     if 4 <= bars_since_gold <= 144:  # 4봉전부터 144봉(3일)
         # 1. 역사적 순결성 (최근 150봉 내 40/185 골든크로스 딱 1번 & 185선 10봉 연속 유지 
         gc_count_150 = 0
+        dc_count_after_gc = 0
+        valid_gc_idx = -1
+        has_t1_history_clean = False
+        
         for i in range(1, 150):
             if i+1 < len(df):
                 if df['ma40'].iloc[-i-1] <= df['ma185'].iloc[-i-1] and df['ma40'].iloc[-i] > df['ma185'].iloc[-i]:
@@ -853,12 +857,6 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             # ma90_up_count = sum(1 for i in range(1, 11) if df['ma90'].iloc[-i] > df['ma90'].iloc[-i-1])
             ma90_up_count = (df['ma90'].diff().tail(10) > 0).sum()
             is_fresh = (bars_since_gold <= TYPE2_FRESH_LIMIT)  # 36시간 이내 (신선도)
-
-            # 2. 역사적 순결성 검증 (데드존 확인 및 이후 오염 차단)
-            gc_count_150 = 0
-            dc_count_after_gc = 0
-            valid_gc_idx = -1
-            has_t1_history_clean = False
 
             # 4. 최종 안전 가드 결합 (과열 여부, 신선도)
             is_type2_safe = (vol_sectional <= TYPE2_VOL_LIMIT) and is_fresh
