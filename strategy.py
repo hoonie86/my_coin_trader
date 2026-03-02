@@ -811,21 +811,24 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 d_cnt = sum(1 for k in range(gc_idx-96, gc_idx-10) if df['ma185'].iloc[k] <= df['ma185'].iloc[k-1])
                 
                 # [수정] 기존 s_cnt 폐기 -> 하락 밀도(Drop Density) 5틱 이하 기준 도입
-                # [수정] 틱 사이즈는 현재 185일선 가격 기준으로 산출
+                # [수정] 185일선 가격 기준으로 틱 사이즈 산출
                 t1_v2_tick = get_bithumb_tick_size(ma185_val)
 
-###### [수정 시작] 185선 자체의 하락폭 계산 (가격 노이즈 제거) ######
-                # 가격(Close)의 변동이 아니라, 185일선의 순수 하락폭(11봉전 vs 현재)을 계산
-                # 185선은 매우 무거워서 10봉(5시간) 동안 몇 틱 이상 변하기 힘듭니다.
-                t1_v2_drop = max(0, df['ma185'].iloc[-11] - ma185_val)
+                ###### [수정 시작: 양 끝점 비교 대신 10봉 전체 하락폭의 합으로 '밀도' 체크] ######
+                # 최근 10봉 동안의 개별 하락폭(틱 단위)을 모두 합산 (음수면 상승이므로 0으로 제한)
+                # diff()로 이전 봉과의 차이를 구하고, -1을 곱해 하락폭으로 변환 후 틱으로 나눔
+                diff_ticks = (df['ma185'].diff().tail(10) * -1) / t1_v2_tick
+                total_drop_ticks = diff_ticks.clip(lower=0).sum() # 하락한 것들만 합산
                 
-                # 185선이 5시간 동안 '3틱' 이하로만 하락했다면 '안착(Stable)'으로 판정
-                is_t1_v2_drop_stable = (t1_v2_drop / t1_v2_tick <= 3) if t1_v2_tick > 0 else False
-                
+                # 10봉 동안 누적 하락폭이 3틱 이하이면 '안착'으로 판정
+                is_t1_v2_drop_stable = total_drop_ticks <= 3 if t1_v2_tick > 0 else False
+                ###### [수정 끝] ######
+
                 if d_cnt >= 60 and is_t1_v2_drop_stable and is_low_altitude:
+
                     has_t1_history = True
                 else:
-                    logger.info(f"DEBUG: {symbol} | [TYPE2] 최근10봉 185 미하락 탈락 이유 | 조건1(틱 크기) : {t1_v2_tick} and 조건2(최근10봉 하락 밀도): {t1_v2_drop} and 밀도 계산:{t1_v2_drop / t1_v2_tick} <= 5")
+                    logger.info(f"DEBUG: {symbol} | [TYPE2] 최근10봉 185 미하락 탈락 이유 | 조건1(틱 크기) : {t1_v2_tick} and 조건2(하락 밀도):{total_drop_ticks} <= 3")
                     logger.info(f"DEBUG: {symbol} | [TYPE2] T1존재여부 탈락 이유 | 조건1(185선 내리막 비중) : {d_cnt} >= 60 and 조건2(최근10봉 185 미하락): {is_t1_v2_drop_stable} and 185선 바닥 대비 현재가:{height_pct}% <= 8")
 
         # 기존 변수명(is_185_5bar_stable)을 사용하여 조건문 구성
@@ -847,7 +850,8 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             
             # 3. 90선 추세 및 지지/신선도 확인
             # 90선 기울기 밀도 계산 (최근 10봉 중 상승 횟수)
-            ma90_up_count = sum(1 for i in range(1, 11) if df['ma90'].iloc[-i] > df['ma90'].iloc[-i-1])
+            # ma90_up_count = sum(1 for i in range(1, 11) if df['ma90'].iloc[-i] > df['ma90'].iloc[-i-1])
+            ma90_up_count = (df['ma90'].diff().tail(10) > 0).sum()
             is_fresh = (bars_since_gold <= TYPE2_FRESH_LIMIT)  # 36시간 이내 (신선도)
 
             # 4. 최종 안전 가드 결합 (과열 여부, 신선도)
