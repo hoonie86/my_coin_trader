@@ -821,11 +821,11 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 
                 # 185선이 5시간 동안 '3틱' 이하로만 하락했다면 '안착(Stable)'으로 판정
                 is_t1_v2_drop_stable = (t1_v2_drop / t1_v2_tick <= 3) if t1_v2_tick > 0 else False
-                logger.info(f"DEBUG: {symbol} | [TYPE2] 최근10봉 185 미하락 탈락 이유 | 조건1(틱 크기) : {t1_v2_tick} and 조건2(최근10봉 하락 밀도): {t1_v2_drop} and 밀도 계산:{t1_v2_drop / t1_v2_tick} <= 5")
-
+                
                 if d_cnt >= 60 and is_t1_v2_drop_stable and is_low_altitude:
                     has_t1_history = True
                 else:
+                    logger.info(f"DEBUG: {symbol} | [TYPE2] 최근10봉 185 미하락 탈락 이유 | 조건1(틱 크기) : {t1_v2_tick} and 조건2(최근10봉 하락 밀도): {t1_v2_drop} and 밀도 계산:{t1_v2_drop / t1_v2_tick} <= 5")
                     logger.info(f"DEBUG: {symbol} | [TYPE2] T1존재여부 탈락 이유 | 조건1(185선 내리막 비중) : {d_cnt} >= 60 and 조건2(최근10봉 185 미하락): {is_t1_v2_drop_stable} and 185선 바닥 대비 현재가:{height_pct}% <= 8")
 
         # 기존 변수명(is_185_5bar_stable)을 사용하여 조건문 구성
@@ -859,13 +859,13 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             # 조건: 이격도 ±1.0% 이내 + 5일선 우상향 + 현재가 양봉 필수
             # (과열 + 신선도) + 185, 40 이격도 + 5 기울기 상승 + (도지, 양봉)
             if is_type2_safe and abs(dis_gold_pct) <= 1.0 and ma5_slope > 0 and curr_price >= curr['open']:
-                # 90선 기울기 (평행+상향) 7개 이상
-                if ma90_up_count >= 7:
+                # 90선 기울기 (평행+상향) 4개 이상
+                if ma90_up_count >= 4:
                     grade = "S+" if curr_price >= ma185_val else "S"
                     data_dict['grade'] = grade
                     return True, f"💎 [TYPE2-{grade}] 90선 기울기 유지 우상향 전환", grade, data_dict
                 else:
-                    logger.info(f"DEBUG: {symbol} | [TYPE2] S급 진입 탈락 이유 | 조건1(90선 기울기 횟수) : {ma90_up_count} >= 7 and 조건2(185선 대비 종가 위치(양수)): {curr_price - ma185_val} ")
+                    logger.info(f"DEBUG: {symbol} | [TYPE2] S급 진입 탈락 이유 | 조건1(90선 기울기 횟수) : {ma90_up_count} >= 4 and 조건2(185선 대비 종가 위치(양수)): {curr_price - ma185_val} ")
 
                 grade = "A+" if is_40_90_gc else "A"
                 data_dict['grade'] = grade
