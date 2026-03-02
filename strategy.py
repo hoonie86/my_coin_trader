@@ -856,13 +856,22 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
 
             # 4. 최종 안전 가드 결합 (과열 여부, 신선도)
             is_type2_safe = (vol_sectional <= TYPE2_VOL_LIMIT) and is_fresh
-            ###### [수정 끝] ######
-            ###### 185선 상태 및 이격도 수렴 여부 (핵심 전제)
-            is_185_stable = ma185_val >= df['ma185'].iloc[-2]
+
+            ###### [수정 시작: 5-40 수렴(Converging) 및 재반등 체크] ######
+            # 1. 5선과 40선의 이격 (40선 하단 -0.7% ~ 상단 0.1% 사이)
+            gap_5_40_pct = (ma5_val - ma40_val) / ma40_val * 100
             
-            # 조건: 이격도 ±1.0% 이내 + 5일선 우상향 + 현재가 양봉 필수
-            # (과열 + 신선도) + 185, 40 이격도 + 5 기울기 상승 + (도지, 양봉)
-            if is_type2_safe and abs(dis_gold_pct) <= 1.0 and ma5_slope > 0 and curr_price >= curr['open']:
+            # 2. 컨버징 확인: 5선과 40선의 간격이 이전 봉보다 좁혀졌는가
+            prev_gap_5_40 = abs(df['ma5'].iloc[-2] - df['ma40'].iloc[-2])
+            curr_gap_5_40 = abs(ma5_val - ma40_val)
+            is_converging = curr_gap_5_40 < prev_gap_5_40
+
+            # 3. T2 재반등 최종 조건 (10봉 대기 및 양봉 조건 삭제)
+            is_t2_rebound = (-0.7 <= gap_5_40_pct <= 0.1) and (ma5_slope > 0) and is_converging
+            ###### [수정 끝] ######
+
+            # [수정] 낡은 조건들을 버리고 이력 확인(has_t1_history)과 결합
+            if is_type2_safe and is_t2_rebound:
                 # 90선 기울기 (평행+상향) 4개 이상
                 if ma90_up_count >= 4:
                     grade = "S+" if curr_price >= ma185_val else "S"
