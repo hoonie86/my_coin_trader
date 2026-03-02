@@ -823,13 +823,13 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 # 10봉 동안 누적 하락폭이 3틱 이하이면 '안착'으로 판정
                 is_t1_v2_drop_stable = total_drop_ticks <= 7 if t1_v2_tick > 0 else False
                 ###### [수정 끝] ######
-
-                if d_cnt >= 60 and is_t1_v2_drop_stable and is_low_altitude:
+                # d_cnt: 96~10봉(86개) 사이에 하락하거나 평행한 수
+                if d_cnt >= 50 and is_t1_v2_drop_stable and is_low_altitude:
 
                     has_t1_history = True
                 else:
                     logger.info(f"DEBUG: {symbol} | [TYPE2] 최근10봉 185 미하락 탈락 이유 | 조건1(틱 크기) : {t1_v2_tick} and 조건2(하락 밀도):{total_drop_ticks} <= 7")
-                    logger.info(f"DEBUG: {symbol} | [TYPE2] T1존재여부 탈락 이유 | 조건1(185선 내리막 비중) : {d_cnt} >= 60 and 조건2(최근10봉 185 미하락): {is_t1_v2_drop_stable} and 185선 바닥 대비 현재가:{height_pct}% <= 8")
+                    logger.info(f"DEBUG: {symbol} | [TYPE2] T1존재여부 탈락 이유 | 조건1(185선 내리막 비중) : {d_cnt} >= 50 and 조건2(최근10봉 185 미하락): {is_t1_v2_drop_stable} and 185선 바닥 대비 현재가:{height_pct}% <= 8")
 
         # 기존 변수명(is_185_5bar_stable)을 사용하여 조건문 구성
         if gc_count_150 == 1 and has_t1_history:
@@ -856,22 +856,47 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
 
             # 4. 최종 안전 가드 결합 (과열 여부, 신선도)
             is_type2_safe = (vol_sectional <= TYPE2_VOL_LIMIT) and is_fresh
-
-            ###### [수정 시작: 5-40 수렴(Converging) 및 재반등 체크] ######
-            # 1. 5선과 40선의 이격 (40선 하단 -0.7% ~ 상단 0.1% 사이)
+            # [최종 통합: 수렴(Convergence) + 역사적 순결성(Purity) 검증]
+            # 1. 5-40선 수렴 체크 (40선 하단 -0.7% ~ 상단 0.1% 사이에서 좁혀지는지)
             gap_5_40_pct = (ma5_val - ma40_val) / ma40_val * 100
-            
-            # 2. 컨버징 확인: 5선과 40선의 간격이 이전 봉보다 좁혀졌는가
             prev_gap_5_40 = abs(df['ma5'].iloc[-2] - df['ma40'].iloc[-2])
             curr_gap_5_40 = abs(ma5_val - ma40_val)
             is_converging = curr_gap_5_40 < prev_gap_5_40
-
-            # 3. T2 재반등 최종 조건 (10봉 대기 및 양봉 조건 삭제)
             is_t2_rebound = (-0.7 <= gap_5_40_pct <= 0.1) and (ma5_slope > 0) and is_converging
-            ###### [수정 끝] ######
 
-            # [수정] 낡은 조건들을 버리고 이력 확인(has_t1_history)과 결합
-            if is_type2_safe and is_t2_rebound:
+            # 2. 역사적 순결성 검증 (데드존 확인 및 이후 오염 차단)
+            gc_count_150 = 0
+            dc_count_after_gc = 0
+            valid_gc_idx = -1
+
+            for i in range(149, 0, -1): # 150봉 전부터 현재까지 탐색 (과거 -> 현재)
+                idx = len(df) - i
+                if idx <= 30: continue
+                
+                # [A] 골든크로스 및 데드존(직전 30봉 중 20봉 이상 하락) 검증
+                if df['ma40'].iloc[idx-1] <= df['ma185'].iloc[idx-1] and df['ma40'].iloc[idx] > df['ma185'].iloc[idx]:
+                    pre_30 = df.iloc[idx-30:idx]
+                    under_185_count = (pre_30['ma40'] < pre_30['ma185']).sum()
+                    if under_185_count >= 20: # 충분한 바닥을 거쳤을 때만 진짜 T1으로 인정
+                        gc_count_150 += 1
+                        if valid_gc_idx == -1: valid_gc_idx = idx
+                        
+                # [B] 오염 감시: 유효 골크 이후 확실한 이탈(-0.3% 미만) 발생 시 오염으로 간주
+                if valid_gc_idx != -1 and idx > valid_gc_idx:
+                    if (df['ma40'].iloc[idx] - df['ma185'].iloc[idx]) / df['ma185'].iloc[idx] < -0.003:
+                        dc_count_after_gc += 1
+
+            # 역사적 T1 이력이 깨끗한 1회뿐인지 확인
+            has_t1_history_clean = (gc_count_150 == 1) and (dc_count_after_gc == 0)
+
+            # 3. 최종 진입 판정 (순결성 + 수렴 + 안전가드 + T1 질적 지표 결합)
+            # gc_idx를 미리 확보하여 d_cnt 및 height_pct 계산 (참조 오류 방지)
+            gc_idx = valid_gc_idx
+            d_cnt = sum(1 for k in range(gc_idx-96, gc_idx-10) if df['ma185'].iloc[k] <= df['ma185'].iloc[k-1]) if gc_idx != -1 else 0
+            height_pct = (curr_price - ma185_val) / ma185_val * 100
+
+            # 모든 조건(안전, 수렴, 순결성, 하락밀도, 높이)이 충족될 때만 진입
+            if is_type2_safe and is_t2_rebound and has_t1_history_clean and (d_cnt >= 50) and (height_pct <= 8.0):
                 # 90선 기울기 (평행+상향) 4개 이상
                 if ma90_up_count >= 4:
                     grade = "S+" if curr_price >= ma185_val else "S"
