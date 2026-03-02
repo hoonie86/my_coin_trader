@@ -854,6 +854,12 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             ma90_up_count = (df['ma90'].diff().tail(10) > 0).sum()
             is_fresh = (bars_since_gold <= TYPE2_FRESH_LIMIT)  # 36시간 이내 (신선도)
 
+            # 2. 역사적 순결성 검증 (데드존 확인 및 이후 오염 차단)
+            gc_count_150 = 0
+            dc_count_after_gc = 0
+            valid_gc_idx = -1
+            has_t1_history_clean = False
+
             # 4. 최종 안전 가드 결합 (과열 여부, 신선도)
             is_type2_safe = (vol_sectional <= TYPE2_VOL_LIMIT) and is_fresh
             # [최종 통합: 수렴(Convergence) + 역사적 순결성(Purity) 검증]
@@ -863,11 +869,6 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             curr_gap_5_40 = abs(ma5_val - ma40_val)
             is_converging = curr_gap_5_40 < prev_gap_5_40
             is_t2_rebound = (-0.7 <= gap_5_40_pct <= 0.1) and (ma5_slope > 0) and is_converging
-
-            # 2. 역사적 순결성 검증 (데드존 확인 및 이후 오염 차단)
-            gc_count_150 = 0
-            dc_count_after_gc = 0
-            valid_gc_idx = -1
 
             for i in range(149, 0, -1): # 150봉 전부터 현재까지 탐색 (과거 -> 현재)
                 idx = len(df) - i
@@ -910,7 +911,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 return True, f"🚀 [TYPE2-{grade}] 5일선 반등 시작", grade, data_dict
 
         else: 
-            logger.info(f"DEBUG: {symbol} | [TYPE2] 초기 진입 탈락 이유 | 조건1(150봉동안 골크 횟수) : {gc_count_150} == 1 and 조건2(최근5봉 185 미하락): {is_185_5bar_stable} and 3일(144봉)동안 T1존재여부:{has_t1_history} ")
+            logger.info(f"DEBUG: {symbol} | [TYPE2] 초기 진입 탈락 이유 | 조건1(150봉동안 골크/데크 횟수) : {gc_count_150} == 1, {dc_count_after_gc}=0 and 조건2(최근5봉 185 미하락): {is_185_5bar_stable} and 3일(144봉)동안 T1존재여부:{has_t1_history} ")
     # else: 
     #     logger.info(f"DEBUG: {symbol} | TYPE2 탈락 이유-진입 실패: bars_since_gold={bars_since_gold}")
     # [B등급] 급등 후 거래량이 줄어들며 20일선에서 지지받는 눌림목: 현재가가 ma20 근처이고 거래량 감소 시 B
