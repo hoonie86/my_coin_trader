@@ -2,6 +2,7 @@ import asyncio
 import pandas as pd
 import numpy as np
 import requests
+import time
 from datetime import datetime
 from datetime import datetime, timedelta
 from config import logger
@@ -806,9 +807,9 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                     gc_count_150 += 1
                     if valid_gc_idx == -1: valid_gc_idx = idx
             
-            # 오염 감시 (유효 골크 이후 -0.3% 이탈 발생 시 오염으로 간주)
+            # 오염 감시 (유효 골크 이후 단 1원이라도 하회(데드크로스) 시 즉시 오염 처리)
             if valid_gc_idx != -1 and idx > valid_gc_idx:
-                if (df['ma40'].iloc[idx] - df['ma185'].iloc[idx]) / df['ma185'].iloc[idx] < -0.003:
+                if df['ma40'].iloc[idx] <= df['ma185'].iloc[idx]:
                     dc_count_after_gc += 1
 
         has_t1_history_clean = (gc_count_150 == 1) and (dc_count_after_gc == 0)
@@ -935,6 +936,21 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
     except (ValueError, TypeError):
         current_age = 99  # 변환 실패 시 유예 기간을 통과하도록 안전값 설정
     # [신규] 인벤토리에 없거나 99인 경우, 빗썸 API에서 실제 매수 시점을 찾아 age 복구
+    if current_age == 99:
+        try:
+            # 빗썸 API로 매수 이력 조회 시도
+            trades = await exchange.fetch_my_trades(symbol)
+            if trades:
+                # 가장 최근 매수 시점을 찾아 현재 시간과의 차이로 age 계산
+                last_buy_time = trades[-1]['timestamp']
+                current_age = int((time.time() * 1000 - last_buy_time) / (15 * 60 * 1000))
+            else:
+                # 이력이 없으면 수동 매수 직후로 간주하여 0으로 설정
+                current_age = 0
+        except Exception:
+            # [핵심] 빗썸처럼 API를 지원하지 않아 에러가 나면 99가 아닌 0으로 강제 설정
+            # 이렇게 해야 하단의 'if current_age < 6' 보호막이 작동함
+            current_age = 0
     if current_age >= 90:
         try:
             # 최근 거래 내역 중 마지막 'buy' 기록의 시간을 가져옴

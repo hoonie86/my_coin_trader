@@ -36,6 +36,7 @@ notified_symbols = {}
 pending_approvals = {}
 profit_alerts = {}
 pending_s_buys = {}
+GLOBAL_BUY_MODE = "SHIELD" # 기본값: SHIELD(신중), LIGHTNING(즉시)
 # [사후분석] 미지 패턴 기록 종목의 60분 후 수익률 추적용 { symbol: (recorded_at, price_at_record) }
 missed_60m_tracker = {}
 # [추가] 비상 체제 상태를 저장할 딕셔너리 선언
@@ -449,9 +450,16 @@ async def buy_scan_task(app):
                     is_s_class_check = (grade and grade.startswith("S")) or any(x in reason for x in ["S급", "[S]", "[S+]"])
                     indiv_mode_check = buy_individual_status.get(symbol)
                     curr_mode_check = indiv_mode_check if indiv_mode_check else ("AUTO" if is_night else config.buy_mute_mode)
+                    # [개선] 야간이거나 사용자가 즉시 모드(LIGHTNING)를 선택한 경우 즉시 실행
+                    is_immediate = is_night or GLOBAL_BUY_MODE == "LIGHTNING"
 
-                    # [S급 추적 등록]
                     if is_s_class_check and curr_mode_check == "AUTO":
+                        if is_immediate:
+                            success, msg = await safe_market_buy(symbol, buy_cost, current_grade, extracted_type)
+                            if success:
+                                await app.bot.send_message(config.CHAT_ID, f"⚡ [즉시 매수 완료] {symbol}\n(모드: {'야간' if is_night else GLOBAL_BUY_MODE})\n사유: {reason}")
+                            continue
+                        
                         if symbol not in pending_s_buys:
                             pending_s_buys[symbol] = {
                                 'start_time': datetime.now(),
@@ -1238,10 +1246,16 @@ async def handle_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 await update.message.reply_text(f"✅ {sym} 평단가 {price:,.0f}원 설정 완료")
             except:
                 pass
-        elif msg == "🤖 자동 매매":
+        elif msg == "🤖 자동(신중)":
             config.buy_mute_mode = 'AUTO'
-            print(f"✅ [DEBUG] 시스템 모드 변경: {config.buy_mute_mode}")
-            await update.message.reply_text("🚀 [전체 제어] 자동 매매 활성화")
+            GLOBAL_BUY_MODE = "SHIELD"
+            print(f"✅ [DEBUG] 시스템 모드 변경: {config.buy_mute_mode} | 매수속도: {GLOBAL_BUY_MODE}")
+            await update.message.reply_text("🛡️ [자동-신중] 10분 추적 후 매수합니다.")
+        elif msg == "⚡ 자동(즉시)":
+            config.buy_mute_mode = 'AUTO'
+            GLOBAL_BUY_MODE = "LIGHTNING"
+            print(f"✅ [DEBUG] 시스템 모드 변경: {config.buy_mute_mode} | 매수속도: {GLOBAL_BUY_MODE}")
+            await update.message.reply_text("⚡ [자동-즉시] 대기 없이 즉시 매수합니다.")
         elif msg == "⏳ 감시 모드":
             config.buy_mute_mode = 'WATCH'
             await update.message.reply_text("🔍 [전체 제어] 감시 모드 활성화")

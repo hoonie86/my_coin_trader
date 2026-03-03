@@ -3,9 +3,9 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMa
 def get_main_keyboard():
     # 하단 고정 메뉴 (ReplyKeyboardMarkup)
     return ReplyKeyboardMarkup([
-        ["🤖 자동 매매", "⏳ 감시 모드"],
+        ["🤖 자동(신중)", "⚡ 자동(즉시)"], # <--- 버튼 분리
         ["📊 실시간 리포트", "💰 금액설정"], 
-        ["🔄 모드 초기화"]
+        ["🔄 모드 초기화", "⏳ 감시 모드"]
     ], resize_keyboard=True)
 
 # 1. 매수 알람 키보드
