@@ -367,6 +367,21 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     prev_dis_gold = abs(prev_ma40 - prev_ma185) / prev_ma185 if prev_ma185 > 0 else 999
     slope_rate = ((ma185_val - prev_ma185) / prev_ma185) * 100 if prev_ma185 > 0 else 0
     
+    slope_rate = ((ma185_val - prev_ma185) / prev_ma185) * 100 if prev_ma185 > 0 else 0
+
+    ##########################################################################
+    # [1단계: TYPE 1, 2 공통 지표 사전 계산]
+    # 1. 90선 우상향 밀도 (최근 10봉 중 상승 횟수)
+    ma90_up_count = (df['ma90'].diff().tail(10) > 0).sum()
+    # 2. 5-40선 이격도 및 수렴 여부
+    gap_5_40_pct = (ma5_val - ma40_val) / ma40_val * 100 if ma40_val > 0 else 0
+    disps_5b = [abs(df['ma5'].iloc[-i] - df['ma40'].iloc[-i]) / df['ma40'].iloc[-i] * 100 if df['ma40'].iloc[-i] > 0 else 999 for i in range(1, 6)]
+    is_converging_5_40 = all(disps_5b[i] < disps_5b[i+1] for i in range(4))
+    # 3. 185일선 안착 안정성 (최근 10봉 하락 틱 수)
+    t1_v2_tick = get_bithumb_tick_size(ma185_val)
+    total_drop_ticks = ((df['ma185'].diff().tail(10) * -1) / t1_v2_tick).clip(lower=0).sum() if t1_v2_tick > 0 else 999
+    is_185_landing_stable = total_drop_ticks <= 7    
+
     # 40선/90선 골든크로스 상태 (TYPE 1, 2 공통 가중치 가드)
     is_40_90_gc = prev_ma40 <= prev_ma90 and ma40_val > ma90_val
     is_40_above_90 = ma40_val > ma90_val    
@@ -689,7 +704,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     # [TYPE1: 밥그릇 바닥 탈출 및 변곡점 포착]
     # 집중: 40선/185선 골든크로스 전후의 기울기 변화와 수렴도
     # ==========================================================================
-        # 1. 40일선 위이거나, 아래라도 -3% 이내 근접 시 허용
+    # 1. 40일선 위이거나, 아래라도 -3% 이내 근접 시 허용
     is_near_ma40 = abs(curr_price - ma40_val) / ma40_val <= 0.03 if ma40_val > 0 else False
     
     ###### [이식] 타점을 왼쪽으로 전진: 5일선-40일선 격돌(Collision) 로직 주입 ######
@@ -738,14 +753,12 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
             
             if slope_rate >= -0.01:
-                ###### [정밀화] 5/40 격돌(-0.8~0.1%) 시점에 S/S+ 등급 부여 (파란 동그라미 타점) ######
-                if disparity_gold <= 0.005 and is_converging_5b and (-0.8 <= disparity_5_40 <= 0.1):
+                # [수정] 상단 공통 지표(ma90_up_count, is_converging_5b)를 활용하여 90선 하락 종목 차단
+                if disparity_gold <= 0.005 and is_converging_5_40 and (-0.8 <= gap_5_40_pct <= 0.1) and (ma90_up_count >= 4):
                     if is_40_90_gc:
-                        # [S+급] 밥그릇 수렴 + 5/40 격돌 + 40/90 골든크로스 확정
                         data_dict['grade'] = 'S+'
                         return True, "💎 [TYPE1-S+] 밥그릇 수렴 및 40/90 골든크로스 확정", "S+", data_dict
                     else:
-                        # [S급] 격돌 중이지만 40/90 골크는 아직인 최선행 타점
                         data_dict['grade'] = 'S'
                         return True, "💎 [TYPE1-S] 밥그릇 바닥 수렴 및 5/40선 안착 확인", "S", data_dict
                 else:
@@ -776,166 +789,69 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             logger.info(f"DEBUG: {symbol} TYPE1 탈락 이유 | 185선 96봉~10봉 내리막: :{strict_descending}({descending_count}개 하락), 185선 최근 10봉 우상향:{strict_stabilized}({stabilized_count} >= 0), gc횟수: {gc_count_t1}회")
     # ==========================================================================
     # [TYPE2: 눌림목 및 40선 지지 (에너지 응축)]
-    # 집중: 골든크로스 이후 40선(노란선) 밀착 및 지지 확인
     # ==========================================================================
-    if 4 <= bars_since_gold <= 144:  # 4봉전부터 144봉(3일)
-        # 1. 역사적 순결성 (최근 150봉 내 40/185 골든크로스 딱 1번 & 185선 10봉 연속 유지 
-        gc_count_150 = 0
-        dc_count_after_gc = 0
-        valid_gc_idx = -1
-        has_t1_history_clean = False
+    if 4 <= bars_since_gold <= 144:
+        ###### [3단계 최종 이식: 로그 접두어 '탈락 이유' 및 참조 오류 방지] ######
+        # 0. 초기화 (이 블록 안에서만 사용되는 지역 변수)
+        gc_count_150, dc_count_after_gc, valid_gc_idx = 0, 0, -1
         
-        for i in range(1, 150):
-            if i+1 < len(df):
-                if df['ma40'].iloc[-i-1] <= df['ma185'].iloc[-i-1] and df['ma40'].iloc[-i] > df['ma185'].iloc[-i]:
+        # [A] 역사적 순결성 검증 (150봉 루프) - 중복 계산 없이 한 번만 수행
+        for i in range(149, 0, -1):
+            idx = len(df) - i
+            if idx <= 30: continue
+            
+            # 골든크로스 & 데드존 검증 (진짜 밥그릇인지 확인)
+            if df['ma40'].iloc[idx-1] <= df['ma185'].iloc[idx-1] and df['ma40'].iloc[idx] > df['ma185'].iloc[idx]:
+                if (df.iloc[idx-30:idx]['ma40'] < df.iloc[idx-30:idx]['ma185']).sum() >= 20:
                     gc_count_150 += 1
-        
-        # 2. 185선 10봉 안정성 (최근 10봉 중 80% 이상 ma185가 유지/상승)
-        # 변수명은 기존 그대로 유지하여 NameError 방지
-        is_185_5bar_stable = sum(1 for i in range(1, 11) if df['ma185'].iloc[-i] >= df['ma185'].iloc[-i-1]) >= 8
-        
-        ###### [교정] 144봉 전수 조사 대신 '골든크로스 발생 지점'만 정밀 타격 ######
-        has_t1_history = False
-
-        if gc_count_150 == 1:
-            gc_idx = -1
-            # 1. 최근 150봉 이내에서 실제 골든크로스가 일어난 정확한 위치(Index)를 찾음
-            for i in range(1, 150):
-                if i+1 < len(df):
-                    if df['ma40'].iloc[-i-1] <= df['ma185'].iloc[-i-1] and df['ma40'].iloc[-i] > df['ma185'].iloc[-i]:
-                        gc_idx = len(df) - i
-                        break
+                    if valid_gc_idx == -1: valid_gc_idx = idx
             
-            # gc_idx >= 281 제약을 삭제하고, GC 이전에 충분한 데이터가 있는지만 확인
-            if gc_idx != -1 and gc_idx > 150:
-                # [추가] 높이 필터: 185선 바닥 대비 현재가가 8% 이상 높으면 상투(B급)로 강등
-                height_pct = (curr_price - ma185_val) / ma185_val * 100
-                is_low_altitude = height_pct <= 8.0
-                
-                d_cnt = sum(1 for k in range(gc_idx-96, gc_idx-10) if df['ma185'].iloc[k] <= df['ma185'].iloc[k-1])
-                
-                # [수정] 기존 s_cnt 폐기 -> 하락 밀도(Drop Density) 5틱 이하 기준 도입
-                # [수정] 185일선 가격 기준으로 틱 사이즈 산출
-                t1_v2_tick = get_bithumb_tick_size(ma185_val)
+            # 오염 감시 (유효 골크 이후 -0.3% 이탈 발생 시 오염으로 간주)
+            if valid_gc_idx != -1 and idx > valid_gc_idx:
+                if (df['ma40'].iloc[idx] - df['ma185'].iloc[idx]) / df['ma185'].iloc[idx] < -0.003:
+                    dc_count_after_gc += 1
 
-                ###### [수정 시작: 양 끝점 비교 대신 10봉 전체 하락폭의 합으로 '밀도' 체크] ######
-                # 최근 10봉 동안의 개별 하락폭(틱 단위)을 모두 합산 (음수면 상승이므로 0으로 제한)
-                # diff()로 이전 봉과의 차이를 구하고, -1을 곱해 하락폭으로 변환 후 틱으로 나눔
-                diff_ticks = (df['ma185'].diff().tail(10) * -1) / t1_v2_tick
-                total_drop_ticks = diff_ticks.clip(lower=0).sum() # 하락한 것들만 합산
-                
-                # 10봉 동안 누적 하락폭이 3틱 이하이면 '안착'으로 판정
-                is_t1_v2_drop_stable = total_drop_ticks <= 7 if t1_v2_tick > 0 else False
-                ###### [수정 끝] ######
-                # d_cnt: 96~10봉(86개) 사이에 하락하거나 평행한 수
-                if d_cnt >= 50 and is_t1_v2_drop_stable and is_low_altitude:
+        has_t1_history_clean = (gc_count_150 == 1) and (dc_count_after_gc == 0)
 
-                    has_t1_history = True
-                else:
-                    logger.info(f"DEBUG: {symbol} | [TYPE2] 최근10봉 185 미하락 탈락 이유 | 조건1(틱 크기) : {t1_v2_tick} and 조건2(하락 밀도):{total_drop_ticks} <= 7")
-                    logger.info(f"DEBUG: {symbol} | [TYPE2] T1존재여부 탈락 이유 | 조건1(185선 내리막 비중) : {d_cnt} >= 50 and 조건2(최근10봉 185 미하락): {is_t1_v2_drop_stable} and 185선 바닥 대비 현재가:{height_pct}% <= 8")
+        # [B] T2 진입 가드 및 타점 (1, 2단계에서 계산한 공통 변수 활용)
+        is_fresh = (bars_since_gold <= 64)
+        vol_sectional = ((df['high'].tail(64).max() - df['low'].tail(64).min()) / df['low'].tail(64).min()) * 100
+        is_type2_safe = (vol_sectional <= 10.0) and is_fresh
+        # 상단 공통 변수(gap_5_40_pct, is_converging_5_40) 사용
+        is_t2_rebound = (-0.7 <= gap_5_40_pct <= 0.1) and (ma5_slope > 0) and is_converging_5_40
 
-        # 기존 변수명(is_185_5bar_stable)을 사용하여 조건문 구성
-        if gc_count_150 == 1 and has_t1_history:
-            # 40일선 기울기 가속도 및 이격도 계산
-            prev_ma40_2 = df['ma40'].iloc[-3]
-
-            prev_slope_40 = ((prev_ma40 - prev_ma40_2) / prev_ma40_2) * 100 if prev_ma40_2 > 0 else 0
-            curr_slope_40 = ((ma40_val - prev_ma40) / prev_ma40) * 100 if prev_ma40 > 0 else 0
-            dis_gold_pct = (ma40_val - ma185_val) / ma185_val * 100 if ma185_val > 0 else 0
-            ###### [수정 시작: TYPE2 전용 설정 변수 및 안전 가드 계산] ######
-            # 1. 설정값 관리 (불기둥/윗꼬리/신선도 기준)
-            TYPE2_FRESH_LIMIT = 64     # 신선도 유효 기간 (32시간 = 64봉)
-            TYPE2_VOL_LIMIT  = 10.0    # 구간 내 허용 최대 변동폭 (%)
-
-            # 2. 64봉 구간 변동성(과열) 계산
-            window_data = df.iloc[-TYPE2_FRESH_LIMIT:]
-            vol_sectional = ((window_data['high'].max() - window_data['low'].min()) / window_data['low'].min()) * 100 if window_data['low'].min() > 0 else 0
-            
-            # 3. 90선 추세 및 지지/신선도 확인
-            # 90선 기울기 밀도 계산 (최근 10봉 중 상승 횟수)
-            # ma90_up_count = sum(1 for i in range(1, 11) if df['ma90'].iloc[-i] > df['ma90'].iloc[-i-1])
-            ma90_up_count = (df['ma90'].diff().tail(10) > 0).sum()
-            is_fresh = (bars_since_gold <= TYPE2_FRESH_LIMIT)  # 36시간 이내 (신선도)
-
-            # 4. 최종 안전 가드 결합 (과열 여부, 신선도)
-            is_type2_safe = (vol_sectional <= TYPE2_VOL_LIMIT) and is_fresh
-            # [최종 통합: 수렴(Convergence) + 역사적 순결성(Purity) 검증]
-            # 1. 5-40선 수렴 체크 (40선 하단 -0.7% ~ 상단 0.1% 사이에서 좁혀지는지)
-            gap_5_40_pct = (ma5_val - ma40_val) / ma40_val * 100
-            prev_gap_5_40 = abs(df['ma5'].iloc[-2] - df['ma40'].iloc[-2])
-            curr_gap_5_40 = abs(ma5_val - ma40_val)
-            is_converging = curr_gap_5_40 < prev_gap_5_40
-            is_t2_rebound = (-0.7 <= gap_5_40_pct <= 0.1) and (ma5_slope > 0) and is_converging
-
-            for i in range(149, 0, -1): # 150봉 전부터 현재까지 탐색 (과거 -> 현재)
-                idx = len(df) - i
-                if idx <= 30: continue
-                
-                # [A] 골든크로스 및 데드존(직전 30봉 중 20봉 이상 하락) 검증
-                if df['ma40'].iloc[idx-1] <= df['ma185'].iloc[idx-1] and df['ma40'].iloc[idx] > df['ma185'].iloc[idx]:
-                    pre_30 = df.iloc[idx-30:idx]
-                    under_185_count = (pre_30['ma40'] < pre_30['ma185']).sum()
-                    if under_185_count >= 20: # 충분한 바닥을 거쳤을 때만 진짜 T1으로 인정
-                        gc_count_150 += 1
-                        if valid_gc_idx == -1: valid_gc_idx = idx
-                        
-                # [B] 오염 감시: 유효 골크 이후 확실한 이탈(-0.3% 미만) 발생 시 오염으로 간주
-                if valid_gc_idx != -1 and idx > valid_gc_idx:
-                    if (df['ma40'].iloc[idx] - df['ma185'].iloc[idx]) / df['ma185'].iloc[idx] < -0.003:
-                        dc_count_after_gc += 1
-
-            # 역사적 T1 이력이 깨끗한 1회뿐인지 확인
-            has_t1_history_clean = (gc_count_150 == 1) and (dc_count_after_gc == 0)
-
-            # 3. 최종 진입 판정 (순결성 + 수렴 + 안전가드 + T1 질적 지표 결합)
-            # gc_idx를 미리 확보하여 d_cnt 및 height_pct 계산 (참조 오류 방지)
+        # [C] 최종 판정 및 요청하신 키워드 로그 반영
+        if is_type2_safe and is_t2_rebound and has_t1_history_clean and (ma90_up_count >= 4) and is_185_landing_stable:
             gc_idx = valid_gc_idx
             d_cnt = sum(1 for k in range(gc_idx-96, gc_idx-10) if df['ma185'].iloc[k] <= df['ma185'].iloc[k-1]) if gc_idx != -1 else 0
             height_pct = (curr_price - ma185_val) / ma185_val * 100
-
-            # 모든 조건(안전, 수렴, 순결성, 하락밀도, 높이)이 충족될 때만 진입
-            if is_type2_safe and is_t2_rebound and has_t1_history_clean and (d_cnt >= 50) and (height_pct <= 8.0):
-                # 90선 기울기 (평행+상향) 4개 이상
-                if ma90_up_count >= 4:
-                    grade = "S+" if curr_price >= ma185_val else "S"
-                    data_dict['grade'] = grade
-                    return True, f"💎 [TYPE2-{grade}] 90선 기울기 유지 우상향 전환", grade, data_dict
-                else:
-                    logger.info(f"DEBUG: {symbol} | [TYPE2] S급 진입 탈락 이유 | 조건1(90선 기울기 횟수) : {ma90_up_count} >= 4 and 조건2(185선 대비 종가 위치(양수)): {curr_price - ma185_val} ")
-
-                grade = "A+" if is_40_90_gc else "A"
+            
+            if d_cnt >= 50 and height_pct <= 8.0:
+                grade = "S+" if curr_price >= ma185_val else "S"
                 data_dict['grade'] = grade
-                return True, f"🚀 [TYPE2-{grade}] 5일선 반등 시작", grade, data_dict
+                return True, f"💎 [TYPE2-{grade}] 40선 수렴 및 순수 추세 확인", grade, data_dict
+            else:
+                logger.info(f"DEBUG: {symbol} | [TYPE2] T1질적지표 탈락 이유: d_cnt={d_cnt}, height={height_pct:.1f}%")
+        else:
+            reasons = []
+            if not is_type2_safe: reasons.append(f"안전가드(변동성:{vol_sectional:.1f}%)")
+            if not is_t2_rebound: reasons.append(f"수렴실패(이격:{gap_5_40_pct:.2f}%)")
+            if not has_t1_history_clean: reasons.append(f"역사오염(GC:{gc_count_150}, DC:{dc_count_after_gc})")
+            if ma90_up_count < 4: reasons.append(f"90선추세({ma90_up_count})")
+            if not is_185_landing_stable: reasons.append(f"185선불안정")
+            
+            if reasons:
+                logger.info(f"DEBUG: {symbol} | [TYPE2] 탈락 이유: {', '.join(reasons)}")
 
-        else: 
-            logger.info(f"DEBUG: {symbol} | [TYPE2] 초기 진입 탈락 이유 | 조건1(150봉동안 골크/데크 횟수) : {gc_count_150} == 1, {dc_count_after_gc}=0 and 조건2(최근5봉 185 미하락): {is_185_5bar_stable} and 3일(144봉)동안 T1존재여부:{has_t1_history} ")
-    # else: 
-    #     logger.info(f"DEBUG: {symbol} | TYPE2 탈락 이유-진입 실패: bars_since_gold={bars_since_gold}")
-    # [B등급] 급등 후 거래량이 줄어들며 20일선에서 지지받는 눌림목: 현재가가 ma20 근처이고 거래량 감소 시 B
-    # if ma20_val and base_avg_vol and curr_vol < base_avg_vol * 0.9 and abs(curr_price - ma20_val) / ma20_val <= 0.03 and data_dict.get('dynamic_rise_YN') != 'Y':
-    #     data_dict['grade'] = 'B'
-    #     data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
-    #     return True, "📌 [B] 눌림목(20일선 지지)", "B", data_dict
-
-    # 최종 탈락 사유 판단 (모든 수치·패턴 라벨 기록 후 반환)
+    # [함수 종료 구간] 매수 조건 불만족 시 안전하게 종료
     data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
-    # S+급 등이 확정되었으나 현재가가 40선 밑에 있어 하락세가 우려되는 경우 보완
-    if curr_price <= curr['ma40'] and data_dict.get('grade') in ['S+', 'S', 'A+']:
-         data_dict['grade'] = 'A' # 등급 하향
-         # 기존 reason 뒤에 하락세 경고 문구 추가
-    if 'grade' in data_dict and data_dict['grade'] in ['S', 'S+', 'A', 'A+', 'B']:
-        print(f"🎯 [추천성공] {symbol} | 등급:{data_dict['grade']} | 구간Low:{win_low:,.0f} | 구간High:{win_high:,.0f} | 변동:{dynamic_rise:.2f}%")    
-    if curr_price <= curr['ma40']:
-        reason = f"현재가({curr_price:,.0f}) ≤ 40일선({ma40_val:,.0f}, 이격도:{disparity_40_pct:.2f}%)"
+    
+    if curr_price <= ma40_val:
+        reason = f"현재가({curr_price:,.0f}) ≤ 40일선({ma40_val:,.0f})"
         return False, reason, "", data_dict
     
-    if disparity_40 > 0.07:
-        reason = f"40일선 이격도 과다({disparity_40_pct:.2f}% > 7%, 현재가:{curr_price:,.0f}, 40일선:{ma40_val:,.0f})"
-        return False, reason, "", data_dict
-    
-    reason = f"기타 조건 불만족(현재가:{curr_price:,.0f}, 40일선:{ma40_val:,.0f}, 이격도:{disparity_40_pct:.2f}%)"
-    return False, reason, "", data_dict
+    return False, "기타 조건 불만족", "", data_dict
+
 
 
 def check_3_2_negative_candles(target_df):
