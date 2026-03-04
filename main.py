@@ -150,7 +150,7 @@ async def safe_market_buy(symbol, cost, grade="A", buy_type=1):
                 return True, f"{i+1}차 지정가 체결 완료"
             
             # 미체결 시 취소 로직 (무한 대기 방지)
-            await asyncio.to_thread(exchange.cancel_order, order['id'], symbol)
+            await asyncio.to_thread(exchange.cancel_order, order['id'], symbol, params={'side': 'buy'})
             if os_status['filled'] > 0:
                 save_inventory(symbol, target_p, os_status['filled'], grade, buy_type)
                 return True, "부분 체결 완료"
