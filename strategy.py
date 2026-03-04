@@ -809,10 +809,10 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             
             # 오염 감시 (유효 골크 이후 단 1원이라도 하회(데드크로스) 시 즉시 오염 처리)
             if valid_gc_idx != -1 and idx > valid_gc_idx:
-                if df['ma40'].iloc[idx] <= df['ma185'].iloc[idx]:
+                if df['ma40'].iloc[idx-1] > df['ma185'].iloc[idx-1] and df['ma40'].iloc[idx] <= df['ma185'].iloc[idx]:
                     dc_count_after_gc += 1
 
-        has_t1_history_clean = (gc_count_150 == 1) and (dc_count_after_gc == 0)
+        has_t1_history_clean = (1 <= gc_count_150 <= 2) and (dc_count_after_gc <= 1)
 
         # [B] T2 진입 가드 및 타점 (1, 2단계에서 계산한 공통 변수 활용)
         is_fresh = (bars_since_gold <= 64)
@@ -943,7 +943,7 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
             if trades:
                 # 가장 최근 매수 시점을 찾아 현재 시간과의 차이로 age 계산
                 last_buy_time = trades[-1]['timestamp']
-                current_age = int((time.time() * 1000 - last_buy_time) / (15 * 60 * 1000))
+                current_age = int((time.time() * 1000 - last_buy_time) / (30 * 60 * 1000))
             else:
                 # 이력이 없으면 수동 매수 직후로 간주하여 0으로 설정
                 current_age = 0
