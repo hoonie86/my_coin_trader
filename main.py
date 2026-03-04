@@ -410,17 +410,6 @@ async def buy_scan_task(app):
                     indiv_mode = buy_individual_status.get(symbol)
                     curr_mode = indiv_mode if indiv_mode else ("AUTO" if is_night else config.buy_mute_mode)
                     #########################################################
-                    # [수정] 등급 판정 및 타입별 자동 매수 필터링
-                    # S+, S는 'S'로 / A+, A는 'A'로 통합 판정
-                    # reason 문자열을 분석하여 실시간 등급(current_grade) 확정
-                    # strategy에서 리턴한 grade 값을 우선 사용
-                    if not current_grade:
-                        if grade:
-                            current_grade = grade[0].upper()
-                        else:
-                            if any(x in reason for x in ["S급", "[S]"]): current_grade = "S"
-                            elif "A" in reason: current_grade = "A"
-                            else: current_grade = "B"
 
                     can_auto_buy = False
                     if curr_mode == "AUTO":
