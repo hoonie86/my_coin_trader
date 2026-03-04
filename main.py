@@ -457,7 +457,8 @@ async def buy_scan_task(app):
                                 if symbol in pending_s_buys: del pending_s_buys[symbol]
                     else:
                         display_grade = f"{current_grade}급"
-                        if display_grade == "B급":    continue
+                        # if display_grade == "B급":    continue
+                        if ("A급" in display_grade or "B급" in display_grade):  continue
                         status_tag = f"💎 [매수포착 - {display_grade}]" if not is_s_class_check else "🔥 [S급 포착/수동대기]"
                         is_auto_btn = (indiv_mode == 'AUTO')
                         await app.bot.send_message(
