@@ -124,110 +124,36 @@ async def safe_market_buy(symbol, cost, grade="A", buy_type=1):
         if safe_cost < 5500:
             config.logger.warning(f"⚠️ 가용 한도({safe_cost:,.0f}원)가 최소 주문금액(5,000원) 미달로 {symbol} 매수 취소")
             return False, "주문 가능 한액 부족"
-        config.logger.info(f"🚨 [ORDER CHECK] {symbol} | 요청금액: {cost:,.0f} | 실제가용잔액: {free_krw:,.0f}")
-        # [수정 부분] Ticker 정보가 None인 경우를 대비한 방어 로직
-        ticker = await asyncio.to_thread(exchange.fetch_ticker, symbol)
-
-        # last가 없으면 close를, 그것도 없으면 info의 last_price를 시도
-        curr_p = ticker.get('last') or ticker.get('close') or float(ticker.get('info', {}).get('last_price', 0))
-
-        if not curr_p or curr_p == 0:
-            return False, "현재가 조회 실패"
-
-        curr_p = float(curr_p)
-        ###### [수정] 호가(Orderbook) 기반 매수 조건 체크 (1호가 < 현재가 * 1.003) 및 재시도 로직
-        try:
-            # 1차 호가 조회
-            orderbook = await asyncio.to_thread(exchange.fetch_order_book, symbol)
-            asks = orderbook.get('asks', [])
-            best_ask = float(asks[0][0]) if asks else curr_p
-
-            # 조건 체크: 1호가가 현재가 대비 0.3% 이상 높으면 재시도
-            if best_ask >= curr_p * 1.003:
-                logger.info(f"⏳ {symbol} 1차 진입 유보: 호가 갭 과다 (1호가:{best_ask} >= 현재가:{curr_p}*1.003) -> 5초 대기")
-                await asyncio.sleep(5)
-
-                # 재시도: 호가 및 현재가 다시 조회 (완전히 새로 갱신)
-                ticker = await asyncio.to_thread(exchange.fetch_ticker, symbol)
-                curr_p = float(ticker.get('last') or ticker.get('close') or 0)
-                orderbook = await asyncio.to_thread(exchange.fetch_order_book, symbol)
-                asks = orderbook.get('asks', [])
-                best_ask = float(asks[0][0]) if asks else curr_p
-
-                # 2차 조건 체크
-                if best_ask >= curr_p * 1.003:
-                    logger.warning(f"❌ {symbol} 매수 포기: 호가 갭 지속 (1호가:{best_ask}, 현재가:{curr_p})")
-                    return False, "호가 갭 과다로 매수 포기"
-                    
-        except Exception as e:
-            logger.error(f"⚠️ 호가 체크 중 오류 발생 (매수 중단): {e}")
-            return False, f"호가 체크 오류: {e}"
-        # 수량 계산 (소수점 4자리 절사). 실제 체결금액이 safe_cost를 넘지 않도록 금액 기준으로 역산
         import math
-        amount = math.floor((safe_cost / curr_p) * 10000) / 10000
-        if amount <= 0:
-            return False, "수량 계산 오류(금액/가격)"
-
-        print(f"🛒 [매수집행] {symbol} | 금액: {safe_cost} | 수량: {amount} | 등급: {grade} | 타입: {buy_type}")
-
-        # 3. 시장가 매수 실행 (기존 코드 유지)
-        order = await asyncio.to_thread(
-            exchange.create_order, symbol, 'market', 'buy', amount, None, {'cost': safe_cost}
-        )
-
-        # [필수] 실체결가(average)가 올 때까지 최대 3초 대기 (1,492원 기록 방지 핵심)
-        real_price = order.get('average')
-        if not real_price:
-            for _ in range(3):
-                await asyncio.sleep(1)
-                try:
-                    order = await asyncio.to_thread(exchange.fetch_order, order['id'], symbol)
-                    if order.get('average'):
-                        real_price = order['average']
-                        break
-                except: continue
-
-        # [방어] 끝까지 안 오면 '주문 전 현재가' 대신 '주문 후 현재가'를 재조회해서 보정
-        if not real_price:
-            ticker_post = await asyncio.to_thread(exchange.fetch_ticker, symbol)
-            real_price = ticker_post.get('last') or curr_p
-            config.logger.warning(f"⚠️ {symbol} 실체결가 미획득 -> 체결 후 현재가({real_price})로 대체")
-
-        real_price = float(real_price)
-
-        # 4. 인벤토리 저장 로직 (로컬 파일 대신 거래소 실시간 잔고 참조)
-        inv = load_inventory()
-        
-        # [핵심] fetch_balance를 통해 거래소의 실제 평단가와 수량을 가져옴
-        balance_data = await asyncio.to_thread(exchange.fetch_balance)
-        curr_coin = symbol.split('/')[0]
-        coin_info = balance_data.get(curr_coin, {})
-        
-        # 거래소 실제 데이터 (없으면 0)
-        old_q = float(coin_info.get('total', 0)) - amount # 이번에 산 수량을 제외한 이전 수량
-        if old_q < 0: old_q = 0
-        
-        # 빗썸 API가 제공하는 평단가(info.avg_buy_price)가 있다면 최우선 활용
-        old_p = float(coin_info.get('info', {}).get('avg_buy_price', 0)) or real_price
-        
-        # [교정] 실시간 데이터 기반으로 최종 평단가 산출
-        final_avg = ((old_p * old_q) + (real_price * amount)) / (old_q + amount) if (old_q + amount) > 0 else real_price
-
-        # 1. 기존 수량이 거의 없는(먼지) 상태라면 신규 매수로 간주
-        if old_q < 0.0001:
-            final_avg = real_price
+        for i in range(3):
+            orderbook = await asyncio.to_thread(exchange.fetch_order_book, symbol)
+            bid1, ask1 = orderbook['bids'][0][0], orderbook['asks'][0][0]
+            gap = ask1 - bid1
             
-        # 2. 최종 계산된 평단이 실제 체결가와 5% 이상 차이 나면 계산 오류로 판단하고 실체결가로 보정
-        if abs((final_avg - real_price) / real_price) > 0.05:
-            config.logger.warning(f"⚠️ {symbol} 평단 괴리 감지 (계산:{final_avg:.2f} vs 실체결:{real_price:.2f}) -> 강제 보정")
-            final_avg = real_price
+            # 1차: 매수1호가 알박기 | 2차: 갭 1/4 지점 | 3차: 중간가(마지노선)
+            targets = [bid1 + (gap * 0.05), bid1 + (gap * 0.25), bid1 + (gap * 0.5)]
+            target_p = targets[i]
+            amount = math.floor((safe_cost / target_p) * 10000) / 10000
             
-        # 최종 기록 (반드시 real_price가 반영된 final_avg 전달)
-        save_inventory(symbol, final_avg, old_q + amount, grade, buy_type)
+            order = await asyncio.to_thread(exchange.create_limit_buy_order, symbol, amount, target_p)
+            logger.info(f"⏳ [{i+1}차 낚시] {symbol} | 가격: {target_p:,.2f} | 30초 대기 시작...")
+            await asyncio.sleep(30) # 30초 대기
+            
+            os_status = await asyncio.to_thread(exchange.fetch_order, order['id'], symbol)
+            if os_status['status'] == 'closed':
+                save_inventory(symbol, target_p, amount, grade, buy_type)
+                return True, f"{i+1}차 지정가 체결 완료"
+            
+            await asyncio.to_thread(exchange.cancel_order, order['id'], symbol)
+            if os_status['filled'] > 0:
+                save_inventory(symbol, target_p, os_status['filled'], grade, buy_type)
+                return True, "부분 체결 완료"
+            logger.info(f"🚫 {i+1}차 입질 없음, 가격 미세 상향 시도")
 
-        return True, "성공"
+        return False, "중간가까지 대기했으나 미체결(포기)"
     except Exception as e:
         logger.error(f"Market Buy Error ({symbol}): {e}")
+
         return False, str(e)
 
 
@@ -439,8 +365,9 @@ async def buy_scan_task(app):
                 if is_buy:
                     if symbol in notified_symbols and (datetime.now() - notified_symbols[symbol]) < timedelta(hours=1):
                         continue
-                    notified_symbols[symbol] = datetime.now()
 
+                    current_grade = grade if grade else "S"
+                    notified_symbols[symbol] = datetime.now()
                     balance = await asyncio.to_thread(exchange.fetch_balance)
                     free_krw = float(balance['free'].get('KRW', 0))
                     buy_cost = await get_buy_cost()
@@ -780,7 +707,7 @@ async def sell_monitor_task(app):
                     except:
                         this_elapsed_bars = 0 # 에러 시 0으로 초기화하여 유예 적용
                 else:
-                    this_elapsed_bars = 999
+                    this_elapsed_bars = 99
                 ###### [출력] 시간 계산 디버깅 ######
                 print(f"DEBUG: {symbol} | buy_time: {buy_time_str} | calc_age: {this_elapsed_bars}")
                 # 인벤토리에서 매수 당시 결정된 타입(1, 2, 3)을 가져옵니다.
@@ -1052,7 +979,7 @@ def save_trade_log(symbol, grade, buy_p, sell_p, profit, reason):
 
 async def handle_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """텔레그램 상호작용 (최종 반영: S급 자동매수 추적 해제 로직 추가)"""
-    global sell_mute_status, buy_individual_status, pending_s_buys
+    global sell_mute_status, buy_individual_status, pending_s_buys, GLOBAL_BUY_MODE
     msg = update.message.text if update.message else ""
 
     if update.callback_query:
@@ -1338,9 +1265,9 @@ async def process_report_logic(update, context, query=None):
                     diff_sec = (datetime.now() - buy_time_dt).total_seconds()
                     this_elapsed_bars = int(diff_sec / 1800)  # 30분봉 기준
                 except:
-                    this_elapsed_bars = 999
+                    this_elapsed_bars = 99
             else:
-                this_elapsed_bars = 999
+                this_elapsed_bars = 99
 
             # 야간 모드 및 모드 아이콘 판정
             raw_status = sell_mute_status.get(symbol, 'WATCH')

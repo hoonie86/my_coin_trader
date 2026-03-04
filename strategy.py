@@ -119,7 +119,7 @@ def get_updated_emergency_level(symbol, current_level, buy_type, rsi, is_3m_belo
 
     # 1. 트리거 (0 -> 2): 진입 조건 (기존 유지)
     if current_level == 0:
-        if (profit_pct >= 10.0 or has_rsi_spike or soaring_rate >= 2.0 or 
+        if (profit_pct >= 10.0 or has_rsi_spike or soaring_rate >= 3.0 or 
             (str(buy_type) == '3' and not is_type3_stable) or max_profit_pct >= 5.0):
             return 2
     
@@ -1091,8 +1091,8 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
 
             # 4. 익절 구간 C (3.5% 이상): 고점 대비 3.0% 하락 시 즉시 매도
             elif max_profit_rate_pct >= 3.5:
-                if drop_from_peak >= 3.0:
-                    return True, f"🚀 [S-TS-3.5] 익절 C (낙폭 3.0%)", True
+                if drop_from_peak >= 2.0:
+                    return True, f"🚀 [S-TS-3.5] 익절 C (낙폭 2.0%)", True
 
             # ---------------------------------------------------------
             # [정비 2] 40 지지선 및 S+급 보호 (상향->평행->상향 로직)
