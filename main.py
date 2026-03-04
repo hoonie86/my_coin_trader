@@ -414,13 +414,13 @@ async def buy_scan_task(app):
                     # S+, S는 'S'로 / A+, A는 'A'로 통합 판정
                     # reason 문자열을 분석하여 실시간 등급(current_grade) 확정
                     # strategy에서 리턴한 grade 값을 우선 사용
-                    if grade:
-                        current_grade = grade[0].upper() # S+, A+ 등에서 첫 글자만 추출 (S, A, B)
-                    else:
-                        # 하위 호환성 유지
-                        if any(x in reason for x in ["S급", "[S]"]): current_grade = "S"
-                        elif "A" in reason: current_grade = "A"
-                        else: current_grade = "B"
+                    if not current_grade:
+                        if grade:
+                            current_grade = grade[0].upper()
+                        else:
+                            if any(x in reason for x in ["S급", "[S]"]): current_grade = "S"
+                            elif "A" in reason: current_grade = "A"
+                            else: current_grade = "B"
 
                     can_auto_buy = False
                     if curr_mode == "AUTO":
