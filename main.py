@@ -124,7 +124,7 @@ async def safe_market_buy(symbol, cost, grade="A", buy_type=1):
         if safe_cost < 5500:
             config.logger.warning(f"⚠️ 가용 한도({safe_cost:,.0f}원)가 최소 주문금액(5,000원) 미달로 {symbol} 매수 취소")
             return False, "주문 가능 한액 부족"
-            
+        
         import math
         for i in range(3):
             orderbook = await asyncio.to_thread(exchange.fetch_order_book, symbol)
@@ -134,11 +134,11 @@ async def safe_market_buy(symbol, cost, grade="A", buy_type=1):
             # 1차: 매수1호가 알박기 | 2차: 갭 1/4 지점 | 3차: 중간가(마지노선)
             targets = [bid1 + (gap * 0.05), bid1 + (gap * 0.25), bid1 + (gap * 0.5)]
             
-##################
-            # [교정] 빗썸 호가 단위(Tick Size) 및 수량 정밀도 강제 적용 (STEEM '입력값 확인' 오류 해결)
+            ##################
+            # [교정] 빗썸 호가 단위(Tick Size) 및 수량 정밀도 강제 적용 (입력값 확인 오류 원천 봉쇄)
             target_p = float(exchange.price_to_precision(symbol, targets[i]))
             amount = float(exchange.amount_to_precision(symbol, safe_cost / target_p))
-##################
+            ##################
             
             order = await asyncio.to_thread(exchange.create_limit_buy_order, symbol, amount, target_p)
             logger.info(f"⏳ [{i+1}차 낚시] {symbol} | 가격: {target_p:,.2f} | 30초 대기 시작...")
@@ -149,11 +149,12 @@ async def safe_market_buy(symbol, cost, grade="A", buy_type=1):
                 save_inventory(symbol, target_p, amount, grade, buy_type)
                 return True, f"{i+1}차 지정가 체결 완료"
             
-            # 미체결 시 취소 로직
+            # 미체결 시 취소 로직 (무한 대기 방지)
             await asyncio.to_thread(exchange.cancel_order, order['id'], symbol)
             if os_status['filled'] > 0:
                 save_inventory(symbol, target_p, os_status['filled'], grade, buy_type)
                 return True, "부분 체결 완료"
+            
             logger.info(f"🚫 {i+1}차 입질 없음, 가격 미세 상향 시도")
 
         return False, "중간가까지 대기했으나 미체결(포기)"
