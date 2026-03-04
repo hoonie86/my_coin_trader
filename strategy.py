@@ -939,7 +939,7 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
     if current_age == 99:
         try:
             # 빗썸 API로 매수 이력 조회 시도
-            trades = await exchange.fetch_my_trades(symbol)
+            trades = await asyncio.to_thread(exchange.fetch_my_trades, symbol)
             if trades:
                 # 가장 최근 매수 시점을 찾아 현재 시간과의 차이로 age 계산
                 last_buy_time = trades[-1]['timestamp']
