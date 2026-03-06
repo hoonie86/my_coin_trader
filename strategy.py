@@ -849,7 +849,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     
     if curr_price <= ma40_val:
         reason = f"현재가({curr_price:,.0f}) ≤ 40일선({ma40_val:,.0f})"
-        return False, reason, "", data_dict
+        return False, reason, "", data_dict 
     
     return False, "기타 조건 불만족", "", data_dict
 
@@ -857,23 +857,34 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
 
 def check_3_2_negative_candles(target_df):
     if len(target_df) < 4: return False, ""
-    recent_3 = target_df.tail(3)
-    # 최근 10봉 중 최대 거래량의 10%를 이탈 기준으로 설정
-    high_vol_threshold = target_df['vol'].tail(10).max() * 0.1
+###### 최고점 양봉 기준 거래량 및 50% 몸통 돌파 로직 ######
+    recent_10 = target_df.tail(10)
     
+    # 최근 10봉 중 최고가 캔들 특정
+    max_high_idx = recent_10['high'].idxmax()
+    peak_candle = target_df.loc[max_high_idx]
+    
+    peak_vol = peak_candle['vol']
+    peak_mid = (peak_candle['open'] + peak_candle['close']) / 2
+    
+    recent_3 = target_df.tail(3)
     neg_count = 0
     reasons = []
+    
     for i in range(3):
         candle = recent_3.iloc[i]
-        # 음봉이면서 기준 거래량 이상 터졌을 때만 '찐 음봉' 인정
-        if candle['close'] < candle['open'] and candle['vol'] > high_vol_threshold:
+        # 조건 1: 고점 거래량의 10% 초과 음봉
+        if candle['close'] < candle['open'] and candle['vol'] > peak_vol * 0.1:
             neg_count += 1
             reasons.append(f"{3-i}번전음봉")
-    
+            
+        # 조건 2: 고점 거래량 초과 & 양봉 몸통 50% 하향 돌파 (저가 판단 즉시 매도)
+        if candle['close'] < candle['open'] and candle['vol'] > peak_vol and candle['close'] < peak_mid:
+            return True, "🚨 [장악형음봉] 고점 거래량 초과 및 몸통 50% 이탈"
+            
     if neg_count >= 2:
         return True, ", ".join(reasons)
     return False, ""
-
 
 
 # ---------------------------------------------------------
