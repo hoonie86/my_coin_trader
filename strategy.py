@@ -753,9 +753,16 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             
             data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
             
-            if slope_rate >= -0.01:
-                # [수정] 상단 공통 지표(ma90_up_count, is_converging_5b)를 활용하여 90선 하락 종목 차단
+            # 기준 A (기존): 평균 기울기가 -0.01 이상으로 강력할 때
+            is_slope_strong = (slope_rate >= -0.01)
+            # 기준 B (보완): 평균이 -0.03 ~ -0.01 사이로 완만하지만, 최근 10봉 중 6봉 이상이 상승/평행으로 '안정화(밀도)' 되었을 때
+            is_slope_dense = (-0.03 <= slope_rate < -0.01) and (stabilized_count >= 6)
+            
+            # 둘 중 하나라도 만족하면 '바닥 안착'으로 인정하고 진입 타점 계산 시작
+            if is_slope_strong or is_slope_dense:
+                # [유지] 상단 공통 지표(ma90_up_count, is_converging_5b)를 활용하여 90선 하락 종목 차단
                 if disparity_gold <= 0.005 and is_converging_5_40 and (-0.8 <= gap_5_40_pct <= 0.1) and (ma90_up_count >= 4):
+###### [수정 끝] ######
                     if is_40_90_gc:
                         data_dict['grade'] = 'S+'
                         return True, "💎 [TYPE1-S+] 밥그릇 수렴 및 40/90 골든크로스 확정", "S+", data_dict
