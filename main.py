@@ -560,12 +560,8 @@ async def execute_sell(app, symbol, reason):
         # 1. 현재 잔고 확인
         balance = await asyncio.to_thread(exchange.fetch_balance)
         base = symbol.split('/')[0]
-        quantity = float(balance['free'].get(base, 0))
+        quantity = float(balance['total'].get(base, 0))
 
-        # 최소 주문 수량 체크 (먼지 잔고 방지)
-        if quantity <= 0.0001:
-            logger.warning(f"⚠️ {symbol} 매도 스킵: 잔고가 부족합니다.")
-            return
         ###### 거래소 수량 정밀도 맞춤 (먼지 잔고 방지) ######
         try:
             precision_qty = float(exchange.amount_to_precision(symbol, quantity))
@@ -607,15 +603,15 @@ async def execute_sell(app, symbol, reason):
             
             # 3회 모두 실패 시 유예 재시작 및 함수 종료
             if not fill_success:
-                alert_msg = f"❌ [매도보류] {symbol} 호가창 얇음 (슬리피지 방어)\n사유: {reason}\n지정가 매도 3회 실패로 10분 유예를 재시작합니다."
+                alert_msg = f"❌ [매도보류] {symbol} 호가창 얇음 (슬리피지 방어)\n사유: {reason}\n지정가 매도 3회 실패로 3분 유예를 재시작합니다."
                 await app.bot.send_message(config.CHAT_ID, alert_msg)
                 logger.warning(alert_msg)
                 
-                # 인벤토리 데이터 불러와서 deadline 10분 연장
+                # 인벤토리 데이터 불러와서 deadline 3분 연장
                 try:
                     inv_data = load_inventory()
                     if symbol in inv_data:
-                        inv_data[symbol]['profit_deadline'] = (datetime.now() + timedelta(minutes=10)).strftime('%Y-%m-%d %H:%M:%S')
+                        inv_data[symbol]['profit_deadline'] = (datetime.now() + timedelta(minutes=3)).strftime('%Y-%m-%d %H:%M:%S')
                         with open(INV_FILE, "w") as f:
                             json.dump(inv_data, f, indent=4)
                 except Exception as e:
@@ -959,11 +955,12 @@ async def sell_monitor_task(app):
                 else:
                     is_sell_final = False
                 ###### 수익 10분 유예 타이머 (수익 릴레이) ######
+                now_time = datetime.now()
+                is_relay_updated = False # 파일 저장 트리거
+                
+                # 시작 및 갱신: 수익 1% 이상이고 매도 신호 없을 때만 동작
                 if this_profit >= 1.0 and not is_urgent and not is_sell_signal:
-                    now_time = datetime.now()
                     p_deadline = inv_item.get('profit_deadline')
-                    is_relay_updated = False # [추가] 파일 저장 트리거
-                    
                     if not p_deadline:
                         inv_item['profit_deadline'] = (now_time + timedelta(minutes=10)).strftime('%Y-%m-%d %H:%M:%S')
                         inv_item['max_profit_seen'] = this_profit
@@ -973,8 +970,8 @@ async def sell_monitor_task(app):
                             config.CHAT_ID, 
                             f"🚨 [{symbol}] 수익 1% 돌파! 10분 매도 유예를 시작합니다.\n추가 수익 갱신이 없으면 매도됩니다."
                         )
+                    # 수익 고점 갱신: 기존 수익보다 단 0.01%라도 높으면 10분 재설정
                     elif this_profit > inv_item.get('max_profit_seen', 0):
-                        # 수익 갱신 시 타이머 10분 재연장
                         inv_item['profit_deadline'] = (now_time + timedelta(minutes=10)).strftime('%Y-%m-%d %H:%M:%S')
                         inv_item['max_profit_seen'] = this_profit
                         inv_data[symbol] = inv_item
@@ -983,22 +980,23 @@ async def sell_monitor_task(app):
                             config.CHAT_ID, 
                             f"🔄 [{symbol}] 고점 갱신({this_profit:+.2f}%)! 유예 시간을 10분으로 재설정합니다."
                         )
-                        
-                    # 갱신 없이 만료된 경우 매도 집행
-                    p_deadline = inv_item.get('profit_deadline')
-                    if p_deadline and now_time > datetime.strptime(p_deadline, '%Y-%m-%d %H:%M:%S'):
-                        is_sell_signal = True
-                        is_sell_final = True
-                        sell_reason = "⏰ [익절] 수익 경신 멈춤으로 10분 유예 만료"
-                        del inv_item['profit_deadline']
-                        inv_data[symbol] = inv_item
-                        is_relay_updated = True
-                    if is_relay_updated:
-                        try:
-                            with open(INV_FILE, "w") as f:
-                                json.dump(inv_data, f, indent=4)
-                        except Exception as e:
-                            logger.error(f"Profit Timer Save Error: {e}")
+
+                # 매도 집행: 수익률 조건(this_profit >= 1.0)과 무관하게 타이머가 만료되었는지 항시 확인
+                p_deadline = inv_item.get('profit_deadline')
+                if p_deadline and now_time > datetime.strptime(p_deadline, '%Y-%m-%d %H:%M:%S'):
+                    is_sell_signal = True
+                    is_sell_final = True
+                    sell_reason = "⏰ [익절] 수익 경신 멈춤으로 10분 유예 만료"
+                    del inv_item['profit_deadline']
+                    inv_data[symbol] = inv_item
+                    is_relay_updated = True
+
+                if is_relay_updated:
+                    try:
+                        with open(INV_FILE, "w") as f:
+                            json.dump(inv_data, f, indent=4)
+                    except Exception as e:
+                        logger.error(f"Profit Timer Save Error: {e}")
                 elapsed_min = 0
                 if is_sell_signal:
                     # [1] 긴급 매도(is_urgent) 확인
