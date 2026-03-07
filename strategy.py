@@ -753,8 +753,8 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             
             data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
             
-            # 기준 A (기존): 평균 기울기가 -0.01 이상으로 강력할 때
-            is_slope_strong = (slope_rate >= -0.01)
+            # 기준 A (기존): 평균 기울기slope_rate -0.02 이상으로 강력할 때
+            is_slope_strong = (slope_rate >= -0.02)
             # 기준 B (보완): 평균이 -0.03 ~ -0.01 사이로 완만하지만, 최근 10봉 중 6봉 이상이 상승/평행으로 '안정화(밀도)' 되었을 때
             is_slope_dense = (-0.03 <= slope_rate < -0.01) and (stabilized_count >= 6)
             
@@ -762,7 +762,6 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             if is_slope_strong or is_slope_dense:
                 # [유지] 상단 공통 지표(ma90_up_count, is_converging_5b)를 활용하여 90선 하락 종목 차단
                 if disparity_gold <= 0.005 and is_converging_5_40 and (-0.8 <= gap_5_40_pct <= 0.1) and (ma90_up_count >= 4):
-###### [수정 끝] ######
                     if is_40_90_gc:
                         data_dict['grade'] = 'S+'
                         return True, "💎 [TYPE1-S+] 밥그릇 수렴 및 40/90 골든크로스 확정", "S+", data_dict
@@ -789,7 +788,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 data_dict['grade'] = 'B+'
                 return True, "🚀 [TYPE1-B+] 185선 평행/우상향 전환", "B+", data_dict
             else:
-                logger.info(f"DEBUG: {symbol} | [TYPE1] 탈락 이유-진입 실패 | 185선 기울기 ({slope_rate} >= -0.01)")
+                logger.info(f"DEBUG: {symbol} | [TYPE1] 탈락 이유-진입 실패 | 185선 기울기 ({slope_rate} >= -0.02)")
             # [B급] 상승 대기 (골드 안착)
             data_dict['grade'] = 'B'
             return True, "🚀 [TYPE1-B] 상승대기(골드안착)", "B", data_dict
@@ -860,39 +859,51 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     
     return False, "기타 조건 불만족", "", data_dict
 
-
-
 def check_3_2_negative_candles(target_df):
-    if len(target_df) < 4: return False, ""
-###### 최고점 양봉 기준 거래량 및 50% 몸통 돌파 로직 ######
+    if len(target_df) < 5: return False, ""
+    
     recent_10 = target_df.tail(10)
     
-    # 최근 10봉 중 최고가 캔들 특정
-    max_high_idx = recent_10['high'].idxmax()
-    peak_candle = target_df.loc[max_high_idx]
+    # 1. 최근 10봉 중 최고가 캔들의 '물리적 순서(iloc)' 찾기 (KeyError 원천 차단)
+    peak_idx_in_recent = recent_10['high'].argmax()
+    peak_iloc = len(target_df) - len(recent_10) + peak_idx_in_recent
     
+    peak_candle = target_df.iloc[peak_iloc]
     peak_vol = peak_candle['vol']
-    peak_mid = (peak_candle['open'] + peak_candle['close']) / 2
     
-    recent_3 = target_df.tail(3)
+    # 2. 최고점 직전 캔들의 몸통 50% 계산 (인덱스가 0보다 클 때만)
+    if peak_iloc > 0:
+        pre_peak_candle = target_df.iloc[peak_iloc - 1]
+        pre_peak_mid = (pre_peak_candle['open'] + pre_peak_candle['close']) / 2
+    else:
+        pre_peak_mid = (peak_candle['open'] + peak_candle['close']) / 2
+        
+    # 3. 고점 '이후' 발생한 캔들만 추출 (최대 3개)
+    post_peak_df = target_df.iloc[peak_iloc + 1 : peak_iloc + 4]
+    if post_peak_df.empty: 
+        return False, ""
+    
     neg_count = 0
     reasons = []
     
-    for i in range(3):
-        candle = recent_3.iloc[i]
-        # 조건 1: 고점 거래량의 10% 초과 음봉
-        if candle['close'] < candle['open'] and candle['vol'] > peak_vol * 0.1:
-            neg_count += 1
-            reasons.append(f"{3-i}번전음봉")
+    for i in range(len(post_peak_df)):
+        candle = post_peak_df.iloc[i]
+        is_negative = candle['close'] < candle['open']
+        
+        if is_negative:
+            # 조건 A: 고점 거래량 초과 & 직전 양봉 50% 하향 돌파 (저가 판단 즉시 매도)
+            if candle['vol'] > peak_vol and candle['close'] < pre_peak_mid:
+                return True, "🚨 [장악형음봉] 고점 거래량 초과 및 직전 양봉 50% 이탈"
             
-        # 조건 2: 고점 거래량 초과 & 양봉 몸통 50% 하향 돌파 (저가 판단 즉시 매도)
-        if candle['close'] < candle['open'] and candle['vol'] > peak_vol and candle['close'] < peak_mid:
-            return True, "🚨 [장악형음봉] 고점 거래량 초과 및 몸통 50% 이탈"
+            # 조건 B: 고점 거래량의 10% 초과 음봉 카운트
+            if candle['vol'] > peak_vol * 0.1:
+                neg_count += 1
+                reasons.append(f"고점이후{i+1}번음봉")
             
     if neg_count >= 2:
-        return True, ", ".join(reasons)
+        return True, "🚨 [세력이탈] " + ", ".join(reasons)
+        
     return False, ""
-
 
 # ---------------------------------------------------------
 # [복구 및 추가] 매도 감시 메인 함수 (ERROR 방지 핵심)
