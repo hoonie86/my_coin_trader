@@ -247,12 +247,12 @@ async def get_my_assets():
                         buy_time = datetime.strptime(buy_time_str, '%Y-%m-%d %H:%M:%S')
                         age_minutes = (datetime.now() - buy_time).total_seconds() / 60
                         
-                        # [5번] 10분 초과 시 시간을 현재로 리셋하여 보정 엔진 강제 활성화
-                        if age_minutes > 10:
-                            local_item['purchase_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                            age_minutes = 0
-                            inv[symbol] = local_item
-                            is_inv_changed = True
+                        # # [5번] 10분 초과 시 시간을 현재로 리셋하여 보정 엔진 강제 활성화
+                        # if age_minutes > 10:
+                        #     local_item['purchase_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        #     age_minutes = 0
+                        #     inv[symbol] = local_item
+                        #     is_inv_changed = True
                             
                         # 10분 이내인데 1% 이상 괴리가 나면 '기록 오류'로 간주하여 방어
                         if age_minutes < 10:
@@ -428,6 +428,8 @@ async def buy_scan_task(app):
                     missed_60m_tracker[symbol] = (datetime.now(), current_price)
 
                 if is_buy:
+                    logger.info(f"DEBUG: 💰 {symbol} 매수 시그널 포착 | 등급: {grade} | 이유: {reason}")
+
                     if symbol in notified_symbols and (datetime.now() - notified_symbols[symbol]) < timedelta(hours=1):
                         continue
 
@@ -523,7 +525,7 @@ async def buy_scan_task(app):
                     else:
                         display_grade = f"{current_grade}급"
                         # if display_grade == "B급":    continue
-                        if ("A급" in display_grade or "B급" in display_grade):  continue
+                        if ("A급" in display_grade or "B급" in display_grade or "A+급" in display_grade or "B+급" in display_grade):  continue
                         status_tag = f"💎 [매수포착 - {display_grade}]" if not is_s_class_check else "🔥 [S급 포착/수동대기]"
                         is_auto_btn = (indiv_mode == 'AUTO')
                         await app.bot.send_message(
@@ -910,12 +912,20 @@ async def sell_monitor_task(app):
                         inv_item['max_profit_seen'] = this_profit
                         inv_data[symbol] = inv_item
                         is_relay_updated = True
+                        await app.bot.send_message(
+                            config.CHAT_ID, 
+                            f"🚨 [{symbol}] 수익 1% 돌파! 10분 매도 유예를 시작합니다.\n추가 수익 갱신이 없으면 매도됩니다."
+                        )
                     elif this_profit > inv_item.get('max_profit_seen', 0):
                         # 수익 갱신 시 타이머 10분 재연장
                         inv_item['profit_deadline'] = (now_time + timedelta(minutes=10)).strftime('%Y-%m-%d %H:%M:%S')
                         inv_item['max_profit_seen'] = this_profit
                         inv_data[symbol] = inv_item
                         is_relay_updated = True
+                        await app.bot.send_message(
+                            config.CHAT_ID, 
+                            f"🔄 [{symbol}] 고점 갱신({this_profit:+.2f}%)! 유예 시간을 10분으로 재설정합니다."
+                        )
                         
                     # 갱신 없이 만료된 경우 매도 집행
                     p_deadline = inv_item.get('profit_deadline')
