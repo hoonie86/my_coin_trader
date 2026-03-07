@@ -541,6 +541,17 @@ async def buy_scan_task(app):
             logger.error(f"Buy Task Error: {e}")
             await asyncio.sleep(60)
 
+def get_next_tick_down(price):
+    if price < 10: return round(price - 0.01, 2)
+    if price < 100: return round(price - 0.1, 1)
+    if price < 1000: return int(price - 1)
+    if price < 5000: return int(price - 5)
+    if price < 10000: return int(price - 10)
+    if price < 50000: return int(price - 50)
+    if price < 100000: return int(price - 100)
+    if price < 500000: return int(price - 500)
+    return int(price - 1000)
+
 async def execute_sell(app, symbol, reason):
     """
     실제 거래소 매도 주문을 실행하고, 인벤토리 정리 및 거래 로그를 기록한 뒤 알림을 보냅니다.
@@ -561,10 +572,56 @@ async def execute_sell(app, symbol, reason):
         except:
             precision_qty = quantity
             
-        # 2. 시장가 매도 주문 집행
-        order_result = await asyncio.to_thread(exchange.create_market_sell_order, symbol, precision_qty)
-        logger.info(f"DEBUG: 💰 {symbol} 매도 집행 완료: {reason} | 수량: {precision_qty}")
-
+        is_urgent = ("[긴급]" in reason or "🚨" in reason)
+        if is_urgent:
+            # 2-A. 긴급 상황 시 시장가 즉시 매도 (기존 로직)
+            order_result = await asyncio.to_thread(exchange.create_market_sell_order, symbol, precision_qty)
+            logger.info(f"DEBUG: 💰 {symbol} 긴급 매도(시장가) 완료: {reason} | 수량: {precision_qty}")
+        else:
+            # 2-B. 일반 수익 보전 시 3단계 지정가 매도
+            wait_sec = 10  # 대기 시간 10초
+            fill_success = False
+            
+            for i in range(3):
+                ticker = await asyncio.to_thread(exchange.fetch_ticker, symbol)
+                current_p = float(ticker['last'])
+                
+                target_p = current_p
+                for _ in range(i):
+                    target_p = get_next_tick_down(target_p)
+                    
+                logger.info(f"⏳ [지정가매도 {i+1}차] {symbol} | 목표가: {target_p} | {wait_sec}초 대기")
+                order = await asyncio.to_thread(exchange.create_limit_sell_order, symbol, precision_qty, target_p)
+                
+                await asyncio.sleep(wait_sec)
+                
+                check = await asyncio.to_thread(exchange.fetch_order, order['id'], symbol)
+                if check['status'] == 'closed':
+                    fill_success = True
+                    order_result = check
+                    logger.info(f"DEBUG: 💰 {symbol} 지정가 매도 체결: {reason} | 수량: {precision_qty} | 체결가: {target_p}")
+                    break
+                else:
+                    await asyncio.to_thread(exchange.cancel_order, order['id'], symbol)
+                    logger.info(f"⏭️ [미체결취소] {symbol} {i+1}차 지정가 실패. 주문을 취소합니다.")
+            
+            # 3회 모두 실패 시 유예 재시작 및 함수 종료
+            if not fill_success:
+                alert_msg = f"❌ [매도보류] {symbol} 호가창 얇음 (슬리피지 방어)\n사유: {reason}\n지정가 매도 3회 실패로 10분 유예를 재시작합니다."
+                await app.bot.send_message(config.CHAT_ID, alert_msg)
+                logger.warning(alert_msg)
+                
+                # 인벤토리 데이터 불러와서 deadline 10분 연장
+                try:
+                    inv_data = load_inventory()
+                    if symbol in inv_data:
+                        inv_data[symbol]['profit_deadline'] = (datetime.now() + timedelta(minutes=10)).strftime('%Y-%m-%d %H:%M:%S')
+                        with open(INV_FILE, "w") as f:
+                            json.dump(inv_data, f, indent=4)
+                except Exception as e:
+                    logger.error(f"Failed to reset deadline: {e}")
+                
+                return  # 즉시 함수 종료 (인벤토리 삭제 방지)
         # 3. 비상 모드 판정 및 6시간 쿨다운 설정
         lvl = emergency_mode.get(symbol, 0)
         if lvl >= 1:
