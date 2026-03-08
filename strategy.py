@@ -769,7 +769,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                         data_dict['grade'] = 'S'
                         return True, "💎 [TYPE1-S] 밥그릇 바닥 수렴 및 5/40선 안착 확인", "S", data_dict
                 else:
-                    logger.info(f"DEBUG: {symbol} | [TYPE1-S/S+] 격돌 실패 | 5/40이격: {disparity_5_40:.2f}% | 수렴도: {is_converging_5b}")
+                    logger.info(f"DEBUG: {symbol} | [TYPE1-S/S+] 격돌 실패 | 골크 : {disparity_gold} <= 0.005 | 5/40수렴: {is_converging_5_40} | 5/40 gap pct: -0.8 <= {gap_5_40_pct:.2f}% <= 0.1 | 90선 상승: {ma90_up_count} >= 4")
 
                 # [A+급] 바닥 탈출 + 40/90 정배열 가속 (추세 가속 확인)
                 # S+가 '골든크로스 순간'이라면, A+는 '정배열 유지 + 수급' 타점으로 차별화
@@ -825,10 +825,10 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         vol_sectional = ((df['high'].tail(64).max() - df['low'].tail(64).min()) / df['low'].tail(64).min()) * 100
         is_type2_safe = (vol_sectional <= 10.0) and is_fresh
         # 상단 공통 변수(gap_5_40_pct, is_converging_5_40) 사용
-        is_t2_rebound = (-0.7 <= gap_5_40_pct <= 0.1) and (ma5_slope > 0) and is_converging_5_40
+        is_t2_rebound = (-0.8 <= gap_5_40_pct <= 0.1) and (ma5_slope > 0) and is_converging_5_40
 
         # [C] 최종 판정 및 요청하신 키워드 로그 반영
-        if is_type2_safe and is_t2_rebound and has_t1_history_clean and (ma90_up_count >= 4) and is_185_landing_stable:
+        if is_type2_safe and is_t2_rebound and has_t1_history_clean and (ma90_up_count >= 2) and is_185_landing_stable:
             gc_idx = valid_gc_idx
             d_cnt = sum(1 for k in range(gc_idx-96, gc_idx-10) if df['ma185'].iloc[k] <= df['ma185'].iloc[k-1]) if gc_idx != -1 else 0
             height_pct = (curr_price - ma185_val) / ma185_val * 100
