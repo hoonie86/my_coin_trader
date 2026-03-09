@@ -137,12 +137,15 @@ async def safe_market_buy(symbol, cost, grade="A", buy_type=1):
             # 1차: 매수1호가 알박기 | 2차: 갭 1/4 지점 | 3차: 중간가(마지노선)
             targets = [bid1 + (gap * 0.05), bid1 + (gap * 0.25), bid1 + (gap * 0.5)]
             
-            ##################
-            # [교정] 빗썸 호가 단위(Tick Size) 및 수량 정밀도 강제 적용 (입력값 확인 오류 원천 봉쇄)
+            # [수정 시작: 빗썸 호가 단위(Tick Size) 및 수량 정밀도 강제 적용]
+            # exchange 객체의 정밀도 변환 함수 결과를 float로 강제 변환하지 않고 문자열/숫자 그대로 사용하여 소수점 오류 방지
             target_p = float(exchange.price_to_precision(symbol, targets[i]))
-            amount = float(exchange.amount_to_precision(symbol, safe_cost / target_p))
-            ##################
             
+            # 주문 수량 계산 후 소수점 4자리에서 버림(Floor) 처리하여 수량 정밀도 오류 원천 차단
+            raw_amount = safe_cost / target_p
+            amount_str = exchange.amount_to_precision(symbol, raw_amount)
+            amount = float(amount_str)
+                        
             order = await asyncio.to_thread(exchange.create_limit_buy_order, symbol, amount, target_p)
             logger.info(f"⏳ [{i+1}차 낚시] {symbol} | 가격: {target_p:,.2f} | 30초 대기 시작...")
             await asyncio.sleep(30) # 30초 대기
