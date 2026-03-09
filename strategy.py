@@ -377,7 +377,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     # 2. 5-40선 이격도 및 수렴 여부
     gap_5_40_pct = (ma5_val - ma40_val) / ma40_val * 100 if ma40_val > 0 else 0
     disps_5b = [abs(df['ma5'].iloc[-i] - df['ma40'].iloc[-i]) / df['ma40'].iloc[-i] * 100 if df['ma40'].iloc[-i] > 0 else 999 for i in range(1, 6)]
-    is_converging_5_40 = all(disps_5b[i] < disps_5b[i+1] for i in range(4))
+    is_converging_5_40 = all(disps_5b[i] <= disps_5b[i+1] for i in range(4))
     # 3. 185일선 안착 안정성 (최근 10봉 하락 틱 수)
     t1_v2_tick = get_bithumb_tick_size(ma185_val)
     total_drop_ticks = ((df['ma185'].diff().tail(10) * -1) / t1_v2_tick).clip(lower=0).sum() if t1_v2_tick > 0 else 999
