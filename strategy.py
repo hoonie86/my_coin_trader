@@ -599,7 +599,16 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
 
     ma40_slope_common = ((ma40_val - prev_ma40) / prev_ma40) * 100 if prev_ma40 > 0 else 0
     prev_close_val = float(prev['close'])
-    is_true_trigger = (ma40_slope_common >= -0.005) and (prev_close_val <= prev_ma40) and (curr_price > ma40_val) and (curr_price <= ma40_val * 1.03)
+    ###### [수정 제안: 찐 트리거의 범용성 확대] ######
+    # 1. 기울기 완화: -0.005 -> -0.015 (완만하게 하락 중인 밥그릇도 수용)
+    # 2. 찰나의 순간 완화: 무조건 '이번에 뚫어야 함' 대신 '40선 위에서 안착 중'인 상태 포함
+    # 3. 이격 조절: 40선 대비 0.5% ~ 3% 이내 (너무 선에 붙어있지 않아도 됨)
+
+    is_true_trigger = (
+        (ma40_slope_common >= -0.015) and      # 40선이 충분히 누웠는가
+            (curr_price > ma40_val) and             # 40선 위에 있는가
+                (curr_price <= ma40_val * 1.03)         # 너무 뜬 건 아닌가 (3% 가드)
+                )
     
     base_avg_vol_t3 = df['vol'].tail(20).mean()
     vol_ratio_t3 = (float(curr['vol']) / base_avg_vol_t3) if base_avg_vol_t3 > 0 else 0
