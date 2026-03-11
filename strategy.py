@@ -410,16 +410,16 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     curr_max_high_low = max(curr['open'], curr['close'])
     upper_wick = (curr['high'] - curr_max_high_low) / curr_max_high_low * 100
     
-    if volatility >= 10.0:
+    if volatility >= 20.0:
         print(f"DEBUG: {symbol} 매수 탈락 - 변동성 과다({volatility:.1f}%)")
         return False, f"🚫 [상단방어] 구간 변동성({volatility:.1f}%) 및 저항 포착", "F", {}
         
-    if curr_price < curr['high'] * 0.985:
-        return False, f"🚫 [설거지방어] 고가대비 이탈(-1.5%↑)", "F", {}
+    if curr_price < curr['high'] * 0.95:
+        return False, f"🚫 [설거지방어] 고가대비 이탈(-5.0%↑)", "F", {}
 
-    if upper_wick >= 2.0:
-        print(f"DEBUG: {symbol} 매수 탈락 - 윗꼬리 과다({volatility:.1f}%)")
-        return False, f"🚫 [윗꼬리 방어] 가격 변동성({volatility:.1f}%) 설거지 포착", "F", {}    
+    if upper_wick >= 5.0:
+        print(f"DEBUG: {symbol} 매수 탈락 - 윗꼬리 과다({upper_wick:.1f}%)")
+        return False, f"🚫 [윗꼬리 방어] 윗꼬리 과다({upper_wick:.1f}%) 설거지 포착", "F", {}    
     # [가격 필터] 10원 미만 또는 10,000원 이상 → BTC 마켓 동전주/비정상 차단
     if curr_price < 1 or curr_price >= 10000:
         return False, "가격필터(BTC마켓)", "", data_dict
@@ -430,7 +430,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     # 현재가(close) 대비 고가(high)의 순수 물리적 거리를 계산 (양봉 기준)
     upper_wick_dist_pct = (curr['high'] - curr_price) / curr_price * 100
     
-    if upper_wick_dist_pct >= 2.0:
+    if upper_wick_dist_pct >= 5.0:
         return False, f"🚫 [저항과다] 윗꼬리(현재가대비):{upper_wick_dist_pct:.2f}%", "F", data_dict
         
     ###### [신규 추가] 스테이블 코인 및 185일선 고점(상위 30%) 원천 차단 ######
@@ -467,10 +467,10 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         dynamic_rise = ((win_high - win_low) / win_low * 100) if win_low > 0 else 0
         #print(f"DEBUG: {symbol} | 골크 발생. 골크점 : {199-gold_index} | 시작점 : {199-check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
         # 7% 이상 급등락이 있었으면 탈락
-        if dynamic_rise >= 10.0:
+        if dynamic_rise >= 20.0:
             data_dict['dynamic_rise_YN'] = 'Y'
             print(f"DEBUG: {symbol} | 골크 발생. 골크점 : {199-gold_index} | 시작점 : {199-check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise:.2f}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
-            return False, f"🚫 [제외] 골크 전후 변동성 과다({dynamic_rise:.1f}% >= 5%)", "B", data_dict
+            return False, f"🚫 [제외] 골크 전후 변동성 과다({dynamic_rise:.1f}% >= 20%)", "B", data_dict
         # else:
         #     print(f"DEBUG: {symbol} | 골크 발생. 골크점 : {199-gold_index} | 시작점 : {199-check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
     else:
@@ -493,9 +493,9 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         dynamic_rise = ((win_high - win_low) / win_low * 100) if win_low > 0 else 0
         # print(f"DEBUG: {symbol} | 골크 미발생. 시작점: {check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
         # 7% 이상 급등락이 있었으면 탈락
-        if dynamic_rise >= 10.0:
+        if dynamic_rise >= 20.0:
             data_dict['dynamic_rise_YN'] = 'Y'
-            return False, f"🚫 [제외] 골크 미발생 변동성 과다({dynamic_rise:.1f}% >= 5%)", "B", data_dict
+            return False, f"🚫 [제외] 골크 미발생 변동성 과다({dynamic_rise:.1f}% >= 20%)", "B", data_dict
     bars_since_gold = len(df) - gold_index if gold_index != -1 else -1
     data_dict['bars_since_gold'] = bars_since_gold
     
@@ -597,6 +597,13 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
         return False, reason, "", data_dict
 
+    ma40_slope_common = ((ma40_val - prev_ma40) / prev_ma40) * 100 if prev_ma40 > 0 else 0
+    prev_close_val = float(prev['close'])
+    is_true_trigger = (ma40_slope_common >= -0.005) and (prev_close_val <= prev_ma40) and (curr_price > ma40_val) and (curr_price <= ma40_val * 1.03)
+    
+    base_avg_vol_t3 = df['vol'].tail(20).mean()
+    vol_ratio_t3 = (float(curr['vol']) / base_avg_vol_t3) if base_avg_vol_t3 > 0 else 0
+
     ###################  TYPE3 START ###################
     # 1. 기본 지표 및 과거 바닥(Oversold) 이력 확인
     ma5_val = float(curr['ma5']) if not pd.isna(curr['ma5']) else curr_price
@@ -639,15 +646,15 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
 
                 # [수정] S급: 하한선(-0.5) 확장 + 상한선(0.03) 제한 + 5봉 수렴 조건(is_converging_5b) 추가
                 if (not has_prior_gc) and (prev_ma5 <= prev_ma40) and (ma5_slope > 0) and (curr_slope_40 > -0.07) and (-0.8 < disparity_5_40 < 0) and is_converging_5b:
-                    if  -0.5 <= disparity_5_40 < 0:
-                        # [S+급] 40선 아래에서 격돌 중 (골크 전)
+                    if (-0.5 <= disparity_5_40 < 0) and vol_ratio_t3 < 0.7 and is_true_trigger:
+                        # [S+급] 40선 아래에서 격돌 중 (골크 전) + 찐 트리거
                         data_dict['grade'] = 'S+'
-                        data_dict['multiplier'] = 2.0  # S급 이상일 때 2배 금액 배정
-                        return True, f"💎 [TYPE3-S+] 골크 전 바닥 격돌 ({disparity_5_40:.2f}%)", "S+", data_dict
-                    else:
-                        # [S급] 40선 위로 막 돌파 (골크 후, 상한 0.5% 제한)
+                        data_dict['multiplier'] = 2.0  
+                        return True, f"💎 [TYPE3-S+] 골크 전 바닥 격돌 및 찐 트리거 ({disparity_5_40:.2f}%)", "S+", data_dict
+                    elif vol_ratio_t3 < 0.7 and is_true_trigger:
+                        # [S급] 찐 트리거 및 거래량 조건 만족 시 S급 확정 (격격 이격도 완화)
                         data_dict['grade'] = 'S'
-                        return True, f"💎 [TYPE3-S] 골크 전 바닥 위치 ({disparity_5_40:.2f}%)", "S", data_dict
+                        return True, f"💎 [TYPE3-S] 바닥 40선 찐 트리거 안착 및 수렴 ({disparity_5_40:.2f}%)", "S", data_dict
                 else:
                     logger.info(f"DEBUG: {symbol} | [TYPE3-S] 탈락 이유 | 조건1(골크 미존재) :  {not has_prior_gc} and 조건2(prev_ma5-prev_ma40): {prev_ma5 - prev_ma40:.2f} <= 0 and 조건3(ma5_slope): {ma5_slope:.2f} > 0 and 조건4(curr_slope_40): {curr_slope_40 + 0.1:.2f} > 0 and 조건5(5/40 수렴): {is_converging_5b} and 조건6(이격): {disparity_5_40:.2f}")
                 # [A급] 40선 기울기가 0 이상으로 전환 (추세 반전 확인)
@@ -760,14 +767,15 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             
             # 둘 중 하나라도 만족하면 '바닥 안착'으로 인정하고 진입 타점 계산 시작
             if is_slope_strong or is_slope_dense:
-                # [유지] 상단 공통 지표(ma90_up_count, is_converging_5b)를 활용하여 90선 하락 종목 차단
-                if disparity_gold <= 0.005 and is_converging_5_40 and (-0.8 <= gap_5_40_pct <= 0.3) and (ma90_up_count >= 2):
+                ###### [수정 시작: 문을 넓히고(1.5%) S/S+ 판정 전에 찐 트리거로 조임] ######
+                # [유지] 90선 하락 종목 차단 + [수정] 185선 이격 완화(0.015) 및 찐 트리거 필수
+                if disparity_gold <= 0.015 and is_converging_5_40 and (-0.8 <= gap_5_40_pct <= 0.3) and (ma90_up_count >= 2) and is_true_trigger:
                     if is_40_90_gc:
                         data_dict['grade'] = 'S+'
-                        return True, "💎 [TYPE1-S+] 밥그릇 수렴 및 40/90 골든크로스 확정", "S+", data_dict
+                        return True, "💎 [TYPE1-S+] 밥그릇 수렴 및 40/90 골크 + 찐 트리거", "S+", data_dict
                     else:
                         data_dict['grade'] = 'S'
-                        return True, "💎 [TYPE1-S] 밥그릇 바닥 수렴 및 5/40선 안착 확인", "S", data_dict
+                        return True, "💎 [TYPE1-S] 밥그릇 바닥 수렴 및 40선 찐 트리거 안착", "S", data_dict
                 else:
                     logger.info(f"DEBUG: {symbol} | [TYPE1-S/S+] 격돌 실패 | 골크 : {disparity_gold} <= 0.005 | 5/40수렴: {is_converging_5_40} | 5/40 gap pct: -0.8 <= {gap_5_40_pct:.2f}% <= 0.3 | 90선 상승: {ma90_up_count} >= 2")
 
@@ -828,7 +836,9 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         is_t2_rebound = (-0.8 <= gap_5_40_pct <= 0.3) and (ma5_slope > 0) and is_converging_5_40
 
         # [C] 최종 판정 및 요청하신 키워드 로그 반영
-        if is_type2_safe and is_t2_rebound and has_t1_history_clean and (ma90_up_count >= 2) and is_185_landing_stable:
+        ###### [수정 시작: S/S+ 판정 전에 40선 내려앉음 및 찐 트리거로 조임] ######
+        has_down_touch = (df['close'].iloc[-11:-1] < df['ma40'].iloc[-11:-1]).any() if len(df) >= 11 else False
+        if is_type2_safe and is_t2_rebound and has_t1_history_clean and (ma90_up_count >= 2) and is_185_landing_stable and has_down_touch and is_true_trigger:
             gc_idx = valid_gc_idx
             d_cnt = sum(1 for k in range(gc_idx-96, gc_idx-10) if df['ma185'].iloc[k] <= df['ma185'].iloc[k-1]) if gc_idx != -1 else 0
             height_pct = (curr_price - ma185_val) / ma185_val * 100
@@ -836,7 +846,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             if d_cnt >= 50 and height_pct <= 8.0:
                 grade = "S+" if curr_price >= ma185_val else "S"
                 data_dict['grade'] = grade
-                return True, f"💎 [TYPE2-{grade}] 40선 수렴 및 순수 추세 확인", grade, data_dict
+                return True, f"💎 [TYPE2-{grade}] 40선 내려앉음 후 찐 트리거 안착 ({grade})", grade, data_dict
             else:
                 logger.info(f"DEBUG: {symbol} | [TYPE2] T1질적지표 탈락 이유: d_cnt={d_cnt}, height={height_pct:.1f}%")
         else:

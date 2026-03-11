@@ -184,10 +184,19 @@ async def safe_market_buy(symbol, cost, grade="A", buy_type=1):
 
 async def get_my_assets():
     """[수익률 해결] inventory.json(로컬)을 API보다 우선 참조하여 -100% 원천 차단"""
+    # 변수 미정의 오류 방지를 위해 최상단 선언
+    inv, assets, my_assets = {}, {}, {}
     try:
-        balance = await asyncio.to_thread(exchange.fetch_balance)
-        inv = load_inventory()
-        assets = {}
+        # 빗썸 Private API 필수 규격 적용
+        params = {'currency': 'ALL', 'payment_currency': 'KRW'}
+        balance = await asyncio.to_thread(exchange.fetch_balance, params=params)
+        
+        if os.path.exists(INV_FILE):
+            with open(INV_FILE, "r") as f:
+                inv = json.load(f)
+
+        # 보유 원화(KRW) 처리
+        krw_total = float(balance['total'].get('KRW', 0))
 
         is_inv_changed = False # 파일 저장 트리거
 
@@ -298,10 +307,8 @@ async def get_my_assets():
                 logger.error(f"Asset loop Inventory Save Error: {e}")
         return assets
     except Exception as e:
-        # 정확한 에러 내용(인증 실패, IP 차단 등)을 로그에 찍습니다.
-        config.logger.error(f"❌ Asset Fetch Error 상세: {str(e)}")
-        # 만약 인증 에러(Authentication) 문구가 포함되어 있다면 키 설정을 의심해야 합니다.
-        return {}
+        logger.error(f"❌ Asset Fetch Error 상세 : {e}")
+        return {} # 에러 시 빈 딕셔너리 반환하여 루프 중단 방지
 
 
 async def get_buy_cost():
@@ -332,11 +339,15 @@ async def buy_scan_task(app):
     global notified_symbols, buy_individual_status, pending_s_buys, missed_60m_tracker
     while True:
         try:
+            m_data = await asyncio.to_thread(exchange.load_markets, params={'quoteId': 'KRW'})
+            markets = list(m_data.values())
+            
             assets = await get_my_assets()
             owned_symbols = set(assets.keys())
+            
             is_night = config.is_sleeping_time()
             w_list = strategy.get_warning_list()
-            markets = await asyncio.to_thread(exchange.fetch_markets)
+            
             current_buy_mode = getattr(config, 'buy_mute_mode', 'WATCH')
             current_display_mode = "AUTO (야간)" if is_night else current_buy_mode
 
@@ -345,11 +356,14 @@ async def buy_scan_task(app):
                 if m['quote'] == 'KRW' and m['active']
                    and m['symbol'].split('/')[0] not in w_list
             ]
-            # 1. 시장 전체 종목 등락률 수집 및 Panic Filter 상태 업데이트
-            all_tickers = await asyncio.to_thread(exchange.fetch_tickers)
-            market_rates = [float(all_tickers[m['symbol']]['percentage']) for m in krw_filtered 
-                            if m['symbol'] in all_tickers and all_tickers[m['symbol']].get('percentage') is not None]
-            
+
+            # [수정] dna_collector 성공 로직: 전체 티커를 quoteId 파라미터로 안전하게 호출
+            all_tickers = await asyncio.to_thread(exchange.fetch_tickers, params={'quoteId': 'KRW'})
+
+            market_rates = [
+                float(all_tickers[m['symbol']]['percentage']) for m in krw_filtered 
+                if isinstance(all_tickers, dict) and m['symbol'] in all_tickers and all_tickers[m['symbol']].get('percentage') is not None
+            ]
             if market_rates:
                 current_market_avg = sum(market_rates) / len(market_rates)
                 # [수정 시작] strategy에서 리턴하는 상태 변화 여부와 메시지를 변수에 담음
