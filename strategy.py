@@ -119,7 +119,7 @@ def get_updated_emergency_level(symbol, current_level, buy_type, rsi, is_3m_belo
 
     # 1. 트리거 (0 -> 2): 진입 조건 (기존 유지)
     if current_level == 0:
-        if (profit_pct >= 10.0 or has_rsi_spike or soaring_rate >= 3.0 or 
+        if (profit_pct >= 10.0 or has_rsi_spike or soaring_rate >= 1.5 or 
             (str(buy_type) == '3' and not is_type3_stable) or max_profit_pct >= 5.0):
             return 2
     
@@ -342,6 +342,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     df.loc[df.index[-1], 'close'] = curr_price
     df['ma5'] = df['close'].rolling(5).mean()
     df['ma20'] = df['close'].rolling(20).mean()
+    df['ma14'] = df['close'].rolling(14).mean()
     df['ma40'] = df['close'].rolling(40).mean()
     df['ma90'] = df['close'].rolling(90).mean()
     df['ma185'] = df['close'].rolling(185).mean()
@@ -353,6 +354,8 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
 
     ###### 전수조사 반영: 모든 TYPE에서 사용하는 공통 변수 사전 정의 ######
     ma5_val = float(curr['ma5']) if not pd.isna(curr['ma5']) else curr_price
+    ma14_val = float(curr['ma14']) if not pd.isna(curr['ma14']) else 0
+    prev_ma14 = float(prev['ma14'])
     ma40_val = float(curr['ma40']) if not pd.isna(curr['ma40']) else 0
     ma90_val = float(curr['ma90']) if not pd.isna(curr['ma90']) else 0
     ma185_val = float(curr['ma185']) if not pd.isna(curr['ma185']) else 0
@@ -376,8 +379,10 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     ma90_up_count = (df['ma90'].diff().tail(10) > 0).sum()
     # 2. 5-40선 이격도 및 수렴 여부
     gap_5_40_pct = (ma5_val - ma40_val) / ma40_val * 100 if ma40_val > 0 else 0
-    disps_5b = [abs(df['ma5'].iloc[-i] - df['ma40'].iloc[-i]) / df['ma40'].iloc[-i] * 100 if df['ma40'].iloc[-i] > 0 else 999 for i in range(1, 6)]
-    is_converging_5_40 = all(disps_5b[i] <= disps_5b[i+1] for i in range(4))
+    # 11봉의 데이터를 수집하여 10번의 인접 비교 구간을 생성
+    disps_common = [abs(df['ma5'].iloc[-i] - df['ma40'].iloc[-i]) / df['ma40'].iloc[-i] * 100 if df['ma40'].iloc[-i] > 0 else 999 for i in range(1, 12)]
+    # 10회의 비교 중 60% (6회) 이상 수렴하거나 평행하면 통과 (일시적 발산 노이즈 무시)
+    is_converging_5_40 = (sum(1 for i in range(10) if disps_common[i] <= disps_common[i+1]) >= 6)
     # 3. 185일선 안착 안정성 (최근 10봉 하락 틱 수)
     t1_v2_tick = get_bithumb_tick_size(ma185_val)
     total_drop_ticks = ((df['ma185'].diff().tail(10) * -1) / t1_v2_tick).clip(lower=0).sum() if t1_v2_tick > 0 else 999
@@ -842,12 +847,24 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         vol_sectional = ((df['high'].tail(64).max() - df['low'].tail(64).min()) / df['low'].tail(64).min()) * 100
         is_type2_safe = (vol_sectional <= 10.0) and is_fresh
         # 상단 공통 변수(gap_5_40_pct, is_converging_5_40) 사용
-        is_t2_rebound = (-0.8 <= gap_5_40_pct <= 0.3) and (ma5_slope > 0) and is_converging_5_40
+        # ////////// [수정: 이전 기울기 대비 개선/평행 확인 및 발산 허용] //////////
+        prev2_ma14 = float(df.iloc[-3]['ma14']) if len(df) >= 3 else prev_ma14
+        prev_ma14_slope = ((prev_ma14 - prev2_ma14) / prev2_ma14) * 100 if prev2_ma14 > 0 else 0
+        ma14_slope = ((ma14_val - prev_ma14) / prev_ma14) * 100 if prev_ma14 > 0 else 0
+        gap_14_40_pct = ((ma14_val - ma40_val) / ma40_val) * 100 if ma40_val > 0 else 0
+        
+        if ma5_val < ma40_val:
+            is_valid_convergence = is_converging_5_40
+        else:
+            is_valid_convergence = (ma5_slope > 0)
+            
+        is_t2_rebound = (-1.0 <= gap_14_40_pct <= 0.5) and (ma14_slope >= prev_ma14_slope) and is_valid_convergence
+        is_true_trigger_t2 = (curr_price > ma14_val) and (curr_price <= ma14_val * 1.03)
 
         # [C] 최종 판정 및 요청하신 키워드 로그 반영
         ###### [수정 시작: S/S+ 판정 전에 40선 내려앉음 및 찐 트리거로 조임] ######
         has_down_touch = (df['close'].iloc[-11:-1] < df['ma40'].iloc[-11:-1]).any() if len(df) >= 11 else False
-        if is_type2_safe and is_t2_rebound and has_t1_history_clean and (ma90_up_count >= 2) and is_185_landing_stable and has_down_touch and is_true_trigger:
+        if is_type2_safe and is_t2_rebound and has_t1_history_clean and (ma90_up_count >= 2) and is_185_landing_stable and has_down_touch and is_true_trigger_t2:
             gc_idx = valid_gc_idx
             d_cnt = sum(1 for k in range(gc_idx-96, gc_idx-10) if df['ma185'].iloc[k] <= df['ma185'].iloc[k-1]) if gc_idx != -1 else 0
             height_pct = (curr_price - ma185_val) / ma185_val * 100
@@ -861,8 +878,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         else:
             reasons = []
             if not is_type2_safe: reasons.append(f"안전가드(변동성:{vol_sectional:.1f}%)")
-            if not is_t2_rebound: reasons.append(f"수렴실패(이격:{gap_5_40_pct:.2f}%)")
-            if not has_t1_history_clean: reasons.append(f"역사오염(GC:{gc_count_150}, DC:{dc_count_after_gc})")
+            if not is_t2_rebound: reasons.append(f"수렴실패(이격14:{gap_14_40_pct:.2f}%, 기울기14:{ma14_slope:.3f}%, 5선발산방어:{is_valid_convergence})")            if not has_t1_history_clean: reasons.append(f"역사오염(GC:{gc_count_150}, DC:{dc_count_after_gc})")
             if ma90_up_count < 4: reasons.append(f"90선추세({ma90_up_count})")
             if not is_185_landing_stable: reasons.append(f"185선불안정")
             

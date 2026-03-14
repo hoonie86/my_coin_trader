@@ -784,7 +784,7 @@ async def sell_monitor_task(app):
     while True:
         try:
             # 기본 대기 시간 1분
-            current_loop_wait_time = 60
+            current_loop_wait_time = 20
             current_loop_sleep = current_loop_wait_time
             # [추가] 서버 실시간 확인용 시간
             now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -989,6 +989,11 @@ async def sell_monitor_task(app):
                 ###### 수익 10분 유예 타이머 (수익 릴레이) ######
                 now_time = datetime.now()
                 is_relay_updated = False # 파일 저장 트리거
+
+                # ////////// [수정: TYPE2 매수 시그널 유지 여부 실시간 확인] //////////
+                w_list = strategy.get_warning_list()
+                is_buy_now, buy_reason_now, _, _ = await strategy.check_buy_signal(exchange, df, symbol, w_list)
+                is_t2_signal_alive = (is_buy_now and "TYPE2" in buy_reason_now)
                 
                 # 시작 및 갱신: 수익 1% 이상이고 매도 신호 없을 때만 동작
                 if this_profit >= 1.0 and not is_urgent and not is_sell_signal:
@@ -1003,14 +1008,15 @@ async def sell_monitor_task(app):
                             f"🚨 [{symbol}] 수익 1% 돌파! 10분 매도 유예를 시작합니다.\n추가 수익 갱신이 없으면 매도됩니다."
                         )
                     # 수익 고점 갱신: 기존 수익보다 단 0.01%라도 높으면 10분 재설정
-                    elif this_profit > inv_item.get('max_profit_seen', 0):
+                    elif this_profit > inv_item.get('max_profit_seen', 0) or is_t2_signal_alive:
+                        update_reason = "고점 갱신" if this_profit > inv_item.get('max_profit_seen', 0) else "TYPE2 시그널 유지"
                         inv_item['profit_deadline'] = (now_time + timedelta(minutes=10)).strftime('%Y-%m-%d %H:%M:%S')
-                        inv_item['max_profit_seen'] = this_profit
+                        inv_item['max_profit_seen'] = max(this_profit, inv_item.get('max_profit_seen', 0))
                         inv_data[symbol] = inv_item
                         is_relay_updated = True
                         await app.bot.send_message(
                             config.CHAT_ID, 
-                            f"🔄 [{symbol}] 고점 갱신({this_profit:+.2f}%)! 유예 시간을 10분으로 재설정합니다."
+                            f"🔄 [{symbol}] {update_reason}({this_profit:+.2f}%)! 유예 시간을 10분으로 재설정합니다."
                         )
 
                 # 매도 집행: 수익률 조건(this_profit >= 1.0)과 무관하게 타이머가 만료되었는지 항시 확인
