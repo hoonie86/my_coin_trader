@@ -375,17 +375,17 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     ma5_slope = ((ma5_val - prev_ma5) / prev_ma5) * 100 if prev_ma5 > 0 else 0
     ##########################################################################
     # [1단계: TYPE 1, 2 공통 지표 사전 계산]
-    # 1. 90선 우상향 밀도 (최근 10봉 중 상승 횟수)
+    # 1. 90선 세기: 양수이거나, 음수일 때 직전보다 완만해져야 True
     ma90_v = df['ma90'].diff() # 현재 90선의 기울기(속도)
     # 논리: (현재 기울기가 0 이상인가?) OR (음수라면 현재 기울기가 이전보다 크거나 같은가?)
     # 5 -> 3 (True), -5 -> -3 (True), -3 -> -5 (False)
-    ma90_intensity_ok = (ma90_v >= 0) | (ma90_v >= ma90_v.shift(1))
+    ma90_intensity_ok = (ma90_v >= 0) | (ma90_v > ma90_v.shift(1))
     # 최근 10봉 중 위 조건을 만족하는 횟수가 6번(60%) 이상인지 계산
     ma90_up_count = ma90_intensity_ok.tail(10).sum()
 
     ma40_v = df['ma40'].diff()
     # 양수 프리패스 OR 음수 구간 내 변곡점(현재 기울기 >= 이전 기울기) 체크
-    ma40_intensity_ok = (ma40_v >= 0) | (ma40_v >= ma40_v.shift(1))
+    ma40_intensity_ok = (ma40_v >= 0) | (ma40_v > ma40_v.shift(1))
     ma40_up_count = ma40_intensity_ok.tail(10).sum()
 
     # 2. 5-40선 이격도 및 수렴 여부
@@ -869,7 +869,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         else:
             is_valid_convergence = (ma5_slope > 0)
             
-        is_t2_rebound = (-1.0 <= gap_14_40_pct <= 0.5) and (ma14_slope >= prev_ma14_slope) and is_valid_convergence
+        is_t2_rebound = (-1.0 <= gap_14_40_pct <= 0.3) and ((ma14_slope >= 0) or (ma14_slope > prev_ma14_slope)) and is_valid_convergence
         is_true_trigger_t2 = (curr_price > ma14_val) and (curr_price <= ma14_val * 1.03)
 
         # [C] 최종 판정 및 요청하신 키워드 로그 반영
