@@ -372,11 +372,11 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     slope_rate = ((ma185_val - prev_ma185) / prev_ma185) * 100 if prev_ma185 > 0 else 0
     
     slope_rate = ((ma185_val - prev_ma185) / prev_ma185) * 100 if prev_ma185 > 0 else 0
-
+    ma5_slope = ((ma5_val - prev_ma5) / prev_ma5) * 100 if prev_ma5 > 0 else 0
     ##########################################################################
     # [1단계: TYPE 1, 2 공통 지표 사전 계산]
     # 1. 90선 우상향 밀도 (최근 10봉 중 상승 횟수)
-    ma90_up_count = (df['ma90'].diff().tail(10) > 0).sum()
+    ma90_up_count = (df['ma90'].diff().tail(10) >= 0).sum()
     # 2. 5-40선 이격도 및 수렴 여부
     gap_5_40_pct = (ma5_val - ma40_val) / ma40_val * 100 if ma40_val > 0 else 0
     # 11봉의 데이터를 수집하여 10번의 인접 비교 구간을 생성
@@ -601,7 +601,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         reason = f"185일선 급락(diff:{diff_185:.2f} < -1.2)"
         data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
         return False, reason, "", data_dict
-
+        
     ma40_slope_common = ((ma40_val - prev_ma40) / prev_ma40) * 100 if prev_ma40 > 0 else 0
     prev_close_val = float(prev['close'])
     ###### [수정 제안: 찐 트리거의 범용성 확대] ######
@@ -783,7 +783,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             if is_slope_strong or is_slope_dense:
                 ###### [수정 시작: 문을 넓히고(1.5%) S/S+ 판정 전에 찐 트리거로 조임] ######
                 # [유지] 90선 하락 종목 차단 + [수정] 185선 이격 완화(0.015) 및 찐 트리거 필수
-                if disparity_gold <= 0.015 and is_converging_5_40 and (-0.8 <= gap_5_40_pct <= 0.3) and (ma90_up_count >= 2) and is_true_trigger:
+                if disparity_gold <= 0.015 and is_converging_5_40 and (-0.8 <= gap_5_40_pct <= 0.3) and (ma90_up_count >= 5) and is_true_trigger:
                     if is_40_90_gc:
                         data_dict['grade'] = 'S+'
                         return True, "💎 [TYPE1-S+] 밥그릇 수렴 및 40/90 골크 + 찐 트리거", "S+", data_dict
@@ -791,7 +791,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                         data_dict['grade'] = 'S'
                         return True, "💎 [TYPE1-S] 밥그릇 바닥 수렴 및 40선 찐 트리거 안착", "S", data_dict
                 else:
-                    logger.info(f"DEBUG: {symbol} | [TYPE1-S/S+] 격돌 실패 | 골크 : {disparity_gold} <= 0.005 | 5/40수렴: {is_converging_5_40} | 5/40 gap pct: -0.8 <= {gap_5_40_pct:.2f}% <= 0.3 | 90선 상승: {ma90_up_count} >= 2")
+                    logger.info(f"DEBUG: {symbol} | [TYPE1-S/S+] 격돌 실패 | 골크 : {disparity_gold} <= 0.005 | 5/40수렴: {is_converging_5_40} | 5/40 gap pct: -0.8 <= {gap_5_40_pct:.2f}% <= 0.3 | 90선 상승: {ma90_up_count} >= 6")
 
                 # [A+급] 바닥 탈출 + 40/90 정배열 가속 (추세 가속 확인)
                 # S+가 '골든크로스 순간'이라면, A+는 '정배열 유지 + 수급' 타점으로 차별화
@@ -864,7 +864,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         # [C] 최종 판정 및 요청하신 키워드 로그 반영
         ###### [수정 시작: S/S+ 판정 전에 40선 내려앉음 및 찐 트리거로 조임] ######
         has_down_touch = (df['close'].iloc[-11:-1] < df['ma40'].iloc[-11:-1]).any() if len(df) >= 11 else False
-        if is_type2_safe and is_t2_rebound and has_t1_history_clean and (ma90_up_count >= 2) and is_185_landing_stable and has_down_touch and is_true_trigger_t2:
+        if is_type2_safe and is_t2_rebound and has_t1_history_clean and (ma90_up_count >= 5) and is_185_landing_stable and has_down_touch and is_true_trigger_t2:
             gc_idx = valid_gc_idx
             d_cnt = sum(1 for k in range(gc_idx-96, gc_idx-10) if df['ma185'].iloc[k] <= df['ma185'].iloc[k-1]) if gc_idx != -1 else 0
             height_pct = (curr_price - ma185_val) / ma185_val * 100
@@ -878,8 +878,9 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         else:
             reasons = []
             if not is_type2_safe: reasons.append(f"안전가드(변동성:{vol_sectional:.1f}%)")
-            if not is_t2_rebound: reasons.append(f"수렴실패(이격14:{gap_14_40_pct:.2f}%, 기울기14:{ma14_slope:.3f}%, 5선발산방어:{is_valid_convergence})")            if not has_t1_history_clean: reasons.append(f"역사오염(GC:{gc_count_150}, DC:{dc_count_after_gc})")
-            if ma90_up_count < 4: reasons.append(f"90선추세({ma90_up_count})")
+            if not is_t2_rebound: reasons.append(f"수렴실패(이격14:{gap_14_40_pct:.2f}%, 기울기14:{ma14_slope:.3f}%, 5선발산방어:{is_valid_convergence})")            
+            if not has_t1_history_clean: reasons.append(f"역사오염(GC:{gc_count_150}, DC:{dc_count_after_gc})")
+            if ma90_up_count < 5: reasons.append(f"90선추세({ma90_up_count})")
             if not is_185_landing_stable: reasons.append(f"185선불안정")
             
             if reasons:

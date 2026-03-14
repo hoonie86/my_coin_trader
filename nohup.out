@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "/home/rocky/my_coin_trader/main.py", line 13, in <module>
+    import strategy, config, telegram_ui, analyzer
+  File "/home/rocky/my_coin_trader/strategy.py", line 882
+    if not is_t2_rebound: reasons.append(f"수렴실패(이격14:{gap_14_40_pct:.2f}%, 기울기14:{ma14_slope:.3f}%, 5선발산방어:{is_valid_convergence})")            if not has_t1_history_clean: reasons.append(f"역사오염(GC:{gc_count_150}, DC:{dc_count_after_gc})")
+                                                                                                                                                                                                       ^
+SyntaxError: invalid syntax
