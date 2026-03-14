@@ -376,7 +376,18 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     ##########################################################################
     # [1단계: TYPE 1, 2 공통 지표 사전 계산]
     # 1. 90선 우상향 밀도 (최근 10봉 중 상승 횟수)
-    ma90_up_count = (df['ma90'].diff().tail(10) >= 0).sum()
+    ma90_v = df['ma90'].diff() # 현재 90선의 기울기(속도)
+    # 논리: (현재 기울기가 0 이상인가?) OR (음수라면 현재 기울기가 이전보다 크거나 같은가?)
+    # 5 -> 3 (True), -5 -> -3 (True), -3 -> -5 (False)
+    ma90_intensity_ok = (ma90_v >= 0) | (ma90_v >= ma90_v.shift(1))
+    # 최근 10봉 중 위 조건을 만족하는 횟수가 6번(60%) 이상인지 계산
+    ma90_up_count = ma90_intensity_ok.tail(10).sum()
+
+    ma40_v = df['ma40'].diff()
+    # 양수 프리패스 OR 음수 구간 내 변곡점(현재 기울기 >= 이전 기울기) 체크
+    ma40_intensity_ok = (ma40_v >= 0) | (ma40_v >= ma40_v.shift(1))
+    ma40_up_count = ma40_intensity_ok.tail(10).sum()
+
     # 2. 5-40선 이격도 및 수렴 여부
     gap_5_40_pct = (ma5_val - ma40_val) / ma40_val * 100 if ma40_val > 0 else 0
     # 11봉의 데이터를 수집하여 10번의 인접 비교 구간을 생성
@@ -610,7 +621,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     # 3. 이격 조절: 40선 대비 0.5% ~ 3% 이내 (너무 선에 붙어있지 않아도 됨)
 
     is_true_trigger = (
-        (ma40_slope_common >= -0.015) and      # 40선이 충분히 누웠는가
+        (ma40_up_count >= 6) and                # 40선 흐름이 50% 이상 개선/평행인가
             (curr_price > ma40_val) and             # 40선 위에 있는가
                 (curr_price <= ma40_val * 1.03)         # 너무 뜬 건 아닌가 (3% 가드)
                 )
@@ -791,7 +802,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                         data_dict['grade'] = 'S'
                         return True, "💎 [TYPE1-S] 밥그릇 바닥 수렴 및 40선 찐 트리거 안착", "S", data_dict
                 else:
-                    logger.info(f"DEBUG: {symbol} | [TYPE1-S/S+] 격돌 실패 | 골크 : {disparity_gold} <= 0.005 | 5/40수렴: {is_converging_5_40} | 5/40 gap pct: -0.8 <= {gap_5_40_pct:.2f}% <= 0.3 | 90선 상승: {ma90_up_count} >= 6")
+                    logger.info(f"DEBUG: {symbol} | [TYPE1-S/S+] 격돌 실패 | 골크 : {disparity_gold} <= 0.005 | 5/40수렴: {is_converging_5_40} | 5/40 gap pct: -0.8 <= {gap_5_40_pct:.2f}% <= 0.3 | 90선 상승: {ma90_up_count} >= 5")
 
                 # [A+급] 바닥 탈출 + 40/90 정배열 가속 (추세 가속 확인)
                 # S+가 '골든크로스 순간'이라면, A+는 '정배열 유지 + 수급' 타점으로 차별화
