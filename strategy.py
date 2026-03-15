@@ -387,7 +387,12 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     # 양수 프리패스 OR 음수 구간 내 변곡점(현재 기울기 >= 이전 기울기) 체크
     ma40_intensity_ok = (ma40_v >= 0) | (ma40_v > ma40_v.shift(1))
     ma40_up_count = ma40_intensity_ok.tail(10).sum()
-
+    # ////////// [수정: MA185 하락 강도 완화 및 변곡점 60% 로직] //////////
+    ma185_v = df['ma185'].diff()
+    # 1. 0 이상(평행/상향)이거나 2. 음수 구간에서 직전보다 수치상 커져야(완만해져야) True
+    # -3 > -3 (False), -3 > -5 (True)
+    ma185_intensity_ok = (ma185_v >= 0) | (ma185_v > ma185_v.shift(1))
+    ma185_up_count = ma185_intensity_ok.tail(10).sum()
     # 2. 5-40선 이격도 및 수렴 여부
     gap_5_40_pct = (ma5_val - ma40_val) / ma40_val * 100 if ma40_val > 0 else 0
     # 11봉의 데이터를 수집하여 10번의 인접 비교 구간을 생성
@@ -841,10 +846,15 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             if idx <= 30: continue
             
             # 골든크로스 & 데드존 검증 (진짜 밥그릇인지 확인)
+            # [수정] 골든크로스 시점의 185선 기울기 질적 검증 추가
             if df['ma40'].iloc[idx-1] <= df['ma185'].iloc[idx-1] and df['ma40'].iloc[idx] > df['ma185'].iloc[idx]:
-                if (df.iloc[idx-30:idx]['ma40'] < df.iloc[idx-30:idx]['ma185']).sum() >= 20:
-                    gc_count_150 += 1
-                    if valid_gc_idx == -1: valid_gc_idx = idx
+                v185_at_gc = df['ma185'].iloc[idx] - df['ma185'].iloc[idx-1]
+                v185_prev_at_gc = df['ma185'].iloc[idx-1] - df['ma185'].iloc[idx-2]
+                # 185선이 평행 이상이거나 하락세가 둔화되었을 때만 인정
+                if (v185_at_gc >= 0) or (v185_at_gc > v185_prev_at_gc):
+                    if (df.iloc[idx-30:idx]['ma40'] < df.iloc[idx-30:idx]['ma185']).sum() >= 20:
+                        gc_count_150 += 1
+                        if valid_gc_idx == -1: valid_gc_idx = idx
             
             # 오염 감시 (유효 골크 이후 단 1원이라도 하회(데드크로스) 시 즉시 오염 처리)
             if valid_gc_idx != -1 and idx > valid_gc_idx:
@@ -869,13 +879,13 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         else:
             is_valid_convergence = (ma5_slope > 0)
             
-        is_t2_rebound = (-1.0 <= gap_14_40_pct <= 0.3) and ((ma14_slope >= 0) or (ma14_slope > prev_ma14_slope)) and is_valid_convergence
+        is_t2_rebound = (-1.0 <= gap_14_40_pct <= 0) and ((ma14_slope >= 0) or (ma14_slope > prev_ma14_slope)) and is_valid_convergence
         is_true_trigger_t2 = (curr_price > ma14_val) and (curr_price <= ma14_val * 1.03)
 
         # [C] 최종 판정 및 요청하신 키워드 로그 반영
         ###### [수정 시작: S/S+ 판정 전에 40선 내려앉음 및 찐 트리거로 조임] ######
         has_down_touch = (df['close'].iloc[-11:-1] < df['ma40'].iloc[-11:-1]).any() if len(df) >= 11 else False
-        if is_type2_safe and is_t2_rebound and has_t1_history_clean and (ma90_up_count >= 5) and is_185_landing_stable and has_down_touch and is_true_trigger_t2:
+        if is_type2_safe and is_t2_rebound and has_t1_history_clean and (ma90_up_count >= 5) and (ma185_up_count >= 5) and is_185_landing_stable and has_down_touch and is_true_trigger_t2:
             gc_idx = valid_gc_idx
             d_cnt = sum(1 for k in range(gc_idx-96, gc_idx-10) if df['ma185'].iloc[k] <= df['ma185'].iloc[k-1]) if gc_idx != -1 else 0
             height_pct = (curr_price - ma185_val) / ma185_val * 100
@@ -1042,11 +1052,11 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
                 logger.info(f"🔍 [수동매수감지] {symbol} 매수 이력 확인: {current_age}봉 경과")
         except Exception as e:
             logger.error(f"⚠️ {symbol} 매수 이력 조회 실패: {e}")    
-    if current_age < 6 and profit_rate_pct < 1.2:
+    if current_age < 6 and profit_rate_pct < 1.5:
         return False, f"진입 초기 유예({current_age}봉)", False
 
         # 1. 본절 방어 (수정된 동적 기준 적용)
-    if profit_threshold <= max_profit_rate_pct < 1.2 and purchase_price <= curr_p <= purchase_price * 1.005:
+    if profit_threshold <= max_profit_rate_pct < 1.5 and purchase_price <= curr_p <= purchase_price * 1.005:
         cooldown_dict[symbol] = datetime.now() + timedelta(hours=6)
         return True, f"🛡️ [S-TS-0.5] 본절방어(즉시)", True
 
