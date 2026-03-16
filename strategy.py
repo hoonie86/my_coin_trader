@@ -379,19 +379,19 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     ma90_v = df['ma90'].diff() # 현재 90선의 기울기(속도)
     # 논리: (현재 기울기가 0 이상인가?) OR (음수라면 현재 기울기가 이전보다 크거나 같은가?)
     # 5 -> 3 (True), -5 -> -3 (True), -3 -> -5 (False)
-    ma90_intensity_ok = (ma90_v >= 0) | (ma90_v > ma90_v.shift(1))
+    ma90_intensity_ok = (ma90_v > 0) | (ma90_v > ma90_v.shift(1))
     # 최근 10봉 중 위 조건을 만족하는 횟수가 6번(60%) 이상인지 계산
     ma90_up_count = ma90_intensity_ok.tail(10).sum()
 
     ma40_v = df['ma40'].diff()
     # 양수 프리패스 OR 음수 구간 내 변곡점(현재 기울기 >= 이전 기울기) 체크
-    ma40_intensity_ok = (ma40_v >= 0) | (ma40_v > ma40_v.shift(1))
+    ma40_intensity_ok = (ma40_v > 0) | (ma40_v > ma40_v.shift(1))
     ma40_up_count = ma40_intensity_ok.tail(10).sum()
     # ////////// [수정: MA185 하락 강도 완화 및 변곡점 60% 로직] //////////
     ma185_v = df['ma185'].diff()
     # 1. 0 이상(평행/상향)이거나 2. 음수 구간에서 직전보다 수치상 커져야(완만해져야) True
     # -3 > -3 (False), -3 > -5 (True)
-    ma185_intensity_ok = (ma185_v >= 0) | (ma185_v > ma185_v.shift(1))
+    ma185_intensity_ok = (ma185_v > 0) | (ma185_v > ma185_v.shift(1))
     ma185_up_count = ma185_intensity_ok.tail(10).sum()
     # 2. 5-40선 이격도 및 수렴 여부
     gap_5_40_pct = (ma5_val - ma40_val) / ma40_val * 100 if ma40_val > 0 else 0
@@ -868,10 +868,10 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         vol_sectional = ((df['high'].tail(64).max() - df['low'].tail(64).min()) / df['low'].tail(64).min()) * 100
         is_type2_safe = (vol_sectional <= 10.0) and is_fresh
         # 상단 공통 변수(gap_5_40_pct, is_converging_5_40) 사용
-        # ////////// [수정: 이전 기울기 대비 개선/평행 확인 및 발산 허용] //////////
-        prev2_ma14 = float(df.iloc[-3]['ma14']) if len(df) >= 3 else prev_ma14
-        prev_ma14_slope = ((prev_ma14 - prev2_ma14) / prev2_ma14) * 100 if prev2_ma14 > 0 else 0
-        ma14_slope = ((ma14_val - prev_ma14) / prev_ma14) * 100 if prev_ma14 > 0 else 0
+        # ////////// [수정: 14선 기울기 세기(최근 6봉 중 3봉 이상 상승 또는 개선) 적용] //////////
+        ma14_v = df['ma14'].diff()
+        ma14_intensity_ok = (ma14_v > 0) | (ma14_v > ma14_v.shift(1))
+        ma14_up_count = ma14_intensity_ok.tail(6).sum()
         gap_14_40_pct = ((ma14_val - ma40_val) / ma40_val) * 100 if ma40_val > 0 else 0
         
         if ma5_val < ma40_val:
@@ -879,7 +879,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         else:
             is_valid_convergence = (ma5_slope > 0)
             
-        is_t2_rebound = (-1.0 <= gap_14_40_pct <= 0) and ((ma14_slope >= 0) or (ma14_slope > prev_ma14_slope)) and is_valid_convergence
+        is_t2_rebound = (-1.0 <= gap_14_40_pct <= 0) and (ma14_up_count >= 3) and is_valid_convergence
         is_true_trigger_t2 = (curr_price > ma14_val) and (curr_price <= ma14_val * 1.03)
 
         # [C] 최종 판정 및 요청하신 키워드 로그 반영
@@ -899,7 +899,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         else:
             reasons = []
             if not is_type2_safe: reasons.append(f"안전가드(변동성:{vol_sectional:.1f}%)")
-            if not is_t2_rebound: reasons.append(f"수렴실패(이격14:{gap_14_40_pct:.2f}%, 기울기14:{ma14_slope:.3f}%, 5선발산방어:{is_valid_convergence})")            
+            if not is_t2_rebound: reasons.append(f"수렴실패(이격14:{gap_14_40_pct:.2f}%, 14선세기:{ma14_up_count}/6, 5선발산방어:{is_valid_convergence})")            
             if not has_t1_history_clean: reasons.append(f"역사오염(GC:{gc_count_150}, DC:{dc_count_after_gc})")
             if ma90_up_count < 5: reasons.append(f"90선추세({ma90_up_count})")
             if not is_185_landing_stable: reasons.append(f"185선불안정")
@@ -1052,11 +1052,11 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
                 logger.info(f"🔍 [수동매수감지] {symbol} 매수 이력 확인: {current_age}봉 경과")
         except Exception as e:
             logger.error(f"⚠️ {symbol} 매수 이력 조회 실패: {e}")    
-    if current_age < 6 and profit_rate_pct < 1.5:
+    if current_age < 6 and profit_rate_pct < 1.2:
         return False, f"진입 초기 유예({current_age}봉)", False
 
         # 1. 본절 방어 (수정된 동적 기준 적용)
-    if profit_threshold <= max_profit_rate_pct < 1.5 and purchase_price <= curr_p <= purchase_price * 1.005:
+    if profit_threshold <= max_profit_rate_pct < 1.2 and purchase_price * 1.005 <= curr_p <= purchase_price * 1.007:
         cooldown_dict[symbol] = datetime.now() + timedelta(hours=6)
         return True, f"🛡️ [S-TS-0.5] 본절방어(즉시)", True
 
