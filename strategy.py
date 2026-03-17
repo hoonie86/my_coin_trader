@@ -797,15 +797,20 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             
             # 둘 중 하나라도 만족하면 '바닥 안착'으로 인정하고 진입 타점 계산 시작
             if is_slope_strong or is_slope_dense:
-                ###### [수정 시작: 문을 넓히고(1.5%) S/S+ 판정 전에 찐 트리거로 조임] ######
-                # [유지] 90선 하락 종목 차단 + [수정] 185선 이격 완화(0.015) 및 찐 트리거 필수
-                if disparity_gold <= 0.015 and is_converging_5_40 and (-0.8 <= gap_5_40_pct <= 0.3) and (ma90_up_count >= 5) and is_true_trigger:
+                
+                # ==== [TYPE1 수정 시작: 185-40선 수렴 추세(6/3) 확인 및 이격 1.5% 복구] ====
+                # 최근 6봉의 185-40 이격도를 구하여 전봉 대비 감소(수렴)한 횟수 계산
+                hist_disp = [abs(df['ma40'].iloc[-i] - df['ma185'].iloc[-i]) / df['ma185'].iloc[-i] if df['ma185'].iloc[-i] > 0 else 999 for i in range(1, 8)]
+                conv_cnt = sum(1 for i in range(6) if hist_disp[i] < hist_disp[i+1])
+                # 1.5% 이격 이내 + 3회 이상 수렴 + 기존 조건 필수 만족
+                if disparity_gold <= 0.015 and conv_cnt >= 3 and is_converging_5_40 and (-0.8 <= gap_5_40_pct <= 0.3) and (ma90_up_count >= 5) and is_true_trigger:
                     if is_40_90_gc:
                         data_dict['grade'] = 'S+'
                         return True, "💎 [TYPE1-S+] 밥그릇 수렴 및 40/90 골크 + 찐 트리거", "S+", data_dict
                     else:
-                        data_dict['grade'] = 'S'
-                        return True, "💎 [TYPE1-S] 밥그릇 바닥 수렴 및 40선 찐 트리거 안착", "S", data_dict
+                        if disparity_gold <= 0.010:
+                            data_dict['grade'] = 'S'
+                            return True, "💎 [TYPE1-S] 밥그릇 바닥 수렴 및 40선 찐 트리거 안착", "S", data_dict
                 else:
                     logger.info(f"DEBUG: {symbol} | [TYPE1-S/S+] 격돌 실패 | 골크 : {disparity_gold} <= 0.005 | 5/40수렴: {is_converging_5_40} | 5/40 gap pct: -0.8 <= {gap_5_40_pct:.2f}% <= 0.3 | 90선 상승: {ma90_up_count} >= 5")
 
@@ -879,7 +884,15 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         else:
             is_valid_convergence = (ma5_slope > 0)
             
-        is_t2_rebound = (-1.0 <= gap_14_40_pct <= 0) and (ma14_up_count >= 3) and is_valid_convergence
+        # ==== [TYPE2 수정 시작: 14선 위치별 이원화 및 5선 가속도(5/3) 체크] ====
+        if gap_14_40_pct <= 0:
+            # 14선이 40선 아래일 때: 기존 14선 3번 상승 로직 유지
+            is_t2_rebound = (-1.0 <= gap_14_40_pct <= 0) and (ma14_up_count >= 3) and is_valid_convergence
+        else:
+            # 14선이 40선 위일 때: 5선 기울기가 최근 5개 중 3개 이상 개선(가속)되었는지 확인
+            slopes = [df['ma5'].iloc[-i] - df['ma5'].iloc[-(i+1)] for i in range(1, 8)]
+            slope_improvements = sum(1 for i in range(5) if slopes[i] > slopes[i+1])
+            is_t2_rebound = (slope_improvements >= 3) and is_valid_convergence
         is_true_trigger_t2 = (curr_price > ma14_val) and (curr_price <= ma14_val * 1.03)
 
         # [C] 최종 판정 및 요청하신 키워드 로그 반영
