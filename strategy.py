@@ -1077,11 +1077,11 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
                 logger.info(f"🔍 [수동매수감지] {symbol} 매수 이력 확인: {current_age}봉 경과")
         except Exception as e:
             logger.error(f"⚠️ {symbol} 매수 이력 조회 실패: {e}")    
-    if current_age < 6 and profit_rate_pct < 1.2:
+    if current_age < 6 and profit_rate_pct < profit_threshold:
         return False, f"진입 초기 유예({current_age}봉)", False
 
         # 1. 본절 방어 (수정된 동적 기준 적용)
-    if profit_threshold <= max_profit_rate_pct < 1.2 and purchase_price * 1.005 <= curr_p <= purchase_price * 1.007:
+    if profit_threshold <= max_profit_rate_pct < 1.0 and purchase_price * 1.001 <= curr_p <= purchase_price * 1.003:
         cooldown_dict[symbol] = datetime.now() + timedelta(hours=6)
         return True, f"🛡️ [S-TS-0.5] 본절방어(즉시)", True
 
@@ -1193,20 +1193,20 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
             #     if curr_p <= purchase_price * 1.005:
             #         return True, f"🛡️ [S-TS-0.5] 본절방어", False
 
-            # 2. 익절 구간 A (1.2% ~ 2.0% 미만): 고점 대비 1% 하락 시 매도
-            if 1.2 <= max_profit_rate_pct < 2.0:
-                if drop_from_peak >= 1.0:
-                    return True, f"💰 [S-TS-1.2] 익절 A (낙폭 1.0%)", True
+            # 2. 익절 구간 A (1.0% ~ 2.0% 미만): 고점 대비 0.5% 하락 시 매도
+            if 1.0 <= max_profit_rate_pct < 2.0:
+                if drop_from_peak >= 0.5:
+                    return True, f"💰 [S-TS-1.0] 익절 A (낙폭 0.5%)", True
 
-            # 3. 익절 구간 B (2.0% ~ 3.5% 미만): 고점 대비 1.5% 하락 시 매도
+            # 3. 익절 구간 B (2.0% ~ 3.5% 미만): 고점 대비 1.0% 하락 시 매도
             elif 2.0 <= max_profit_rate_pct < 3.5:
-                if drop_from_peak >= 1.5:
-                    return True, f"💰 [S-TS-2.0] 익절 B (낙폭 1.5%)", True
+                if drop_from_peak >= 1.0:
+                    return True, f"💰 [S-TS-2.0] 익절 B (낙폭 1.0%)", True
 
-            # 4. 익절 구간 C (3.5% 이상): 고점 대비 3.0% 하락 시 즉시 매도
+            # 4. 익절 구간 C (3.5% 이상): 고점 대비 1.5% 하락 시 즉시 매도
             elif max_profit_rate_pct >= 3.5:
-                if drop_from_peak >= 2.0:
-                    return True, f"🚀 [S-TS-3.5] 익절 C (낙폭 2.0%)", True
+                if drop_from_peak >= 1.5:
+                    return True, f"🚀 [S-TS-3.5] 익절 C (낙폭 1.5%)", True
 
             # ---------------------------------------------------------
             # [정비 2] 40 지지선 및 S+급 보호 (상향->평행->상향 로직)
