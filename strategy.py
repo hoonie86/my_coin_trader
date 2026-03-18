@@ -113,14 +113,16 @@ def get_updated_emergency_level(symbol, current_level, buy_type, rsi, is_3m_belo
     Level 2 -> 1 (하향): 타입별 분기된 조건 적용
     Level 1 -> 0 (해제): 타입별 독립 기준 적용
     """
+    buy_type = int(buy_type)
+    
     # [교정] 타입별 하향(2->1) 조건 정의
-    is_recovering_general = (str(buy_type) != '3' and is_3m_below_ma40)
-    is_recovering_type3 = (str(buy_type) == '3' and is_type3_stable)
+    is_recovering_general = (buy_type != 3 and is_3m_below_ma40)
+    is_recovering_type3 = (buy_type == 3 and is_type3_stable)
 
     # 1. 트리거 (0 -> 2): 진입 조건 (기존 유지)
     if current_level == 0:
         if (profit_pct >= 10.0 or has_rsi_spike or soaring_rate >= 1.5 or 
-            (str(buy_type) == '3' and not is_type3_stable) or max_profit_pct >= 5.0):
+            (buy_type == 3 and not is_type3_stable) or max_profit_pct >= 5.0):
             return 2
     
     # 2. 하향 (Level 2 -> 1): 타입별로 분기된 변수에 따라 전환
@@ -131,7 +133,7 @@ def get_updated_emergency_level(symbol, current_level, buy_type, rsi, is_3m_belo
                 
     # 3. 해제 (Level 1 -> 0): 타입별 독립 기준 적용
     if current_level == 1:
-        if str(buy_type) == '3':
+        if buy_type == 3:
             # [Type 3 해제] 40선 우상향 및 185선 이격 축소
             if ma40_slope > 0 and is_converging and (not is_3m_below_ma40):
                 logger.info(f"✨ {symbol} [Type 3 안정] 40선 반등 및 안착 확인으로 해제")
@@ -431,9 +433,11 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     curr_max_high_low = max(curr['open'], curr['close'])
     upper_wick = (curr['high'] - curr_max_high_low) / curr_max_high_low * 100
     
-    if volatility >= 20.0:
-        print(f"DEBUG: {symbol} 매수 탈락 - 변동성 과다({volatility:.1f}%)")
-        return False, f"🚫 [상단방어] 구간 변동성({volatility:.1f}%) 및 저항 포착", "F", {}
+    dynamic_vol_limit = 35.0 if is_buy_locked else 20.0
+    
+    if volatility >= dynamic_vol_limit:
+        print(f"DEBUG: {symbol} 매수 탈락 - 변동성 과다({volatility:.1f}% >= {dynamic_vol_limit}%)")
+        return False, f"🚫 [상단방어] 구간 변동성({volatility:.1f}%) > 허용치({dynamic_vol_limit}%)", "F", {}
         
     if curr_price < curr['high'] * 0.95:
         return False, f"🚫 [설거지방어] 고가대비 이탈(-5.0%↑)", "F", {}
@@ -884,27 +888,34 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         else:
             is_valid_convergence = (ma5_slope > 0)
             
-        # ==== [TYPE2 수정 시작: 14선 위치별 이원화 및 5선 가속도(5/3) 체크] ====
+        # ////// [수정 시작: TYPE2 로그 명확화 및 사유 추적] //////
+        t2_fail_reason = ""
         if gap_14_40_pct <= 0:
-            # 14선이 40선 아래일 때: 기존 14선 3번 상승 로직 유지
-            is_t2_rebound = (-1.0 <= gap_14_40_pct <= 0) and (ma14_up_count >= 3) and is_valid_convergence
-        else:
-            # ////// [타입2 가짜 반등 방지: 5선, 14선 실체 확인 및 185선 추세 필터] //////
-            slopes = [df['ma5'].iloc[-i] - df['ma5'].iloc[-(i+1)] for i in range(1, 8)]
             slopes_14 = [df['ma14'].iloc[-i] - df['ma14'].iloc[-(i+1)] for i in range(1, 8)]
+            has_positive_ma14 = any(s > 0 for s in slopes_14[:6])
+            
+            is_t2_rebound = (-1.0 <= gap_14_40_pct <= 0) and (ma14_up_count >= 3) and has_positive_ma14 and is_valid_convergence
+            if not is_t2_rebound:
+                if not (-1.0 <= gap_14_40_pct <= 0): t2_fail_reason = f"이격범위이탈({gap_14_40_pct:.2f}%)"
+                elif ma14_up_count < 3: t2_fail_reason = f"14선상승부족({ma14_up_count}/6)"
+                elif not has_positive_ma14: t2_fail_reason = "14선실체없음"
+                elif not is_valid_convergence: t2_fail_reason = "수렴/5선발산실패"
+        else:
+            slopes = [df['ma5'].iloc[-i] - df['ma5'].iloc[-(i+1)] for i in range(1, 8)]
             slopes_185 = [df['ma185'].iloc[-i] - df['ma185'].iloc[-(i+1)] for i in range(1, 8)]
             
             slope_improvements = sum(1 for i in range(5) if slopes[i] > slopes[i+1])
-            
-            # [단/중기 실체 확인] 샘플링 기간(최근 6봉) 중 최소 한 번은 마지노선을 넘어야 함
             has_positive_ma5 = any(s > -0.03 for s in slopes[:6])
-            has_positive_ma14 = any(s > 0 for s in slopes_14[:6])
-            
-            # [대추세 필터] 185선 현재 기울기가 우상향(> 0)이거나, 하락세가 개선(전 봉보다 상승)
             is_185_trend_ok = (slopes_185[0] > 0) or (slopes_185[0] > slopes_185[1])
             
-            is_t2_rebound = (slope_improvements >= 3) and has_positive_ma5 and has_positive_ma14 and is_185_trend_ok and is_valid_convergence
-            # ////// [수정 끝] //////
+            is_t2_rebound = (slope_improvements >= 3) and has_positive_ma5 and is_185_trend_ok and is_valid_convergence
+            if not is_t2_rebound:
+                if slope_improvements < 3: t2_fail_reason = f"5선가속도부족({slope_improvements}/3)"
+                elif not has_positive_ma5: t2_fail_reason = "5선문턱(-0.03)미달"
+                elif not is_185_trend_ok: t2_fail_reason = "185선대추세하락"
+                elif not is_valid_convergence: t2_fail_reason = "수렴/5선발산실패"
+        # ////// [수정 끝] //////
+
         is_true_trigger_t2 = (curr_price > ma14_val) and (curr_price <= ma14_val * 1.03)
 
         # [C] 최종 판정 및 요청하신 키워드 로그 반영
@@ -924,7 +935,9 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         else:
             reasons = []
             if not is_type2_safe: reasons.append(f"안전가드(변동성:{vol_sectional:.1f}%)")
-            if not is_t2_rebound: reasons.append(f"수렴실패(이격14:{gap_14_40_pct:.2f}%, 14선세기:{ma14_up_count}/6, 5선발산방어:{is_valid_convergence})")            
+            # ////// [수정 시작: 추출한 상세 로그 출력에 반영] //////
+            if not is_t2_rebound: reasons.append(f"수렴실패({t2_fail_reason})")            
+            # ////// [수정 끝] //////
             if not has_t1_history_clean: reasons.append(f"역사오염(GC:{gc_count_150}, DC:{dc_count_after_gc})")
             if ma90_up_count < 5: reasons.append(f"90선추세({ma90_up_count})")
             if not is_185_landing_stable: reasons.append(f"185선불안정")
@@ -933,6 +946,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 logger.info(f"DEBUG: {symbol} | [TYPE2] 탈락 이유: {', '.join(reasons)}")
 
     # [함수 종료 구간] 매수 조건 불만족 시 안전하게 종료
+
     data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
     
     if curr_price <= ma40_val:
@@ -993,6 +1007,9 @@ def check_3_2_negative_candles(target_df):
 async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, grade='A', symbol_inventory_age=99, status=None, realtime_p=None, buy_type=1):
     global emergency_mode
     
+    buy_type = int(buy_type) # 타입 비교 에러 방지용 강제 형변환
+    support_price = 0.0      # NameError 원천 차단 방어막
+
         # 1. 실시간 현재가 확정
     temp_curr = df.iloc[-1]
     curr_p = realtime_p if realtime_p is not None else float(temp_curr['close'])
