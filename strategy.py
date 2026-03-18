@@ -889,10 +889,22 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             # 14선이 40선 아래일 때: 기존 14선 3번 상승 로직 유지
             is_t2_rebound = (-1.0 <= gap_14_40_pct <= 0) and (ma14_up_count >= 3) and is_valid_convergence
         else:
-            # 14선이 40선 위일 때: 5선 기울기가 최근 5개 중 3개 이상 개선(가속)되었는지 확인
+            # ////// [타입2 가짜 반등 방지: 5선, 14선 실체 확인 및 185선 추세 필터] //////
             slopes = [df['ma5'].iloc[-i] - df['ma5'].iloc[-(i+1)] for i in range(1, 8)]
+            slopes_14 = [df['ma14'].iloc[-i] - df['ma14'].iloc[-(i+1)] for i in range(1, 8)]
+            slopes_185 = [df['ma185'].iloc[-i] - df['ma185'].iloc[-(i+1)] for i in range(1, 8)]
+            
             slope_improvements = sum(1 for i in range(5) if slopes[i] > slopes[i+1])
-            is_t2_rebound = (slope_improvements >= 3) and is_valid_convergence
+            
+            # [단/중기 실체 확인] 샘플링 기간(최근 6봉) 중 최소 한 번은 마지노선을 넘어야 함
+            has_positive_ma5 = any(s > -0.03 for s in slopes[:6])
+            has_positive_ma14 = any(s > 0 for s in slopes_14[:6])
+            
+            # [대추세 필터] 185선 현재 기울기가 우상향(> 0)이거나, 하락세가 개선(전 봉보다 상승)
+            is_185_trend_ok = (slopes_185[0] > 0) or (slopes_185[0] > slopes_185[1])
+            
+            is_t2_rebound = (slope_improvements >= 3) and has_positive_ma5 and has_positive_ma14 and is_185_trend_ok and is_valid_convergence
+            # ////// [수정 끝] //////
         is_true_trigger_t2 = (curr_price > ma14_val) and (curr_price <= ma14_val * 1.03)
 
         # [C] 최종 판정 및 요청하신 키워드 로그 반영
