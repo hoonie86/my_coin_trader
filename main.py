@@ -68,7 +68,8 @@ def get_symbol_buy_type(symbol, reason=""):
         return 2
     elif "TYPE3" in reason:
         return 3
-
+    elif "TYPE4" in reason:
+        return 4
     # 2. reason에 정보가 없을 경우 기존 인벤토리 정보 참조
     inv_data = load_inventory()
     sym_only = symbol.split('/')[0]
@@ -451,7 +452,11 @@ async def buy_scan_task(app):
 
                 df = pd.DataFrame(ohlcv, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
                 is_buy, reason, grade, data_dict = await strategy.check_buy_signal(exchange, df, symbol, w_list)
-                extracted_type = "1" if "TYPE1" in reason else ("2" if "TYPE2" in reason else ("3" if "TYPE3" in reason else "1"))
+                extracted_type = "1"
+                if "TYPE1" in reason: extracted_type = "1"
+                elif "TYPE2" in reason: extracted_type = "2"
+                elif "TYPE3" in reason: extracted_type = "3"
+                elif "TYPE4" in reason: extracted_type = "4"
                 # [분석 봇] 매수하지 않더라도 탈락 사유·패턴태그·등급 포함 상세 수치 기록 (조건 1개라도 만족/3분 내 3% 급등 포함)
                 current_price = float(df.iloc[-1]['close'])
                 if not is_buy and reason:
@@ -470,6 +475,10 @@ async def buy_scan_task(app):
                     balance = await asyncio.to_thread(exchange.fetch_balance)
                     free_krw = float(balance['free'].get('KRW', 0))
                     buy_cost = await get_buy_cost()
+                    # TYPE 4일 경우에만 예산을 1/4로 축소 (신규 로직 검증용)
+                    if extracted_type == "4":
+                        buy_cost = int(buy_cost / 4)
+                        logger.info(f"🛡️ [리스크관리] {symbol} TYPE4 감지로 매수금액 25% 축소: {buy_cost:,.0f}원")
                     buy_type = get_symbol_buy_type(symbol, reason)
 
                     # [개선] grade 값 우선 사용, 없으면 reason에서 추출
@@ -1701,7 +1710,11 @@ async def pending_buy_task(app):
                     ohlcv_final = await asyncio.to_thread(exchange.fetch_ohlcv, sym, '30m', limit=300)
                     df_final = pd.DataFrame(ohlcv_final, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
                     is_still_good, final_reason, final_grade, final_data_dict = await strategy.check_buy_signal(exchange, df_final, sym, w_list)
-                    extracted_type = "1" if "TYPE1" in final_reason else ("2" if "TYPE2" in final_reason else ("3" if "TYPE3" in final_reason else "1"))
+                    extracted_type = "1"
+                    if "TYPE1" in final_reason: extracted_type = "1"
+                    elif "TYPE2" in final_reason: extracted_type = "2"
+                    elif "TYPE3" in final_reason: extracted_type = "3"
+                    elif "TYPE4" in final_reason: extracted_type = "4"
                     
                     if info.get('grade') == 'S' and final_grade == 'A':
                         final_grade = 'S' # 강등 방지 로직
