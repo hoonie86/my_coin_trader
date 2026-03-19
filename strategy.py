@@ -11,6 +11,7 @@ market_ref_rate = 0.0
 is_buy_locked = False
 panic_msg_sent = False
 cooldown_dict = {}
+panic_cleared_time = None
 
 def is_in_cooldown(symbol):
     if symbol in cooldown_dict:
@@ -19,7 +20,7 @@ def is_in_cooldown(symbol):
     return False
     
 async def update_market_panic_status(current_avg):
-    global market_ref_rate, is_buy_locked
+    global market_ref_rate, is_buy_locked, panic_cleared_time
     # 1. 최초 잠금: -3% 돌파 시
     if not is_buy_locked and current_avg <= -3.0:
         is_buy_locked = True
@@ -40,6 +41,7 @@ async def update_market_panic_status(current_avg):
         # 2. 해제 조건 판단
         if current_avg >= market_ref_rate + threshold:
             is_buy_locked = False
+            panic_cleared_time = datetime.now()
             market_ref_rate = current_avg
             logger.info(f"✅ 시장 반등 확인({threshold}%): 매수 잠금 해제 (기준점: {market_ref_rate:.2f}%)")
         
@@ -433,7 +435,13 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     curr_max_high_low = max(curr['open'], curr['close'])
     upper_wick = (curr['high'] - curr_max_high_low) / curr_max_high_low * 100
     
-    dynamic_vol_limit = 35.0 if is_buy_locked else 20.0
+    is_recovery_window = False
+    if not is_buy_locked and panic_cleared_time is not None:
+        time_since_clear = (datetime.now() - panic_cleared_time).total_seconds()
+        if time_since_clear < 6 * 3600:  # 6시간(3600초 * 6) 이내
+            is_recovery_window = True
+            
+    dynamic_vol_limit = 35.0 if (is_buy_locked or is_recovery_window) else 20.0
     
     if volatility >= dynamic_vol_limit:
         print(f"DEBUG: {symbol} 매수 탈락 - 변동성 과다({volatility:.1f}% >= {dynamic_vol_limit}%)")
