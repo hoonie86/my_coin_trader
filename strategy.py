@@ -957,49 +957,49 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             if reasons:
                 logger.info(f"DEBUG: {symbol} | [TYPE2] 탈락 이유: {', '.join(reasons)}")
 
-        ###### [수정 시작: TYPE4 추가 및 최종 로그 통합] ######
-        t4_reasons = []
-        slopes_185 = [df['ma185'].iloc[-i] - df['ma185'].iloc[-(i+1)] for i in range(1, 4)]
-        ma185_slope_val = slopes_185[0]
+    ###### [수정 시작: TYPE4 추가 및 최종 로그 통합] ######
+    t4_reasons = []
+    slopes_185 = [df['ma185'].iloc[-i] - df['ma185'].iloc[-(i+1)] for i in range(1, 4)]
+    ma185_slope_val = slopes_185[0]
+    
+    is_185_intensity_ok = (ma185_slope_val > -0.03) and (slopes_185[0] > slopes_185[1])
+    if not is_185_intensity_ok: t4_reasons.append(f"185세기({ma185_slope_val:.2f})")
+
+    dist_curr = abs(ma5_val - ma40_val)
+    dist_prev = abs(df['ma5'].iloc[-2] - df['ma40'].iloc[-2])
+    is_t4_convergence = (ma5_val <= ma40_val) and (dist_curr < dist_prev)
+    is_t4_divergence = (ma5_val > ma40_val) and (dist_curr > dist_prev)
+    is_5_40_dynamic_ok = is_t4_convergence or is_t4_divergence
+    if not is_5_40_dynamic_ok: t4_reasons.append("수렴발산실패")
+
+    vol_avg_20 = df['vol'].tail(20).mean() if len(df) >= 20 else 0
+    vol_ratio_t4 = float(curr['vol']) / vol_avg_20 if vol_avg_20 > 0 else 0
+    is_t4_volume_ok = vol_ratio_t4 >= 2.5
+    if not is_t4_volume_ok: t4_reasons.append(f"거래량미달({vol_ratio_t4:.1f}배)")
+
+    is_true_trigger_t4 = is_185_intensity_ok and is_5_40_dynamic_ok and is_t4_volume_ok and (ma5_slope > 0)
+    
+    if is_true_trigger_t4:
+        height_pct = (curr_price - ma185_val) / ma185_val * 100
+        t4_grade = "S+" if height_pct <= 5.0 else "S"
+        data_dict['grade'] = t4_grade
+        return True, f"🚀 [TYPE4-{t4_grade}] 이력무시/수렴발산돌파 (거래량:{vol_ratio_t4:.1f}배)", t4_grade, data_dict
+
+    data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
+
+    final_fail_msg = []
+    if 'reasons' in locals() and reasons:
+        final_fail_msg.append(f"T2({', '.join(reasons)})")
+    if t4_reasons:
+        final_fail_msg.append(f"T4({', '.join(t4_reasons)})")
         
-        is_185_intensity_ok = (ma185_slope_val > -0.03) and (slopes_185[0] > slopes_185[1])
-        if not is_185_intensity_ok: t4_reasons.append(f"185세기({ma185_slope_val:.2f})")
-
-        dist_curr = abs(ma5_val - ma40_val)
-        dist_prev = abs(df['ma5'].iloc[-2] - df['ma40'].iloc[-2])
-        is_t4_convergence = (ma5_val <= ma40_val) and (dist_curr < dist_prev)
-        is_t4_divergence = (ma5_val > ma40_val) and (dist_curr > dist_prev)
-        is_5_40_dynamic_ok = is_t4_convergence or is_t4_divergence
-        if not is_5_40_dynamic_ok: t4_reasons.append("수렴발산실패")
-
-        vol_avg_20 = df['vol'].tail(20).mean() if len(df) >= 20 else 0
-        vol_ratio_t4 = float(curr['vol']) / vol_avg_20 if vol_avg_20 > 0 else 0
-        is_t4_volume_ok = vol_ratio_t4 >= 2.5
-        if not is_t4_volume_ok: t4_reasons.append(f"거래량미달({vol_ratio_t4:.1f}배)")
-
-        is_true_trigger_t4 = is_185_intensity_ok and is_5_40_dynamic_ok and is_t4_volume_ok and (ma5_slope > 0)
+    fail_reason_str = " | ".join(final_fail_msg) if final_fail_msg else "조건 미달"
+    
+    if curr_price <= ma40_val:
+        return False, f"현재가({curr_price:,.0f}) ≤ 40일선({ma40_val:,.0f}) | {fail_reason_str}", "F", data_dict 
         
-        if is_true_trigger_t4:
-            height_pct = (curr_price - ma185_val) / ma185_val * 100
-            t4_grade = "S+" if height_pct <= 5.0 else "S"
-            data_dict['grade'] = t4_grade
-            return True, f"🚀 [TYPE4-{t4_grade}] 이력무시/수렴발산돌파 (거래량:{vol_ratio_t4:.1f}배)", t4_grade, data_dict
-
-        data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
-
-        final_fail_msg = []
-        if 'reasons' in locals() and reasons:
-            final_fail_msg.append(f"T2({', '.join(reasons)})")
-        if t4_reasons:
-            final_fail_msg.append(f"T4({', '.join(t4_reasons)})")
-            
-        fail_reason_str = " | ".join(final_fail_msg) if final_fail_msg else "조건 미달"
-        
-        if curr_price <= ma40_val:
-            return False, f"현재가({curr_price:,.0f}) ≤ 40일선({ma40_val:,.0f}) | {fail_reason_str}", "F", data_dict 
-            
-        return False, f"🚫 탈락사유: {fail_reason_str}", "F", data_dict
-        ###### [수정 끝] ######
+    return False, f"🚫 탈락사유: {fail_reason_str}", "F", data_dict
+    ###### [수정 끝] ######
 
 def check_3_2_negative_candles(target_df):
     if len(target_df) < 5: return False, ""
