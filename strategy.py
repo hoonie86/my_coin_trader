@@ -891,33 +891,51 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         else:
             logger.info(f"DEBUG: {symbol} TYPE1 탈락 이유 | 185선 96봉~10봉 내리막: :{strict_descending}({descending_count}개 하락), 185선 최근 10봉 우상향:{strict_stabilized}({stabilized_count} >= 0), gc횟수: {gc_count_t1}회")
 
-    # // [수정: TYPE 4 로직을 TYPE 2 블록 밖으로 독립시켜 족보 없는 종목 포착 허용] //
+    # // [수정: TYPE 4 로직 독립화 - 기존 엔진 활용 버전] //
     is_t4_safe = (vol_sectional <= 10.0)
-    is_t4_alignment = (ma40_val > ma185_val)
-    is_t1_history_zero = (gc_count_t1 == 0)
     
+    # --- [통행증 업그레이드] ---
+    # 기존: ma40_val > ma185_val (정배열만)
+    # 수정: 정배열이거나, 혹은 역배열이라도 사용자님이 말한 '4대 수렴 기준' 만족 시 통과
+    is_t4_base_alignment = (ma40_val > ma185_val)
+    disparity_185_40 = abs(ma40_val - ma185_val) / ma185_val if ma185_val > 0 else 0
+    
+    is_t4_hybrid_alignment = (
+        (not is_t4_base_alignment) and 
+        (disparity_185_40 <= 0.015) and        # [기준1: 1.5% 이격]
+        ma40_intensity_ok and                  # [기준2,3: 기울기 개선]
+        (ma40_slope_common >= -0.02)           # [기준4: 기울기 마지노선]
+    )
+    is_t4_alignment = is_t4_base_alignment or is_t4_hybrid_alignment
+    # ---------------------------
+
     reasons_t4 = []
     if not is_t4_safe: reasons_t4.append(f"변동성초과({vol_sectional:.1f}%)")
-    if not is_t4_alignment: reasons_t4.append(f"역배열(40선:{ma40_val:,.0f}<=185선:{ma185_val:,.0f})")
-    if not is_t1_history_zero: reasons_t4.append(f"GC이력({gc_count_t1}회)")
-    if not is_t4_volume_surge: reasons_t4.append(f"수급미달({vol_ratio:.1f}x<5x)")
+    if not is_t4_alignment: reasons_t4.append(f"배열/수렴미달")
+    if not (gc_count_t1 == 0): reasons_t4.append(f"GC이력({gc_count_t1}회)")
+    
+    # [수정] 수급 문턱만 3.0으로 낮추기
+    if vol_ratio < 3.0: reasons_t4.append(f"수급미달({vol_ratio:.1f}x<3x)")
+    
+    # [핵심] 기존 엔진은 그대로 사용! (단, REI를 위해 has_down_touch만 선택적 제거)
     if not is_t2_rebound: reasons_t4.append(f"수렴실패({t2_fail_reason})")
-    if ma90_up_count < 5: reasons_t4.append(f"90선추세({ma90_up_count}/5)")
-    if ma185_up_count < 5: reasons_t4.append(f"185선추세({ma185_up_count}/5)")
-    if not is_185_landing_stable: reasons_t4.append("185선불안정")
-    if not has_down_touch: reasons_t4.append("40선터치없음")
+    
+    # REI 같은 강한 종목을 위해 TYPE 4에서만 '터치' 조건 주석 처리하거나 완화
+    # if not has_down_touch: reasons_t4.append("40선터치없음") 
+    
     if not is_true_trigger_t2: reasons_t4.append("찐트리거미달")
 
+    # [가드] 사용자님이 강조하신 양봉 및 윗꼬리 가드
     is_bullish = curr_price > float(curr['open'])
     upper_shadow_pct = (float(curr['high']) - curr_price) / curr_price * 100 if curr_price > 0 else 0
     
     if not is_bullish: reasons_t4.append("음봉탈락")
-    if upper_shadow_pct > 2.0: reasons_t4.append(f"윗꼬리과다({upper_shadow_pct:.1f}%>2.0%)")
+    if upper_shadow_pct > 2.0: reasons_t4.append(f"윗꼬리과다({upper_shadow_pct:.1f}%)")
 
     if not reasons_t4:
         grade = "S+" if curr_price >= ma185_val else "S"
         data_dict['grade'] = grade
-        return True, f"🚀 [TYPE4-{grade}] 정배열 장기우량주 (양봉, 3배수급, 윗꼬리방어)", grade, data_dict
+        return True, f"🚀 [TYPE4-{grade}] 정배열(수렴) 돌파 (기존엔진+수급완화)", grade, data_dict
     elif is_t1_history_zero:
         logger.info(f"DEBUG: {symbol} | [TYPE4] 탈락 이유: {', '.join(reasons_t4)}")
     # ==========================================================================
