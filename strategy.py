@@ -625,10 +625,17 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     data_dict['disparity_40_5'] = disparity_40_5
 
     # 3. [기존 유지] 안전장치: 급격한 수직 낙하만 방어 (중복 블록 제거: 아래 한 번만 유지)
+    tick_185 = get_bithumb_tick_size(ma185_val)
+    ma185_slopes = [(df['ma185'].iloc[-i] - df['ma185'].iloc[-i-1]) / tick_185 if tick_185 > 0 else 0 for i in range(1, 8)]
+    improve_cnt = sum(1 for i in range(6) if ma185_slopes[i] > ma185_slopes[i+1])
+
     if diff_185 < -1.2:
-        reason = f"185일선 급락(diff:{diff_185:.2f} < -1.2)"
-        data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
-        return False, reason, "", data_dict
+        if improve_cnt >= 4:
+            logger.info(f"✨ [추세개선통과] {symbol} | 현재diff:{diff_185:.2f} < -1.2 이나 30분봉 6개 중 {improve_cnt}회 개선 확인")
+        else:
+            reason = f"185일선 급락(diff:{diff_185:.2f} < -1.2, 개선:{improve_cnt}/6)"
+            data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
+            return False, reason, "", data_dict
         
     ma40_slope_common = ((ma40_val - prev_ma40) / prev_ma40) * 100 if prev_ma40 > 0 else 0
     prev_close_val = float(prev['close'])
@@ -771,6 +778,11 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         slopes_14 = [df['ma14'].iloc[-i] - df['ma14'].iloc[-(i+1)] for i in range(1, 8)]
         has_positive_ma14 = any(s > 0 for s in slopes_14[:6])
         is_t2_rebound = (-1.0 <= gap_14_40_pct <= 0) and (ma14_up_count >= 3) and has_positive_ma14 and is_valid_convergence
+        if not is_t2_rebound:
+            if not (-1.0 <= gap_14_40_pct <= 0): t2_fail_reason = f"이격범위이탈({gap_14_40_pct:.2f}%)"
+            elif ma14_up_count < 3: t2_fail_reason = f"14선상승부족({ma14_up_count}/6)"
+            elif not has_positive_ma14: t2_fail_reason = "14선실체없음"
+            elif not is_valid_convergence: t2_fail_reason = "수렴/5선발산실패"
     else:
         slopes = [df['ma5'].iloc[-i] - df['ma5'].iloc[-(i+1)] for i in range(1, 8)]
         slopes_185 = [df['ma185'].iloc[-i] - df['ma185'].iloc[-(i+1)] for i in range(1, 8)]
@@ -778,8 +790,13 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         has_positive_ma5 = any(s > -0.03 for s in slopes[:6])
         is_185_trend_ok = (slopes_185[0] > 0) or (slopes_185[0] > slopes_185[1])
         is_t2_rebound = (slope_improvements >= 3) and has_positive_ma5 and is_185_trend_ok and is_valid_convergence
+        if not is_t2_rebound:
+            if slope_improvements < 3: t2_fail_reason = f"5선가속도부족({slope_improvements}/3)"
+            elif not has_positive_ma5: t2_fail_reason = "5선문턱(-0.03)미달"
+            elif not is_185_trend_ok: t2_fail_reason = "185선대추세하락"
+            elif not is_valid_convergence: t2_fail_reason = "수렴/5선발산실패"
     is_true_trigger_t2 = (curr_price > ma14_val) and (curr_price <= ma14_val * 1.03)
-    is_t4_volume_surge = (data_dict.get('vol_ratio', 0) >= 5.0)
+    is_t4_volume_surge = (data_dict.get('vol_ratio', 0) >= 3.0)
 
     # ==========================================================================
     # [TYPE1: 밥그릇 바닥 탈출 및 변곡점 포착]
@@ -803,13 +820,6 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         ###### [신규] TYPE 1 전용: 185일선 밥그릇 흐름(지속 하락 후 안착) 전수 조사 ######
         strict_descending = True
         strict_stabilized = True
-
-        # 1. 골든크로스 횟수 체크 (TYPE 1은 0회여야 함)
-        gc_count_t1 = 0
-        for i in range(1, 150):
-            if i+1 < len(df):
-                if df['ma40'].iloc[-i-1] <= df['ma185'].iloc[-i-1] and df['ma40'].iloc[-i] > df['ma185'].iloc[-i]:
-                    gc_count_t1 += 1
         stabilized_count = sum(1 for i in range(1, 11) if i+1 <= len(df) and df['ma185'].iloc[-i] >= df['ma185'].iloc[-i-1])
         # 2. 변곡점 포착: 최근 5봉은 상승 중이고, 10~5봉 전 구간은 하락/평행이었는지 확인
         is_turning_up = (df['ma185'].iloc[-1] > df['ma185'].iloc[-5]) and (df['ma185'].iloc[-10] <= df['ma185'].iloc[-5])
@@ -898,10 +908,16 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     if not has_down_touch: reasons_t4.append("40선터치없음")
     if not is_true_trigger_t2: reasons_t4.append("찐트리거미달")
 
+    is_bullish = curr_price > float(curr['open'])
+    upper_shadow_pct = (float(curr['high']) - curr_price) / curr_price * 100 if curr_price > 0 else 0
+    
+    if not is_bullish: reasons_t4.append("음봉탈락")
+    if upper_shadow_pct > 2.0: reasons_t4.append(f"윗꼬리과다({upper_shadow_pct:.1f}%>2.0%)")
+
     if not reasons_t4:
         grade = "S+" if curr_price >= ma185_val else "S"
         data_dict['grade'] = grade
-        return True, f"🚀 [TYPE4-{grade}] 정배열 장기우량주 (5배 거래량 폭발)", grade, data_dict
+        return True, f"🚀 [TYPE4-{grade}] 정배열 장기우량주 (양봉, 3배수급, 윗꼬리방어)", grade, data_dict
     elif is_t1_history_zero:
         logger.info(f"DEBUG: {symbol} | [TYPE4] 탈락 이유: {', '.join(reasons_t4)}")
     # ==========================================================================
@@ -1169,6 +1185,10 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
     )
     emergency_mode[symbol] = new_lvl
 
+    if current_age == 0 and max_profit_rate_pct >= 1.0 and new_lvl == 0:
+        new_lvl = 1
+        emergency_mode[symbol] = new_lvl
+        logger.info(f"⚡ [하이패스] {symbol} 30분 내 1.0% 이상 급등, L1 강제 전환")
     # Level 1, 2 모두 3분봉 엔진 가동 (사용자 요청: 하락 시 즉시 대응)
     if new_lvl >= 1 and df_3m is not None:
         logger.info(f"DEBUG: 🔥 [L{new_lvl} 엔진 가동] {symbol} | 수익: {profit_rate_pct:.2f}%")
@@ -1197,13 +1217,21 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
                     high_vol_3m = df_3m['vol'].iloc[len(df_3m) - 10 + high_idx_3m]
                     if is_2_neg_3m: return True, reason_2_neg_3m, True
 
+                max_yield_3m = (high_10_3m - purchase_price) / purchase_price * 100
+                if current_age == 0 and max_yield_3m >= 1.0:
+                    if curr_3m_p < (purchase_price * 1.001):
+                        return True, f"🛡️[본절가드] 30분내 급등({max_yield_3m:.1f}%) 후 이탈, 0.1% 수익 보존", True
+
                 # (3) [기존 로직 100% 유지] 위치별 차등 낙폭
-                if soaring_rate >= 6.0:
-                    if curr_3m_p < high_10_3m * 0.97:
-                        return True, f"🚨[급등-강력] L{new_lvl} 고점대비 3% 하락 (위치:{soaring_rate:.1f}%)", True
-                else:
+                if soaring_rate >= 8.0:
                     if curr_3m_p < high_10_3m * 0.98:
-                        return True, f"🚨[급등-초기] L{new_lvl} 고점대비 2% 하락 (위치:{soaring_rate:.1f}%)", True
+                        return True, f"🚨[급등-강력] L{new_lvl} 고점대비 2% 하락 (위치:{soaring_rate:.1f}%)", True
+                elif 8.0 > soaring_rate >= 5.0:
+                    if curr_3m_p < high_10_3m * 0.984:
+                        return True, f"🚨[급등-강력] L{new_lvl} 고점대비 1.6% 하락 (위치:{soaring_rate:.1f}%)", True
+                else:
+                    if curr_3m_p < high_10_3m * 0.988:
+                        return True, f"🚨[급등-초기] L{new_lvl} 고점대비 1.2% 하락 (위치:{soaring_rate:.1f}%)", True
 
                 # (4) [기존] 수익률 13% 마지노선 사수
                 if profit_rate_pct >= 13.0 and curr_3m_p <= purchase_price * 1.13:
