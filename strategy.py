@@ -679,8 +679,8 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         # 가드 A: 5일선 이격도가 바닥권(-7%/-4%)이면서, 직전보다 수렴하고, 새끼 양봉일 때
         if disparity_5_185 <= target_disparity and disparity_5_185 > prev_disparity and -2.0 <= candle_body_pct <= 2.0:
             
-            ###### [유지] 185선이 투매 수준으로 꺾이지 않았을 때만 진입 (slope_rate > -0.05)
-            if slope_rate > -0.05:
+            ###### [유지] 185선이 투매 수준으로 꺾이지 않았을 때만 진입 (slope_rate >= -0.06)
+            if slope_rate >= -0.06:
                 data_dict = _fill_data_dict_full(df, curr, prev, curr_price, symbol)
                 curr_slope_40 = ((ma40_val - prev_ma40) / prev_ma40) * 100 if prev_ma40 > 0 else 0
                 
