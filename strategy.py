@@ -441,7 +441,21 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         if time_since_clear < 6 * 3600:  # 6시간(3600초 * 6) 이내
             is_recovery_window = True
             
-    dynamic_vol_limit = 35.0 if (is_buy_locked or is_recovery_window) else 20.0
+    if is_buy_locked or is_recovery_window:
+        dynamic_vol_limit = 35.0
+    else:
+        temp_disparity_40_5 = abs(ma5_val - ma40_val) / ma40_val * 100 if ma40_val > 0 else 999
+        recent_185 = df['ma185'].iloc[-200:] if len(df) >= 200 else df['ma185']
+        min_185, max_185 = recent_185.min(), recent_185.max()
+        temp_pos_185 = (ma185_val - min_185) / (max_185 - min_185) if (max_185 - min_185) > 0 else 1.0
+
+        if ma40_up_count >= 8 or temp_pos_185 <= 0.3:
+            if temp_disparity_40_5 <= 1.5:
+                dynamic_vol_limit = 50.0  # [Case A] 필수 조건 충족 + 초밀착 수렴
+            else: 
+                dynamic_vol_limit = 40.0  # [Case B] 필수 조건 충족 + 일반 수렴
+        else:
+            dynamic_vol_limit = 20.0      # [Case C] 추세 미달 및 고점 구간
     
     if volatility >= dynamic_vol_limit:
         print(f"DEBUG: {symbol} 매수 탈락 - 변동성 과다({volatility:.1f}% >= {dynamic_vol_limit}%)")
@@ -500,10 +514,10 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         dynamic_rise = ((win_high - win_low) / win_low * 100) if win_low > 0 else 0
         #print(f"DEBUG: {symbol} | 골크 발생. 골크점 : {199-gold_index} | 시작점 : {199-check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
         # 7% 이상 급등락이 있었으면 탈락
-        if dynamic_rise >= 20.0:
+        if dynamic_rise >= dynamic_vol_limit:
             data_dict['dynamic_rise_YN'] = 'Y'
             print(f"DEBUG: {symbol} | 골크 발생. 골크점 : {199-gold_index} | 시작점 : {199-check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise:.2f}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
-            return False, f"🚫 [제외] 골크 전후 변동성 과다({dynamic_rise:.1f}% >= 20%)", "B", data_dict
+            return False, f"🚫 [제외] 골크 전후 변동성 과다({dynamic_rise:.1f}% >= {dynamic_vol_limit}%)", "B", data_dict
         # else:
         #     print(f"DEBUG: {symbol} | 골크 발생. 골크점 : {199-gold_index} | 시작점 : {199-check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
     else:
@@ -526,7 +540,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         dynamic_rise = ((win_high - win_low) / win_low * 100) if win_low > 0 else 0
         # print(f"DEBUG: {symbol} | 골크 미발생. 시작점: {check_start_idx} | 저가: {win_low} | 고가: {win_high} | 급등락 크기: {dynamic_rise}% | 급등락YN: {data_dict.get('dynamic_rise_YN')}")
         # 7% 이상 급등락이 있었으면 탈락
-        if dynamic_rise >= 20.0:
+        if dynamic_rise >= dynamic_vol_limit:
             data_dict['dynamic_rise_YN'] = 'Y'
             return False, f"🚫 [제외] 골크 미발생 변동성 과다({dynamic_rise:.1f}% >= 20%)", "B", data_dict
     bars_since_gold = len(df) - gold_index if gold_index != -1 else -1
@@ -893,7 +907,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             logger.info(f"DEBUG: {symbol} TYPE1 탈락 이유 | 185선 96봉~10봉 내리막: :{strict_descending}({descending_count}개 하락), 185선 최근 10봉 우상향:{strict_stabilized}({stabilized_count} >= 0), gc횟수: {gc_count_t1}회")
 
     # // [수정: TYPE 4 로직 독립화 - 기존 엔진 활용 버전] //
-    is_t4_safe = (vol_sectional <= 10.0)
+    is_t4_safe = (vol_sectional <= dynamic_vol_limit)
     
     # --- [통행증 업그레이드] ---
     # 기존: ma40_val > ma185_val (정배열만)
@@ -973,7 +987,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         # [B] T2 진입 가드 및 타점 (1, 2단계에서 계산한 공통 변수 활용)
         is_fresh = (bars_since_gold <= 64)
         vol_sectional = ((df['high'].tail(64).max() - df['low'].tail(64).min()) / df['low'].tail(64).min()) * 100
-        is_type2_safe = (vol_sectional <= 10.0) and is_fresh
+        is_type2_safe = (vol_sectional <= dynamic_vol_limit) and is_fresh
 
         # [C] 최종 판정 및 요청하신 키워드 로그 반영
         ###### [수정 시작: S/S+ 판정 전에 40선 내려앉음 및 찐 트리거로 조임] ######
