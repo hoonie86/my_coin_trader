@@ -843,10 +843,11 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             
             data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
             
-            # 기준 A (기존): 평균 기울기slope_rate -0.02 이상으로 강력할 때
-            is_slope_strong = (slope_rate >= -0.02)
-            # 기준 B (보완): 평균이 -0.03 ~ -0.01 사이로 완만하지만, 최근 10봉 중 6봉 이상이 상승/평행으로 '안정화(밀도)' 되었을 때
-            is_slope_dense = (-0.03 <= slope_rate < -0.01) and (stabilized_count >= 6)
+            # 기준 A: 185일선이 우상향(>0)하면서, 최근 10봉 중 6봉 이상 안정화되었을 때 (가짜 반등 방지)
+            is_slope_strong = (slope_rate > 0) and (stabilized_count >= 6)
+            
+            # 기준 B: -0.06 ~ 0 사이의 하락 구간이지만, 기울기 개선세가 10봉 중 5봉 이상일 때 (XTER 등 구제)
+            is_slope_dense = (-0.06 <= slope_rate <= 0) and (ma185_up_count >= 5)
             
             # 둘 중 하나라도 만족하면 '바닥 안착'으로 인정하고 진입 타점 계산 시작
             if is_slope_strong or is_slope_dense:
