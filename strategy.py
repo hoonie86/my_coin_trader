@@ -903,7 +903,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     is_t4_hybrid_alignment = (
         (not is_t4_base_alignment) and 
         (disparity_185_40 <= 0.015) and        # [기준1: 1.5% 이격]
-        ma40_intensity_ok and                  # [기준2,3: 기울기 개선]
+        (ma40_up_count >= 5) and                 # [기준2,3: 기울기 개선]
         (ma40_slope_common >= -0.02)           # [기준4: 기울기 마지노선]
     )
     is_t4_alignment = is_t4_base_alignment or is_t4_hybrid_alignment
@@ -936,7 +936,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         grade = "S+" if curr_price >= ma185_val else "S"
         data_dict['grade'] = grade
         return True, f"🚀 [TYPE4-{grade}] 정배열(수렴) 돌파 (기존엔진+수급완화)", grade, data_dict
-    elif is_t1_history_zero:
+    else:
         logger.info(f"DEBUG: {symbol} | [TYPE4] 탈락 이유: {', '.join(reasons_t4)}")
     # ==========================================================================
     # [TYPE2: 눌림목 및 40선 지지 (에너지 응축)]
@@ -1039,22 +1039,22 @@ def check_3_2_negative_candles(target_df):
     if curr_candle['close'] >= curr_candle['open']:
         return False, ""
         
-    # 4. 고점(Peak) 이후 발생한 음봉들 전수 조사
-    post_peak_df = target_df.iloc[peak_iloc + 1 :]
-    if post_peak_df.empty:
+    # ======== [수정 시작: 2연속 직계 음봉 강제 로직] ========
+    # 고점 이후 정확히 2개의 봉이 더 진행되었는지 확인 (현재 봉이 peak_iloc + 2 인지)
+    if len(target_df) - 1 != peak_iloc + 2:
         return False, ""
         
-    neg_count = 0
-    # 각 음봉이 고점 거래량의 10%를 '개별적으로' 넘어야 카운트
-    for i in range(len(post_peak_df)):
-        candle = post_peak_df.iloc[i]
-        is_negative = candle['close'] < candle['open']
-        if is_negative and candle['vol'] >= peak_vol * 0.1:
-            neg_count += 1
+    prev_candle = target_df.iloc[-2] # 고점 바로 다음 봉 (C3_1)
+    
+    # 직전 봉과 현재 봉이 모두 음봉인지 확인
+    prev_is_neg = prev_candle['close'] < prev_candle['open']
+    curr_is_neg = curr_candle['close'] < curr_candle['open']
+    
+    if prev_is_neg and curr_is_neg:
+        # 두 음봉 모두 고점 거래량의 10% 이상인지 확인
+        if prev_candle['vol'] >= peak_vol * 0.1 and curr_candle['vol'] >= peak_vol * 0.1:
+            return True, f"🚨 [세력이탈] 고점 직후 10%↑ 2연속 음봉 감지"
             
-    if neg_count >= 2:
-        return True, f"🚨 [세력이탈] 고점 거래량({peak_vol:,.0f}) 10%↑ 음봉 2개 감지"
-        
     return False, ""
 ###### 수정 끝 ######
 
@@ -1219,14 +1219,24 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
                 high_10_3m = df_3m['high'].tail(10).max()
                 curr_3m_p, curr_3m_data = df_3m['close'].iloc[-1], df_3m.iloc[-1]
 
-                # (1) [기존] 고점 직전봉 허리(50%) 실시간 이탈 체크
-                abs_peak_idx = len(df_3m) - 10 + df_3m['vol'].tail(10).argmax()
-                peak_candle = df_3m.iloc[abs_peak_idx]
-                if peak_candle['close'] >= peak_candle['open'] and abs_peak_idx > 0:
-                    prev_mid_p = (df_3m.iloc[abs_peak_idx-1]['open'] + df_3m.iloc[abs_peak_idx-1]['close']) / 2
-                    if curr_3m_data['low'] < prev_mid_p and curr_3m_data['vol'] > peak_candle['vol']:
-                        if curr_3m_data['close'] < curr_3m_data['open']:
-                            return True, f"🚨[50%긴급-L{new_lvl}] 실시간 허리 이탈", True
+                # ======== [수정 시작: C1-C2-C3 50% 허리 이탈 논리 적용] ========
+                # (1) [수정] 고점 직전봉(C1) 허리(50%) 실시간 이탈 체크
+                # 거래량이 아닌 '최고가(High)' 기준으로 고점(C2) 인덱스 찾기
+                c2_idx_relative = df_3m['high'].tail(10).argmax()
+                abs_peak_idx = len(df_3m) - 10 + c2_idx_relative
+                c2_candle = df_3m.iloc[abs_peak_idx]
+                
+                # C2가 양봉/도지이고, 이전 봉(C1)이 존재할 때
+                if c2_candle['close'] >= c2_candle['open'] and abs_peak_idx > 0:
+                    c1_candle = df_3m.iloc[abs_peak_idx - 1]
+                    
+                    # C1이 양봉일 때만 허리값 계산
+                    if c1_candle['close'] > c1_candle['open']:
+                        c1_mid_p = (c1_candle['open'] + c1_candle['close']) / 2
+                        
+                        # 현재 봉(C3)이 음봉이면서 현재가(curr_3m_p)가 C1 허리값을 이탈했을 때 매도 (거래량 조건 삭제)
+                        if curr_3m_p < c1_mid_p and curr_3m_data['close'] < curr_3m_data['open']:
+                            return True, f"🚨[50%긴급-L{new_lvl}] C1 양봉 허리 이탈", True
 
                 # (2) [기존] 세력 이탈 감지 (2음봉 + 거래량)
                 is_2_neg_3m, reason_2_neg_3m = check_3_2_negative_candles(df_3m)
