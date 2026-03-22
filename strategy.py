@@ -931,6 +931,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     reasons_t4 = []
     if not is_t4_safe: reasons_t4.append(f"변동성초과({vol_sectional:.1f}%)")
     if not is_t4_alignment: reasons_t4.append(f"배열/수렴미달")
+    if gap_5_40_pct > 1.5: reasons_t4.append(f"5/40이격과다({gap_5_40_pct:.1f}%)")
     if not (gc_count_t1 == 0): reasons_t4.append(f"GC이력({gc_count_t1}회)")
     
     # [수정] 수급 문턱만 3.0으로 낮추기
@@ -1013,9 +1014,8 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 if vol_sectional > 10.0: safe_detail.append(f"변동성:{vol_sectional:.1f}%")
                 if not is_fresh: safe_detail.append("T1이력없음")
                 reasons.append(f"안전가드({', '.join(safe_detail)})")
-            # ////// [수정 시작: 추출한 상세 로그 출력에 반영] //////
+            if gap_5_40_pct > 1.5: reasons.append(f"5/40이격과다({gap_5_40_pct:.1f}%)")
             if not is_t2_rebound: reasons.append(f"수렴실패({t2_fail_reason})")            
-            # ////// [수정 끝] //////
             if not has_t1_history_clean: reasons.append(f"역사오염(GC:{gc_count_150}, DC:{dc_count_after_gc})")
             if ma90_up_count < 5: reasons.append(f"90선추세({ma90_up_count})")
             if not is_185_landing_stable: reasons.append(f"185선불안정")
