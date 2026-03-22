@@ -32,6 +32,7 @@ buy_individual_status = {}  # 종목별 매수 개별 상태
 pending_approvals = {}  # [기능 17] 무응답 자동 대응용
 highest_rates = {}  # [기능 16] 수익 상승 보고용
 last_report_time = datetime.now() - timedelta(days=1)
+sell_cooldown = {}
 notified_symbols = {}
 pending_approvals = {}
 profit_alerts = {}
@@ -430,7 +431,10 @@ async def buy_scan_task(app):
             # 1. 전 종목 스캔 루프
             for idx, m in enumerate(krw_filtered):
                 symbol = m['symbol']
-
+                # ========== [쿨다운 체크 로직 추가] ==========
+                if symbol in sell_cooldown:
+                    if (datetime.now() - sell_cooldown[symbol]).total_seconds() < 3600:
+                        continue
                 ## [[ MODIFIED: 보유 종목은 분석 및 추천에서 즉시 제외 (서버 부하 감소) ]]
                 if symbol in owned_symbols:
                     continue
@@ -703,6 +707,8 @@ async def execute_sell(app, symbol, reason):
 
         # [누락방지 2] 로컬 인벤토리 파일에서 해당 종목 삭제 (중요)
         if symbol in inv:
+            global sell_cooldown
+            sell_cooldown[symbol] = datetime.now()
             del inv[symbol]
             with open("trades/inventory.json", "w") as f:
                 json.dump(inv, f, indent=4)

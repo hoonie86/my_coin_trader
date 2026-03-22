@@ -450,10 +450,14 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         temp_pos_185 = (ma185_val - min_185) / (max_185 - min_185) if (max_185 - min_185) > 0 else 1.0
 
         if ma40_up_count >= 8 or temp_pos_185 <= 0.3:
-            if temp_disparity_40_5 <= 1.5:
-                dynamic_vol_limit = 50.0  # [Case A] 필수 조건 충족 + 초밀착 수렴
+            ma5_slope_positive = (df['ma5'].iloc[-1] - df['ma5'].iloc[-2]) > 0 if len(df) >= 2 else False
+            is_squeeze = (ma5_val <= ma40_val) and (temp_disparity_40_5 <= 1.5)
+            is_breakout = (ma5_val > ma40_val) and (temp_disparity_40_5 >= 0.5 or ma5_slope_positive)
+            
+            if is_squeeze or is_breakout:
+                dynamic_vol_limit = 50.0  # [Case A] 필수 조건 충족 + (초밀착 수렴 OR 돌파 발산)
             else: 
-                dynamic_vol_limit = 40.0  # [Case B] 필수 조건 충족 + 일반 수렴
+                dynamic_vol_limit = 40.0  # [Case B] 필수 조건 충족 + 일반 구간
         else:
             dynamic_vol_limit = 20.0      # [Case C] 추세 미달 및 고점 구간
     
