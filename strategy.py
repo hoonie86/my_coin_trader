@@ -1109,7 +1109,7 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
     ma5_val = float(curr['ma5'])
     prev_ma5 = float(prev['ma5'])
     ma40_val = float(curr['ma40'])
-    high_price = max(max_price, df['high'].tail(6).max())
+    high_price = max(max_price, df['high'].tail(2).max())
     
     # 5. 수익률 및 RSI 스파이크 계산 (딱 한 번만 실행)
     has_rsi_spike = (rsi_series.tail(14) >= 80).any()
@@ -1309,18 +1309,18 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
 
             # 2. 익절 구간 A (1.0% ~ 2.0% 미만): 고점 대비 0.5% 하락 시 매도
             if 1.0 <= max_profit_rate_pct < 2.0:
-                if drop_from_peak >= 0.5:
-                    return True, f"💰 [S-TS-1.0] 익절 A (낙폭 0.5%)", True
+                if drop_from_peak > profit_threshold:
+                    return True, f"💰 [S-TS-1.0] 익절 A (낙폭 {profit_threshold:,.2f}% 초과)", True
 
             # 3. 익절 구간 B (2.0% ~ 3.5% 미만): 고점 대비 1.0% 하락 시 매도
             elif 2.0 <= max_profit_rate_pct < 3.5:
-                if drop_from_peak >= 1.0:
-                    return True, f"💰 [S-TS-2.0] 익절 B (낙폭 1.0%)", True
+                if drop_from_peak > 1.0:
+                    return True, f"💰 [S-TS-2.0] 익절 B (낙폭 1.0% 초과)", True
 
             # 4. 익절 구간 C (3.5% 이상): 고점 대비 1.5% 하락 시 즉시 매도
             elif max_profit_rate_pct >= 3.5:
-                if drop_from_peak >= 1.5:
-                    return True, f"🚀 [S-TS-3.5] 익절 C (낙폭 1.5%)", True
+                if drop_from_peak > 1.5:
+                    return True, f"🚀 [S-TS-3.5] 익절 C (낙폭 1.5% 초과)", True
 
             # ---------------------------------------------------------
             # [정비 2] 40 지지선 및 S+급 보호 (상향->평행->상향 로직)
