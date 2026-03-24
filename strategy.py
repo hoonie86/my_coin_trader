@@ -692,47 +692,47 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     # [수정] 40선이 185선 아래여야 하며, 과거 바닥(RSI 40)을 통과한 종목을 추적 관리
     if ma40_val < ma185_val and was_oversold_start and data_dict.get('dynamic_rise_YN') != 'Y':
         if is_high_pos_185:
-            return False, f"🚫 [TYPE3-제외] 185선 고점 구간({pos_185*100:.1f}%)", "B", data_dict
-
-        # 가드 A: 5일선 이격도가 바닥권(-7%/-4%)이면서, 직전보다 수렴하고, 새끼 양봉일 때
-        if disparity_5_185 <= target_disparity and disparity_5_185 > prev_disparity and -2.0 <= candle_body_pct <= 2.0:
-            
-            ###### [유지] 185선이 투매 수준으로 꺾이지 않았을 때만 진입 (slope_rate >= -0.06)
-            if slope_rate >= -0.06:
-                data_dict = _fill_data_dict_full(df, curr, prev, curr_price, symbol)
-                curr_slope_40 = ((ma40_val - prev_ma40) / prev_ma40) * 100 if prev_ma40 > 0 else 0
+            logger.info(f"DEBUG: {symbol} | [TYPE3-제외] 185선 고점 구간({pos_185*100:.1f}%)")
+        else:
+            # 가드 A: 5일선 이격도가 바닥권(-7%/-4%)이면서, 직전보다 수렴하고, 새끼 양봉일 때
+            if disparity_5_185 <= target_disparity and disparity_5_185 > prev_disparity and -2.0 <= candle_body_pct <= 2.0:
                 
-                # [S급] 바닥권에서 5일선이 40선을 우상향 돌파 (강력 반등)
-                # [추가] 격돌 판정을 위한 보조 지표 계산 (5선 기울기 및 5/40 이격도) ######
-                ma5_slope = ((ma5_val - prev_ma5) / prev_ma5) * 100 if prev_ma5 > 0 else 0
-                disparity_5_40 = ((ma5_val - ma40_val) / ma40_val) * 100 if ma40_val > 0 else 0
-                 
-                # [신규] 최근 5봉 이격도(5선-40선) 수렴 여부 체크 (5선이 40선에 점점 붙는지 확인)
-                disps_5b = [abs(df['ma5'].iloc[-i] - df['ma40'].iloc[-i]) / df['ma40'].iloc[-i] * 100 if df['ma40'].iloc[-i] > 0 else 999 for i in range(1, 6)]
-                is_converging_5b = all(disps_5b[i] < disps_5b[i+1] for i in range(4))
+                ###### [유지] 185선이 투매 수준으로 꺾이지 않았을 때만 진입 (slope_rate >= -0.06)
+                if slope_rate >= -0.06:
+                    data_dict = _fill_data_dict_full(df, curr, prev, curr_price, symbol)
+                    curr_slope_40 = ((ma40_val - prev_ma40) / prev_ma40) * 100 if prev_ma40 > 0 else 0
+                    
+                    # [S급] 바닥권에서 5일선이 40선을 우상향 돌파 (강력 반등)
+                    # [추가] 격돌 판정을 위한 보조 지표 계산 (5선 기울기 및 5/40 이격도) ######
+                    ma5_slope = ((ma5_val - prev_ma5) / prev_ma5) * 100 if prev_ma5 > 0 else 0
+                    disparity_5_40 = ((ma5_val - ma40_val) / ma40_val) * 100 if ma40_val > 0 else 0
+                    
+                    # [신규] 최근 5봉 이격도(5선-40선) 수렴 여부 체크 (5선이 40선에 점점 붙는지 확인)
+                    disps_5b = [abs(df['ma5'].iloc[-i] - df['ma40'].iloc[-i]) / df['ma40'].iloc[-i] * 100 if df['ma40'].iloc[-i] > 0 else 999 for i in range(1, 6)]
+                    is_converging_5b = all(disps_5b[i] < disps_5b[i+1] for i in range(4))
 
-                # [수정] S급: 하한선(-0.5) 확장 + 상한선(0.03) 제한 + 5봉 수렴 조건(is_converging_5b) 추가
-                if (not has_prior_gc) and (prev_ma5 <= prev_ma40) and (ma5_slope > 0) and (curr_slope_40 > -0.07) and (-0.8 < disparity_5_40 < 0) and is_converging_5b:
-                    if (-0.5 <= disparity_5_40 < 0) and vol_ratio_t3 < 0.7 and is_true_trigger:
-                        # [S+급] 40선 아래에서 격돌 중 (골크 전) + 찐 트리거
-                        data_dict['grade'] = 'S+'
-                        data_dict['multiplier'] = 2.0  
-                        return True, f"💎 [TYPE3-S+] 골크 전 바닥 격돌 및 찐 트리거 ({disparity_5_40:.2f}%)", "S+", data_dict
-                    elif vol_ratio_t3 < 0.7 and is_true_trigger:
-                        # [S급] 찐 트리거 및 거래량 조건 만족 시 S급 확정 (격격 이격도 완화)
-                        data_dict['grade'] = 'S'
-                        return True, f"💎 [TYPE3-S] 바닥 40선 찐 트리거 안착 및 수렴 ({disparity_5_40:.2f}%)", "S", data_dict
-                else:
-                    logger.info(f"DEBUG: {symbol} | [TYPE3-S] 탈락 이유 | 조건1(골크 미존재) :  {not has_prior_gc} and 조건2(prev_ma5-prev_ma40): {prev_ma5 - prev_ma40:.2f} <= 0 and 조건3(ma5_slope): {ma5_slope:.2f} > 0 and 조건4(curr_slope_40): {curr_slope_40 + 0.1:.2f} > 0 and 조건5(5/40 수렴): {is_converging_5b} and 조건6(이격): {disparity_5_40:.2f}")
-                # [A급] 40선 기울기가 0 이상으로 전환 (추세 반전 확인)
-                if curr_slope_40 >= 0:
-                    data_dict['grade'] = 'A'
-                    return True, f"🚀 [TYPE3-A] 바닥낚시 및 40선 추세 반전", "A", data_dict
-                else:
-                    logger.info(f"DEBUG: {symbol} | [TYPE3-A] 탈락 이유 | 조건1(curr_slope_40) : {curr_slope_40:.2f} > 0")    
-                # [B급] 바닥낚시 조건은 만족하나 아직 돌파/반전 전 (알림용)
-                data_dict['grade'] = 'B'
-                return True, f"📢 [TYPE3-B] 바닥낚시 수렴 중 (알림)", "B", data_dict
+                    # [수정] S급: 하한선(-0.5) 확장 + 상한선(0.03) 제한 + 5봉 수렴 조건(is_converging_5b) 추가
+                    if (not has_prior_gc) and (prev_ma5 <= prev_ma40) and (ma5_slope > 0) and (curr_slope_40 > -0.07) and (-0.8 < disparity_5_40 < 0) and is_converging_5b:
+                        if (-0.5 <= disparity_5_40 < 0) and vol_ratio_t3 < 0.7 and is_true_trigger:
+                            # [S+급] 40선 아래에서 격돌 중 (골크 전) + 찐 트리거
+                            data_dict['grade'] = 'S+'
+                            data_dict['multiplier'] = 2.0  
+                            return True, f"💎 [TYPE3-S+] 골크 전 바닥 격돌 및 찐 트리거 ({disparity_5_40:.2f}%)", "S+", data_dict
+                        elif vol_ratio_t3 < 0.7 and is_true_trigger:
+                            # [S급] 찐 트리거 및 거래량 조건 만족 시 S급 확정 (격격 이격도 완화)
+                            data_dict['grade'] = 'S'
+                            return True, f"💎 [TYPE3-S] 바닥 40선 찐 트리거 안착 및 수렴 ({disparity_5_40:.2f}%)", "S", data_dict
+                    else:
+                        logger.info(f"DEBUG: {symbol} | [TYPE3-S] 탈락 이유 | 조건1(골크 미존재) :  {not has_prior_gc} and 조건2(prev_ma5-prev_ma40): {prev_ma5 - prev_ma40:.2f} <= 0 and 조건3(ma5_slope): {ma5_slope:.2f} > 0 and 조건4(curr_slope_40): {curr_slope_40 + 0.1:.2f} > 0 and 조건5(5/40 수렴): {is_converging_5b} and 조건6(이격): {disparity_5_40:.2f}")
+                    # [A급] 40선 기울기가 0 이상으로 전환 (추세 반전 확인)
+                    if curr_slope_40 >= 0:
+                        data_dict['grade'] = 'A'
+                        return True, f"🚀 [TYPE3-A] 바닥낚시 및 40선 추세 반전", "A", data_dict
+                    else:
+                        logger.info(f"DEBUG: {symbol} | [TYPE3-A] 탈락 이유 | 조건1(curr_slope_40) : {curr_slope_40:.2f} > 0")    
+                    # [B급] 바닥낚시 조건은 만족하나 아직 돌파/반전 전 (알림용)
+                    data_dict['grade'] = 'B'
+                    return True, f"📢 [TYPE3-B] 바닥낚시 수렴 중 (알림)", "B", data_dict
     ###################  TYPE3 END ###################
 
     disparity_40 = abs(curr_price - curr['ma40']) / curr['ma40'] if curr['ma40'] > 0 else 999
