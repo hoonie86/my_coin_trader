@@ -795,10 +795,10 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     if gap_14_40_pct <= 0:
         slopes_14 = [df['ma14'].iloc[-i] - df['ma14'].iloc[-(i+1)] for i in range(1, 8)]
         has_positive_ma14 = any(s > 0 for s in slopes_14[:6])
-        is_t2_rebound = (-1.0 <= gap_14_40_pct <= 0) and (ma14_up_count >= 3) and has_positive_ma14 and is_valid_convergence
+        is_t2_rebound = (-1.0 <= gap_14_40_pct <= 0) and (ma14_up_count >= 2) and has_positive_ma14 and is_valid_convergence
         if not is_t2_rebound:
             if not (-1.0 <= gap_14_40_pct <= 0): t2_fail_reason = f"이격범위이탈({gap_14_40_pct:.2f}%)"
-            elif ma14_up_count < 3: t2_fail_reason = f"14선상승부족({ma14_up_count}/6)"
+            elif ma14_up_count < 2: t2_fail_reason = f"14선상승부족({ma14_up_count}/2)"
             elif not has_positive_ma14: t2_fail_reason = "14선실체없음"
             elif not is_valid_convergence: t2_fail_reason = "수렴/5선발산실패"
     else:
