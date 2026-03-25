@@ -780,7 +780,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     gc_count_t1 = 0
     for i in range(1, 150):
         if i+1 < len(df):
-            if df['ma40'].iloc[-i-1] <= df['ma185'].iloc[-i-1] and df['ma40'].iloc[-i] > df['ma185'].iloc[-i]:
+            if df['ma40'].iloc[-i-1] < df['ma185'].iloc[-i-1] and df['ma40'].iloc[-i] > df['ma185'].iloc[-i]:
                 gc_count_t1 += 1
     vol_sectional = ((df['high'].tail(64).max() - df['low'].tail(64).min()) / df['low'].tail(64).min()) * 100
     has_down_touch = (df['close'].iloc[-11:-1] < df['ma40'].iloc[-11:-1]).any() if len(df) >= 11 else False
@@ -973,7 +973,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             
             # 골든크로스 & 데드존 검증 (진짜 밥그릇인지 확인)
             # [수정] 골든크로스 시점의 185선 기울기 질적 검증 추가
-            if df['ma40'].iloc[idx-1] <= df['ma185'].iloc[idx-1] and df['ma40'].iloc[idx] > df['ma185'].iloc[idx]:
+            if df['ma40'].iloc[idx-1] < df['ma185'].iloc[idx-1] and df['ma40'].iloc[idx] > df['ma185'].iloc[idx]:
                 v185_at_gc = df['ma185'].iloc[idx] - df['ma185'].iloc[idx-1]
                 v185_prev_at_gc = df['ma185'].iloc[idx-1] - df['ma185'].iloc[idx-2]
                 # 185선이 평행 이상이거나 하락세가 둔화되었을 때만 인정
@@ -984,7 +984,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             
             # 오염 감시 (유효 골크 이후 단 1원이라도 하회(데드크로스) 시 즉시 오염 처리)
             if valid_gc_idx != -1 and idx > valid_gc_idx:
-                if df['ma40'].iloc[idx-1] > df['ma185'].iloc[idx-1] and df['ma40'].iloc[idx] <= df['ma185'].iloc[idx]:
+                if df['ma40'].iloc[idx-1] > df['ma185'].iloc[idx-1] and df['ma40'].iloc[idx] < df['ma185'].iloc[idx]:
                     dc_count_after_gc += 1
 
         has_t1_history_clean = (1 <= gc_count_150 <= 2) and (dc_count_after_gc <= 1)
