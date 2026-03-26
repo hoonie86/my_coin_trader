@@ -123,7 +123,7 @@ def get_updated_emergency_level(symbol, current_level, buy_type, rsi, is_3m_belo
 
     # 1. 트리거 (0 -> 2): 진입 조건 (기존 유지)
     if current_level == 0:
-        if (profit_pct >= 10.0 or has_rsi_spike or soaring_rate >= 1.5 or 
+        if (profit_pct >= 10.0 or has_rsi_spike or soaring_rate >= 1.2 or 
             (buy_type == 3 and not is_type3_stable) or max_profit_pct >= 5.0):
             return 2
     
@@ -405,8 +405,8 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     is_converging_5_40 = (sum(1 for i in range(10) if disps_common[i] <= disps_common[i+1]) >= 6)
     # 3. 185일선 안착 안정성 (최근 10봉 하락 틱 수)
     t1_v2_tick = get_bithumb_tick_size(ma185_val)
-    total_drop_ticks = ((df['ma185'].diff().tail(10) * -1) / t1_v2_tick).clip(lower=0).sum() if t1_v2_tick > 0 else 999
-    is_185_landing_stable = total_drop_ticks <= 7    
+    total_drop_ticks = ((df['ma185'].diff().tail(8) * -1) / t1_v2_tick).clip(lower=0).sum() if t1_v2_tick > 0 else 999
+    is_185_landing_stable = total_drop_ticks <= 10    
 
     # 40선/90선 골든크로스 상태 (TYPE 1, 2 공통 가중치 가드)
     is_40_90_gc = prev_ma40 <= prev_ma90 and ma40_val > ma90_val
@@ -455,7 +455,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             is_breakout = (ma5_val > ma40_val) and (temp_disparity_40_5 >= 0.5 or ma5_slope_positive)
             
             if is_squeeze or is_breakout:
-                dynamic_vol_limit = 50.0  # [Case A] 필수 조건 충족 + (초밀착 수렴 OR 돌파 발산)
+                dynamic_vol_limit = 55.0  # [Case A] 필수 조건 충족 + (초밀착 수렴 OR 돌파 발산)
             else: 
                 dynamic_vol_limit = 40.0  # [Case B] 필수 조건 충족 + 일반 구간
         else:
@@ -778,6 +778,8 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     ###### [수정 1: 모든 TYPE 공용 변수 사전 계산 - NameError 방지] ######
     # 1. 족보(GC) 횟수 및 구간 변동성
     gc_count_t1 = 0
+    diff_40_90_pct = abs(df['ma40'].iloc[-1] - df['ma90'].iloc[-1]) / df['ma90'].iloc[-1] * 100 if df['ma90'].iloc[-1] > 0 else 999
+    is_40_90_close = diff_40_90_pct <= 1.0
     for i in range(1, 150):
         if i+1 < len(df):
             if df['ma40'].iloc[-i-1] < df['ma185'].iloc[-i-1] and df['ma40'].iloc[-i] > df['ma185'].iloc[-i]:
@@ -789,15 +791,16 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     ma14_v = df['ma14'].diff()
     ma14_intensity_ok = (ma14_v > 0) | (ma14_v > ma14_v.shift(1))
     ma14_up_count = ma14_intensity_ok.tail(6).sum()
+    is_ma14_strong = ma14_up_count >= 3
     gap_14_40_pct = ((ma14_val - ma40_val) / ma40_val) * 100 if ma40_val > 0 else 0
     is_valid_convergence = is_converging_5_40 if ma5_val < ma40_val else (ma5_slope > 0)
     t2_fail_reason = ""
     if gap_14_40_pct <= 0:
         slopes_14 = [df['ma14'].iloc[-i] - df['ma14'].iloc[-(i+1)] for i in range(1, 8)]
         has_positive_ma14 = any(s > 0 for s in slopes_14[:6])
-        is_t2_rebound = (-1.0 <= gap_14_40_pct <= 0) and (ma14_up_count >= 2) and has_positive_ma14 and is_valid_convergence
+        is_t2_rebound = (-3.0 <= gap_14_40_pct <= 0) and (ma14_up_count >= 2) and has_positive_ma14 and is_valid_convergence
         if not is_t2_rebound:
-            if not (-1.0 <= gap_14_40_pct <= 0): t2_fail_reason = f"이격범위이탈({gap_14_40_pct:.2f}%)"
+            if not (-3.0 <= gap_14_40_pct <= 0): t2_fail_reason = f"이격범위이탈({gap_14_40_pct:.2f}%)"
             elif ma14_up_count < 2: t2_fail_reason = f"14선상승부족({ma14_up_count}/2)"
             elif not has_positive_ma14: t2_fail_reason = "14선실체없음"
             elif not is_valid_convergence: t2_fail_reason = "수렴/5선발산실패"
@@ -852,9 +855,9 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
 
         # [수정] GC가 0회이고 변곡점이거나 안정화되었을 때 통과
         strict_stabilized = (is_turning_up or (stabilized_count >= 0)) and (gc_count_t1 == 0)
-        
+        is_t1_structure_ready = is_40_90_close and is_ma14_strong
         # 전수 조사를 통과한 깨끗한 밥그릇만 아래 등급 판정 진행
-        if strict_descending and strict_stabilized:
+        if strict_descending and strict_stabilized and is_t1_structure_ready:
             if is_high_pos_185:
                 logger.info(f"DEBUG: {symbol} | [TYPE1] 탈락 이유-진입 실패 | 185선 고점 구간({pos_185*100:.1f}%)")
                 return False, f"🚫 [TYPE1-제외] 185선 고점 구간({pos_185*100:.1f}%)", "B", data_dict
@@ -864,8 +867,8 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             # 기준 A: 185일선이 우상향(>0)하면서, 최근 10봉 중 6봉 이상 안정화되었을 때 (가짜 반등 방지)
             is_slope_strong = (slope_rate > 0) and (stabilized_count >= 6)
             
-            # 기준 B: -0.06 ~ 0 사이의 하락 구간이지만, 기울기 개선세가 10봉 중 5봉 이상일 때 (XTER 등 구제)
-            is_slope_dense = (-0.06 <= slope_rate <= 0) and (ma185_up_count >= 5)
+            # 기준 B: -0.06 ~ 0 사이의 하락 구간이지만, 기울기 개선세가 10봉 중 2봉 이상일 때 (XTER 등 구제)
+            is_slope_dense = (-0.06 <= slope_rate <= 0) and (ma185_up_count >= 2)
             
             # 둘 중 하나라도 만족하면 '바닥 안착'으로 인정하고 진입 타점 계산 시작
             if is_slope_strong or is_slope_dense:
@@ -908,7 +911,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             data_dict['grade'] = 'B'
             return True, "🚀 [TYPE1-B] 상승대기(골드안착)", "B", data_dict
         else:
-            logger.info(f"DEBUG: {symbol} TYPE1 탈락 이유 | 185선 96봉~10봉 내리막: :{strict_descending}({descending_count}개 하락), 185선 최근 10봉 우상향:{strict_stabilized}({stabilized_count} >= 0), gc횟수: {gc_count_t1}회")
+            logger.info(f"DEBUG: {symbol} TYPE1 탈락 이유 | 185선 96봉~10봉 내리막:{strict_descending}({descending_count}개 하락), 185선 우상향:{strict_stabilized}, gc횟수: {gc_count_t1}회, 40/90수렴:{is_40_90_close}({diff_40_90_pct:.2f}%), 14선강도:{is_ma14_strong}({ma14_up_count}/6)")
 
     # // [수정: TYPE 4 로직 독립화 - 기존 엔진 활용 버전] //
     is_t4_safe = (vol_sectional <= dynamic_vol_limit)
@@ -1011,7 +1014,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         else:
             if not is_type2_safe:
                 safe_detail = []
-                if vol_sectional > 10.0: safe_detail.append(f"변동성:{vol_sectional:.1f}%")
+                if vol_sectional > dynamic_vol_limit: safe_detail.append(f"변동성 과다({vol_sectional:.1f}% > 기준:{dynamic_vol_limit:.1f}%)")
                 if not is_fresh: safe_detail.append("T1이력없음")
                 reasons.append(f"안전가드({', '.join(safe_detail)})")
             if gap_5_40_pct > 2.5: reasons.append(f"5/40이격과다({gap_5_40_pct:.1f}%)")
