@@ -449,7 +449,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         min_185, max_185 = recent_185.min(), recent_185.max()
         temp_pos_185 = (ma185_val - min_185) / (max_185 - min_185) if (max_185 - min_185) > 0 else 1.0
 
-        if ma40_up_count >= 8 or temp_pos_185 <= 0.3:
+        if ma40_up_count >= 8 and temp_pos_185 <= 0.3:
             ma5_slope_positive = (df['ma5'].iloc[-1] - df['ma5'].iloc[-2]) > 0 if len(df) >= 2 else False
             is_squeeze = (ma5_val <= ma40_val) and (temp_disparity_40_5 <= 1.5)
             is_breakout = (ma5_val > ma40_val) and (temp_disparity_40_5 >= 0.5 or ma5_slope_positive)
@@ -747,9 +747,9 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     data_dict['disparity_185_pct'] = disparity_185_pct
     data_dict['disparity_gold'] = disparity_gold
     
-    if rsi_val > 65:
-        logger.info(f"DEBUG: {symbol} RSI 과열({rsi_val:.1f} > 65, 현재가:{curr_price:,.0f})")
-        reason = f"RSI 과열({rsi_val:.1f} > 65, 현재가:{curr_price:,.0f})"
+    if rsi_val >= 60:
+        logger.info(f"DEBUG: {symbol} RSI 과열({rsi_val:.1f} >= 60, 현재가:{curr_price:,.0f})")
+        reason = f"RSI 과열({rsi_val:.1f} >= 60, 현재가:{curr_price:,.0f})"
         data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
         return False, reason, "", data_dict
 
@@ -816,7 +816,12 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             elif not has_positive_ma5: t2_fail_reason = "5선문턱(-0.03)미달"
             elif not is_185_trend_ok: t2_fail_reason = "185선대추세하락"
             elif not is_valid_convergence: t2_fail_reason = "수렴/5선발산실패"
-    is_true_trigger_t2 = (curr_price > ma14_val) and (curr_price <= ma14_val * 1.03)
+    ma14_slope_v = ((ma14_val - prev_ma14) / prev_ma14) * 100 if prev_ma14 > 0 else 0
+    is_true_trigger_t2 = (curr_price > ma14_val) and (curr_price <= ma14_val * 1.03) and (ma14_slope_v >= -0.02) and (vol_ratio >= 1.1)
+    
+    gap_90_185 = abs(ma90_val - ma185_val) / ma185_val * 100 if ma185_val > 0 else 999
+    prev_gap_90_185 = abs(prev_ma90 - prev_ma185) / prev_ma185 * 100 if prev_ma185 > 0 else 999
+    is_vana_death_conv = (gap_90_185 <= 1.0) and (gap_90_185 < prev_gap_90_185) and (ma90_val > ma185_val)
     is_t4_volume_surge = (data_dict.get('vol_ratio', 0) >= 3.0)
 
     # ==========================================================================
@@ -998,14 +1003,13 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         is_type2_safe = (vol_sectional <= dynamic_vol_limit) and is_fresh
 
         # [C] 최종 판정 및 요청하신 키워드 로그 반영
-        ###### [수정 시작: S/S+ 판정 전에 40선 내려앉음 및 찐 트리거로 조임] ######
-        
-        if is_type2_safe and is_t2_rebound and has_t1_history_clean and (ma90_up_count >= 5) and (ma185_up_count >= 5) and is_185_landing_stable and has_down_touch and is_true_trigger_t2:
+        # ======== [수정 시작: VANA 필터 조건 추가 및 185선 지하실 추락 가드] ========
+        if is_type2_safe and is_t2_rebound and has_t1_history_clean and (ma90_up_count >= 5) and (ma185_up_count >= 5) and is_185_landing_stable and has_down_touch and is_true_trigger_t2 and not is_vana_death_conv:
             gc_idx = valid_gc_idx
             d_cnt = sum(1 for k in range(gc_idx-96, gc_idx-10) if df['ma185'].iloc[k] <= df['ma185'].iloc[k-1]) if gc_idx != -1 else 0
             height_pct = (curr_price - ma185_val) / ma185_val * 100
             
-            if d_cnt >= 50 and height_pct <= 8.0:
+            if d_cnt >= 50 and (-3.0 <= height_pct <= 8.0):
                 grade = "S+" if curr_price >= ma185_val else "S"
                 data_dict['grade'] = grade
                 return True, f"💎 [TYPE2-{grade}] 40선 내려앉음 후 찐 트리거 안착 ({grade})", grade, data_dict
@@ -1022,6 +1026,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             if not has_t1_history_clean: reasons.append(f"역사오염(GC:{gc_count_150}, DC:{dc_count_after_gc})")
             if ma90_up_count < 5: reasons.append(f"90선추세({ma90_up_count})")
             if not is_185_landing_stable: reasons.append(f"185선불안정")
+            if is_vana_death_conv: reasons.append("중장기죽음의수렴") # VANA 사유
             
             if reasons:
                 logger.info(f"DEBUG: {symbol} | [TYPE2] 탈락 이유: {', '.join(reasons)}")
@@ -1276,7 +1281,7 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
                 if soaring_rate >= 8.0:
                     if curr_3m_p < high_10_3m * 0.98:
                         return True, f"🚨[급등-강력] L{new_lvl} 고점대비 2% 하락 (위치:{soaring_rate:.1f}%)", True
-                elif 8.0 > soaring_rate >= 5.0:
+                elif 8.0 > soaring_rate >= 4.0:
                     if curr_3m_p < high_10_3m * 0.984:
                         return True, f"🚨[급등-강력] L{new_lvl} 고점대비 1.6% 하락 (위치:{soaring_rate:.1f}%)", True
                 else:

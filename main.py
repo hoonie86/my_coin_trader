@@ -479,10 +479,10 @@ async def buy_scan_task(app):
                     balance = await asyncio.to_thread(exchange.fetch_balance)
                     free_krw = float(balance['free'].get('KRW', 0))
                     buy_cost = await get_buy_cost()
-                    # TYPE 4일 경우에만 예산을 2/4로 축소 (신규 로직 검증용)
-                    if extracted_type == "4":
-                        buy_cost = int(buy_cost / 2)
-                        logger.info(f"🛡️ [리스크관리] {symbol} TYPE4 감지로 매수금액 50% 축소: {buy_cost:,.0f}원")
+                    # # TYPE 4일 경우에만 예산을 2/4로 축소 (신규 로직 검증용)
+                    # if extracted_type == "4":
+                    #     buy_cost = int(buy_cost / 2)
+                    #     logger.info(f"🛡️ [리스크관리] {symbol} TYPE4 감지로 매수금액 50% 축소: {buy_cost:,.0f}원")
                     buy_type = get_symbol_buy_type(symbol, reason)
 
                     # [개선] grade 값 우선 사용, 없으면 reason에서 추출
