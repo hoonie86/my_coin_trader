@@ -401,8 +401,8 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     gap_5_40_pct = (ma5_val - ma40_val) / ma40_val * 100 if ma40_val > 0 else 0
     # 11봉의 데이터를 수집하여 10번의 인접 비교 구간을 생성
     disps_common = [abs(df['ma5'].iloc[-i] - df['ma40'].iloc[-i]) / df['ma40'].iloc[-i] * 100 if df['ma40'].iloc[-i] > 0 else 999 for i in range(1, 12)]
-    # 10회의 비교 중 60% (6회) 이상 수렴하거나 평행하면 통과 (일시적 발산 노이즈 무시)
-    is_converging_5_40 = (sum(1 for i in range(10) if disps_common[i] <= disps_common[i+1]) >= 6)
+    # 10회의 비교 중 40% (4회) 이상 수렴하거나 평행하면 통과 (일시적 발산 노이즈 무시)
+    is_converging_5_40 = (sum(1 for i in range(10) if disps_common[i] <= disps_common[i+1]) >= 4)
     # 3. 185일선 안착 안정성 (최근 10봉 하락 틱 수)
     t1_v2_tick = get_bithumb_tick_size(ma185_val)
     total_drop_ticks = ((df['ma185'].diff().tail(8) * -1) / t1_v2_tick).clip(lower=0).sum() if t1_v2_tick > 0 else 999
@@ -449,7 +449,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         min_185, max_185 = recent_185.min(), recent_185.max()
         temp_pos_185 = (ma185_val - min_185) / (max_185 - min_185) if (max_185 - min_185) > 0 else 1.0
 
-        if ma40_up_count >= 8 and temp_pos_185 <= 0.3:
+        if ma40_up_count >= 8 or temp_pos_185 <= 0.3:
             ma5_slope_positive = (df['ma5'].iloc[-1] - df['ma5'].iloc[-2]) > 0 if len(df) >= 2 else False
             is_squeeze = (ma5_val <= ma40_val) and (temp_disparity_40_5 <= 1.5)
             is_breakout = (ma5_val > ma40_val) and (temp_disparity_40_5 >= 0.5 or ma5_slope_positive)
@@ -797,12 +797,15 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     t2_fail_reason = ""
     if gap_14_40_pct <= 0:
         slopes_14 = [df['ma14'].iloc[-i] - df['ma14'].iloc[-(i+1)] for i in range(1, 8)]
-        has_positive_ma14 = any(s > 0 for s in slopes_14[:6])
-        is_t2_rebound = (-3.0 <= gap_14_40_pct <= 0) and (ma14_up_count >= 2) and has_positive_ma14 and is_valid_convergence
+        has_positive_ma14 = any(s >= 0 for s in slopes_14[:6])
+        is_bullish_breakout = (curr_price > float(curr['open'])) and ((curr_price > ma14_val) or (float(curr['open']) > ma14_val))
+        is_t2_rebound = (-3.0 <= gap_14_40_pct <= 0) and (ma14_up_count >= 1) and has_positive_ma14 and is_bullish_breakout and is_valid_convergence
+        
         if not is_t2_rebound:
             if not (-3.0 <= gap_14_40_pct <= 0): t2_fail_reason = f"이격범위이탈({gap_14_40_pct:.2f}%)"
-            elif ma14_up_count < 2: t2_fail_reason = f"14선상승부족({ma14_up_count}/2)"
+            elif ma14_up_count < 1: t2_fail_reason = f"14선상승부족({ma14_up_count}/1)"
             elif not has_positive_ma14: t2_fail_reason = "14선실체없음"
+            elif not is_bullish_breakout: t2_fail_reason = "양봉돌파실패"
             elif not is_valid_convergence: t2_fail_reason = "수렴/5선발산실패"
     else:
         slopes = [df['ma5'].iloc[-i] - df['ma5'].iloc[-(i+1)] for i in range(1, 8)]
@@ -821,7 +824,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     
     gap_90_185 = abs(ma90_val - ma185_val) / ma185_val * 100 if ma185_val > 0 else 999
     prev_gap_90_185 = abs(prev_ma90 - prev_ma185) / prev_ma185 * 100 if prev_ma185 > 0 else 999
-    is_vana_death_conv = (gap_90_185 <= 1.0) and (gap_90_185 < prev_gap_90_185) and (ma90_val > ma185_val)
+    is_death_conv = (abs(gap_90_185) <= 1.5) and (gap_90_185 < prev_gap_90_185)
     is_t4_volume_surge = (data_dict.get('vol_ratio', 0) >= 3.0)
 
     # ==========================================================================
@@ -1004,7 +1007,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
 
         # [C] 최종 판정 및 요청하신 키워드 로그 반영
         # ======== [수정 시작: VANA 필터 조건 추가 및 185선 지하실 추락 가드] ========
-        if is_type2_safe and is_t2_rebound and has_t1_history_clean and (ma90_up_count >= 5) and (ma185_up_count >= 5) and is_185_landing_stable and has_down_touch and is_true_trigger_t2 and not is_vana_death_conv:
+        if is_type2_safe and is_t2_rebound and has_t1_history_clean and (ma90_up_count >= 5) and (ma185_up_count >= 5) and is_185_landing_stable and has_down_touch and is_true_trigger_t2 and not is_death_conv:
             gc_idx = valid_gc_idx
             d_cnt = sum(1 for k in range(gc_idx-96, gc_idx-10) if df['ma185'].iloc[k] <= df['ma185'].iloc[k-1]) if gc_idx != -1 else 0
             height_pct = (curr_price - ma185_val) / ma185_val * 100
@@ -1026,7 +1029,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             if not has_t1_history_clean: reasons.append(f"역사오염(GC:{gc_count_150}, DC:{dc_count_after_gc})")
             if ma90_up_count < 5: reasons.append(f"90선추세({ma90_up_count})")
             if not is_185_landing_stable: reasons.append(f"185선불안정")
-            if is_vana_death_conv: reasons.append("중장기죽음의수렴") # VANA 사유
+            if is_death_conv: reasons.append("중장기죽음의수렴")
             
             if reasons:
                 logger.info(f"DEBUG: {symbol} | [TYPE2] 탈락 이유: {', '.join(reasons)}")
@@ -1127,7 +1130,7 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
 
     # 6. 본절방어 기준점(틱 사이즈 반영) 계산
     one_tick_pct = (get_bithumb_tick_size(purchase_price) / purchase_price * 100) if purchase_price > 0 else 0
-    profit_threshold = max(0.5, 2 * one_tick_pct)
+    profit_threshold = max(0.7, 3 * one_tick_pct)
     
     # [1단계] 최우선 생존: 패닉 여부 상관없이 -3% 도달 시 즉시 탈출 (Emergency=True)
     if profit_rate_pct <= -3.0:
@@ -1182,9 +1185,9 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
         return False, f"진입 초기 유예({current_age}봉)", False
 
         # 1. 본절 방어 (수정된 동적 기준 적용)
-    if profit_threshold <= max_profit_rate_pct < 1.0 and purchase_price * 1.001 <= curr_p <= purchase_price * 1.003:
+    if profit_threshold <= max_profit_rate_pct < 1.5 and purchase_price * 1.000 <= curr_p <= purchase_price * 1.002:
         cooldown_dict[symbol] = datetime.now() + timedelta(hours=6)
-        return True, f"🛡️ [S-TS-0.5] 본절방어(즉시)", True
+        return True, f"🛡️ [S-TS-0.7] 본절방어(즉시)", True
 
     ma40_val = curr['ma40']
     ma185_val = curr['ma185'] if not pd.isna(curr['ma185']) else 0
@@ -1315,20 +1318,20 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
             #     if curr_p <= purchase_price * 1.005:
             #         return True, f"🛡️ [S-TS-0.5] 본절방어", False
 
-            # 2. 익절 구간 A (1.0% ~ 2.0% 미만): 고점 대비 0.5% 하락 시 매도
-            if 1.0 <= max_profit_rate_pct < 2.0:
+            # 2. 익절 구간 A (1.5% ~ 3.0% 미만): 고점 대비 0.7% 하락 시 매도
+            if 1.5 <= max_profit_rate_pct < 3.0:
                 if drop_from_peak > profit_threshold:
-                    return True, f"💰 [S-TS-1.0] 익절 A (낙폭 {profit_threshold:,.2f}% 초과)", True
+                    return True, f"💰 [S-TS-1.5] 익절 A (낙폭 {profit_threshold:,.2f}% 초과)", True
 
             # 3. 익절 구간 B (2.0% ~ 3.5% 미만): 고점 대비 1.0% 하락 시 매도
-            elif 2.0 <= max_profit_rate_pct < 3.5:
+            elif 3.0 <= max_profit_rate_pct < 4.5:
                 if drop_from_peak > 1.0:
-                    return True, f"💰 [S-TS-2.0] 익절 B (낙폭 1.0% 초과)", True
+                    return True, f"💰 [S-TS-3.0] 익절 B (낙폭 1.0% 초과)", True
 
-            # 4. 익절 구간 C (3.5% 이상): 고점 대비 1.5% 하락 시 즉시 매도
-            elif max_profit_rate_pct >= 3.5:
+            # 4. 익절 구간 C (4.5% 이상): 고점 대비 1.5% 하락 시 즉시 매도
+            elif max_profit_rate_pct >= 4.5:
                 if drop_from_peak > 1.5:
-                    return True, f"🚀 [S-TS-3.5] 익절 C (낙폭 1.5% 초과)", True
+                    return True, f"🚀 [S-TS-4.5] 익절 C (낙폭 1.5% 초과)", True
 
             # ---------------------------------------------------------
             # [정비 2] 40 지지선 및 S+급 보호 (상향->평행->상향 로직)
@@ -1430,6 +1433,9 @@ def get_report_visuals(this_profit, is_sell_signal, this_curr_p, ma40_val, sell_
     from datetime import datetime
     wait_data = pending_approvals.get(symbol)
     
+    # [추가] 상세 사유에서 중복 종목명(예: DBR/KRW) 제거
+    clean_reason = sell_reason.split('(')[0].strip()
+    
     # [1] 유예 및 긴급 상태 (파랑/🚨)
     if wait_data and wait_data.get('status') in ['WAITING', 'NOTIFIED']:
         elapsed = (datetime.now() - wait_data['start_time']).total_seconds() / 60
@@ -1444,15 +1450,13 @@ def get_report_visuals(this_profit, is_sell_signal, this_curr_p, ma40_val, sell_
 
     # [2] 매도 신호 발생 (빨강 - 위험 신호)
     if is_sell_signal:
-        return "🔴", f"⚠️ 매도신호({sell_reason})"
+        return "🔴", f"⚠️ 매도신호({clean_reason})"
 
     # [3] 40선 하단 (노랑 - 주의 단계)
-    # 현재가가 40선 아래여도 수익률이 -0.5% 이상(본절 근처)이면 초록색 유지
     if this_curr_p < ma40_val:
         if this_profit > -0.5:
-             return "🟢", f"✅ 차트양호({symbol})"
-        return "🟡", f"⚠️ 40선 하단({symbol})"
+             return "🟢", f"✅ 차트양호(홀딩)"
+        return "🟡", f"⚠️ 40선 하단"
 
     # [4] 차트 양호 (초록 - 홀딩/안전 신호)
-    # 매도 신호가 없고 40선 위라면 수익률과 관계없이 초록색으로 표시
     return "🟢", f"✅ 차트양호(홀딩)"

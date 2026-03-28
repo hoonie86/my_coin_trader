@@ -715,10 +715,15 @@ async def execute_sell(app, symbol, reason):
             logger.info(f"💾 [인벤토리 정리] {symbol} 데이터 삭제 완료")
 
         # 7. 텔레그램 최종 알림
-        await app.bot.send_message(
-            config.CHAT_ID, 
-            f"{alert_header} {symbol}\n사유: {reason} | 📊 최종 수익률: {this_profit:+.2f}%"
+        completion_msg = (
+            f"✅ [{symbol}] 매도 실행 완료\n"
+            f"━━━━━━━━━━━━━━\n"
+            f"💰 최종 수익률: {this_profit:+.2f}%\n"
+            f"💵 체결 단가: {sell_price:,.0f}원\n"
+            f"📝 매도 사유: {reason}\n"
+            f"━━━━━━━━━━━━━━"
         )
+        await app.bot.send_message(config.CHAT_ID, completion_msg)
         
         # 8. 유예 목록 정리
         if symbol in pending_approvals:
@@ -813,12 +818,14 @@ async def sell_monitor_task(app):
             symbol_buttons = []
 
             for symbol, data in list(assets.items()):
-                # [추가] 비상 루프(L1, L2)에서 관리 중인 종목은 일반 루프에서 스킵
-                if strategy.emergency_mode.get(symbol, 0) >= 1:
-                    continue
                 # 0단계: 기본 데이터 수집
                 ticker = await asyncio.to_thread(exchange.fetch_ticker, symbol)
                 this_curr_p = float(ticker.get('last') or ticker.get('close') or 0)
+
+                if this_curr_p <= 0:
+                    logger.warning(f"⚠️ {symbol} 현재가 조회 실패. 리포트 및 감시를 1회 스킵합니다.")
+                    continue
+
                 # 인벤토리 데이터 미리 로드 (평단가 보충 및 등급 확인용)
                 # 인벤토리 데이터 미리 로드
                 inv_item = inv_data.get(symbol) or inv_data.get(symbol.split('/')[0]) or {}
@@ -841,9 +848,9 @@ async def sell_monitor_task(app):
                 print(f"🔍 [MONITOR] {symbol} | 현재가: {curr_p_val:,.0f} | 평단가: {this_avg_p:,.0f} (기록:{p_inv_val:.2f} / 거래소:{p_exch_val:.2f})")
 
                 if this_avg_p <= 0:
-                    # 평단가가 없으면 일단 '현재가'를 평단가로 가정해서 수익률을 0%로 만듦 (강제 매도 방지)
-                    print(f"⚠️ [WARN] {symbol} 평단가 0원 -> 현재가({this_curr_p:,.0f})로 임시 대체")
-                    this_avg_p = this_curr_p
+                    # ======== [수정: 강제 0% 보정 제거 및 감시 스킵] ========
+                    logger.warning(f"⚠️ [WARN] {symbol} 평단가 조회 실패 -> 0% 수익률 오류 방지를 위해 감시 스킵")
+                    continue
 
                 # 수익률 계산 (보정된 평단가 사용)
                 this_profit = ((this_curr_p - this_avg_p) / this_avg_p * 100) if this_avg_p > 0 else 0
@@ -945,9 +952,6 @@ async def sell_monitor_task(app):
 
                 ticker = await asyncio.to_thread(exchange.fetch_ticker, symbol)
                 this_curr_p = float(ticker.get('last') or ticker.get('close') or 0)
-                if this_curr_p == 0 and not df.empty:
-                    this_curr_p = float(df.iloc[-1]['close'])
-                    config.logger.info(f"ℹ️ {symbol} 현재가 0 조회 -> OHLCV 종가({this_curr_p})로 보정")
                 realtime_price = this_curr_p  # 실시간 현재가 긁기
                 
                 # [수정] urgent_flag를 함께 받을 수 있도록 호출부 수정
@@ -1112,8 +1116,15 @@ async def sell_monitor_task(app):
                     )
                     mode_icon = " 🤖" if status == 'AUTO' else ""
 
-                # [최종 출력] 등급 포함 한 줄 구성
-                report_line = f"{report_color} [{this_grade}] {symbol.split('/')[0]:<6} | {this_curr_p:,.0f}원 | {this_profit:+.2f}%({this_profit_krw:+,.0f}원) | {status_text}{mode_icon}"
+                # 1. strategy.emergency_mode -> emergency_mode (main.py 전역변수로 수정)
+                mode_str = "긴급" if (emergency_mode.get(symbol, 0) >= 1 or symbol in pending_approvals) else "일반"
+                
+                # 2. 긴급 모드일 경우 줄 앞의 아이콘을 🚨로 덮어쓰기 (상단 요약 카운트에 반영됨)
+                if mode_str == "긴급":
+                    report_color = "🚨"
+                
+                # [최종 출력] 등급 및 모드 포함 한 줄 구성
+                report_line = f"{report_color} [{this_grade} | {mode_str}] {symbol.split('/')[0]:<6} | {this_curr_p:,.0f}원 | {this_profit:+.2f}%({this_profit_krw:+,.0f}원) | {status_text}{mode_icon}"
                 ##### [수정/추가] 정렬을 위해 딕셔너리 형태로 데이터를 임시 저장합니다. #####
                 report_lines.append({
                     'text': report_line,
@@ -1126,6 +1137,14 @@ async def sell_monitor_task(app):
                 if is_sell_final:
                     # 이미 위에서 execute_sell을 했다면 중복 실행 방지 로직 필요
                     await execute_sell(app, symbol, sell_reason)
+                    comp_msg = (
+                        f"✅ [{symbol}] 매도 실행 완료\n"
+                        f"━━━━━━━━━━━━━━\n"
+                        f"💰 최종 수익률: {this_profit:+.2f}%\n"
+                        f"💵 요청 단가: {this_curr_p:,.0f}원\n"
+                        f"📝 사유: {sell_reason}\n"
+                        f"━━━━━━━━━━━━━━"
+                    )
                     if symbol in pending_approvals: del pending_approvals[symbol]
                     continue
                 elif not is_sell_signal:
@@ -1147,6 +1166,10 @@ async def sell_monitor_task(app):
                         f"🟡:{sum(1 for l in final_text_lines if '🟡' in l)} | "
                         f"🔴:{sum(1 for l in final_text_lines if '🔴' in l)}"
                     )
+                    # 🚨 아이콘이 있는 경우에만 우측에 별도 추가 표기
+                    urgent_count = sum(1 for l in final_text_lines if '🚨' in l)
+                    if urgent_count > 0:
+                        summary += f" | 🚨:{urgent_count}"
                     # 1. 수동 AUTO 상태 판정 (config 참조)
                     is_manual_auto = (getattr(config, 'buy_mute_mode', 'MANUAL') == 'AUTO')
                     
