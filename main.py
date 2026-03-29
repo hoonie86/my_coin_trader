@@ -5,6 +5,8 @@ import json
 import os
 import shutil
 from datetime import datetime, timedelta
+import threading
+inv_lock = threading.RLock()
 # 1. 필수 폴더 생성
 for folder in ['logs', 'trades']:
     if not os.path.exists(folder):
@@ -48,14 +50,15 @@ INV_FILE = "trades/inventory.json"
 
 def load_inventory():
     """저장된 인벤토리 파일을 불러옵니다."""
-    if os.path.exists(INV_FILE):
-        try:
-            with open(INV_FILE, "r") as f:
-                return json.load(f)
-        except Exception as e:
-            logger.error(f"Inventory Load Error: {e}")
-            return {}
-    return {}
+    with inv_lock:
+        if os.path.exists(INV_FILE):
+            try:
+                with open(INV_FILE, "r") as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.error(f"Inventory Load Error: {e}")
+                return {}
+        return {}
 
 def get_symbol_buy_type(symbol, reason=""):
     """
@@ -80,34 +83,35 @@ def get_symbol_buy_type(symbol, reason=""):
 
 def save_inventory(symbol, avg_price, quantity, grade="A", buy_type=1, purchase_time=None):
     """평단가, 수량, 그리고 [진입 등급]을 로컬 파일에 안전하게 저장합니다."""
-    try:
-        inv = load_inventory()
-        if avg_price <= 0:
-            logger.error(f"❌ [저장실패] {symbol} 비정상 평단가: {avg_price}")
-            return
-        if purchase_time is None:
-            purchase_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        # [수정] buy_time을 기록하여 strategy의 '6봉 유예' 로직과 연동
-        # [추가] grade를 기록하여 실시간 리포트에서 진입 당시 등급 확인 가능
-        existing_data = inv.get(symbol, {})
-        current_max = existing_data.get('max_price', float(avg_price)) # 고점 기록이 없으면 평단가로 초기화
-
-        inv[symbol] = {
-            **existing_data,                    # 기존의 profit_deadline, max_profit_seen 등 유지
-            "avg_price": float(avg_price),      
-            "purchase_price": float(avg_price), 
-            "total_quantity": float(quantity),  
-            "max_price": float(current_max),    # 기존 고점 유지
-            "grade": str(grade),                
-            "buy_type": buy_type,               
-            "last_update": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            "purchase_time": purchase_time
-        }
-        with open(INV_FILE, "w") as f:
-            json.dump(inv, f, indent=4)
-        print(f"💾 [기록완료] {symbol} | 등급: {grade} | 평단: {avg_price:,.0f} | 수량: {quantity}")
-    except Exception as e:
-        logger.error(f"Inventory Save Error: {e}")
+    with inv_lock:
+        try:
+            inv = load_inventory()
+            if avg_price <= 0:
+                logger.error(f"❌ [저장실패] {symbol} 비정상 평단가: {avg_price}")
+                return
+            if purchase_time is None:
+                purchase_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            # [수정] buy_time을 기록하여 strategy의 '6봉 유예' 로직과 연동
+            # [추가] grade를 기록하여 실시간 리포트에서 진입 당시 등급 확인 가능
+            existing_data = inv.get(symbol, {})
+            current_max = existing_data.get('max_price', float(avg_price)) # 고점 기록이 없으면 평단가로 초기화
+    
+            inv[symbol] = {
+                **existing_data,                    # 기존의 profit_deadline, max_profit_seen 등 유지
+                "avg_price": float(avg_price),      
+                "purchase_price": float(avg_price), 
+                "total_quantity": float(quantity),  
+                "max_price": float(current_max),    # 기존 고점 유지
+                "grade": str(grade),                
+                "buy_type": buy_type,               
+                "last_update": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                "purchase_time": purchase_time
+            }
+            with open(INV_FILE, "w") as f:
+                json.dump(inv, f, indent=4)
+            print(f"💾 [기록완료] {symbol} | 등급: {grade} | 평단: {avg_price:,.0f} | 수량: {quantity}")
+        except Exception as e:
+            logger.error(f"Inventory Save Error: {e}")
 
 
 # 프로그램 시작 시 메모리에 로드
@@ -496,7 +500,19 @@ async def buy_scan_task(app):
                         if is_immediate:
                             success, msg = await safe_market_buy(symbol, buy_cost, current_grade, extracted_type)
                             if success:
-                                await app.bot.send_message(config.CHAT_ID, f"⚡ [즉시 매수 완료] {symbol}\n(모드: {'야간' if is_night else GLOBAL_BUY_MODE})\n사유: {reason}")
+                                # ======== [수정: 매수 완료 알림에 평균매수가 추가] ========
+                                temp_inv = load_inventory()
+                                actual_price = float(temp_inv.get(symbol, {}).get('purchase_price', 0))
+                                buy_msg = (
+                                    f"⚡ [즉시 매수 완료] {symbol}\n"
+                                    f"(모드: {'야간' if is_night else GLOBAL_BUY_MODE})\n"
+                                    f"━━━━━━━━━━━━━━\n"
+                                    f"💵 평균 매수가: {actual_price:,.2f}원\n"
+                                    f"💰 매수 금액: {buy_cost:,.0f}원\n"
+                                    f"💎 사유: {reason}\n"
+                                    f"━━━━━━━━━━━━━━"
+                                )
+                                await app.bot.send_message(config.CHAT_ID, buy_msg)
                             continue
                         
                         if symbol not in pending_s_buys:
@@ -559,13 +575,18 @@ async def buy_scan_task(app):
                                     if success:
                                         final_buy_cost = retry_cost # 성공 시 표시 금액 갱신
                             if success:
+                                temp_inv = load_inventory()
+                                actual_price = float(temp_inv.get(symbol, {}).get('purchase_price', 0))
                                 display_grade = f"{current_grade}급"
-                                await app.bot.send_message(
-                                    config.CHAT_ID,
-                                        f"🤖 [{display_grade} 즉시매수 완료] {symbol}\n"
-                                        f"💡 사유: {reason}\n"
-                                        f"💰 투입: {buy_cost:,.0f}원"
-                                    )
+                                buy_msg = (
+                                    f"🤖 [{display_grade} 즉시매수 완료] {symbol}\n"
+                                    f"━━━━━━━━━━━━━━\n"
+                                    f"💵 평균 매수가: {actual_price:,.2f}원\n"
+                                    f"💰 투입 금액: {final_buy_cost:,.0f}원\n"
+                                    f"💡 사유: {reason}\n"
+                                    f"━━━━━━━━━━━━━━"
+                                )
+                                await app.bot.send_message(config.CHAT_ID, buy_msg)
                                 if symbol in pending_s_buys: del pending_s_buys[symbol]
                     else:
                         display_grade = f"{current_grade}급"
@@ -1007,38 +1028,31 @@ async def sell_monitor_task(app):
                     is_sell_final = False
                 ###### 수익 10분 유예 타이머 (수익 릴레이) ######
                 now_time = datetime.now()
-                is_relay_updated = False # 파일 저장 트리거
-
-                # ////////// [수정: TYPE2 매수 시그널 유지 여부 실시간 확인] //////////
+                is_relay_updated = False 
+                
                 w_list = strategy.get_warning_list()
                 is_buy_now, buy_reason_now, _, _ = await strategy.check_buy_signal(exchange, df, symbol, w_list)
                 is_t2_signal_alive = (is_buy_now and "TYPE2" in buy_reason_now)
                 
-                # 시작 및 갱신: 수익 1% 이상이고 매도 신호 없을 때만 동작
-                if this_profit >= 1.0 and not is_urgent and not is_sell_signal:
-                    p_deadline = inv_item.get('profit_deadline')
-                    if not p_deadline:
-                        inv_item['profit_deadline'] = (now_time + timedelta(minutes=10)).strftime('%Y-%m-%d %H:%M:%S')
-                        inv_item['max_profit_seen'] = this_profit
-                        inv_data[symbol] = inv_item
-                        is_relay_updated = True
-                        await app.bot.send_message(
-                            config.CHAT_ID, 
-                            f"🚨 [{symbol}] 수익 1% 돌파! 10분 매도 유예를 시작합니다.\n추가 수익 갱신이 없으면 매도됩니다."
-                        )
-                    # 수익 고점 갱신: 기존 수익보다 단 0.01%라도 높으면 10분 재설정
-                    elif this_profit > inv_item.get('max_profit_seen', 0) or is_t2_signal_alive:
-                        update_reason = "고점 갱신" if this_profit > inv_item.get('max_profit_seen', 0) else "TYPE2 시그널 유지"
-                        inv_item['profit_deadline'] = (now_time + timedelta(minutes=10)).strftime('%Y-%m-%d %H:%M:%S')
-                        inv_item['max_profit_seen'] = max(this_profit, inv_item.get('max_profit_seen', 0))
-                        inv_data[symbol] = inv_item
-                        is_relay_updated = True
-                        await app.bot.send_message(
-                            config.CHAT_ID, 
-                            f"🔄 [{symbol}] {update_reason}({this_profit:+.2f}%)! 유예 시간을 10분으로 재설정합니다."
-                        )
+                # 1. 수익 릴레이 (매도 유예 중이면 간섭 완전 차단)
+                if symbol not in pending_approvals:
+                    if this_profit >= 1.0 and not is_urgent and not is_sell_signal:
+                        p_deadline = inv_item.get('profit_deadline')
+                        if not p_deadline:
+                            inv_item['profit_deadline'] = (now_time + timedelta(minutes=10)).strftime('%Y-%m-%d %H:%M:%S')
+                            inv_item['max_profit_seen'] = this_profit
+                            inv_data[symbol] = inv_item
+                            is_relay_updated = True
+                            await app.bot.send_message(config.CHAT_ID, f"🚨 [{symbol}] 수익 1% 돌파! 10분 매도 유예 시작")
+                        elif this_profit > inv_item.get('max_profit_seen', 0) or is_t2_signal_alive:
+                            update_reason = "고점 갱신" if this_profit > inv_item.get('max_profit_seen', 0) else "TYPE2 시그널 유지"
+                            inv_item['profit_deadline'] = (now_time + timedelta(minutes=10)).strftime('%Y-%m-%d %H:%M:%S')
+                            inv_item['max_profit_seen'] = max(this_profit, inv_item.get('max_profit_seen', 0))
+                            inv_data[symbol] = inv_item
+                            is_relay_updated = True
+                            await app.bot.send_message(config.CHAT_ID, f"🔄 [{symbol}] {update_reason}({this_profit:+.2f}%)! 10분 재설정")
 
-                # 매도 집행: 수익률 조건(this_profit >= 1.0)과 무관하게 타이머가 만료되었는지 항시 확인
+                # 수익 릴레이 만료 시 
                 p_deadline = inv_item.get('profit_deadline')
                 if p_deadline and now_time > datetime.strptime(p_deadline, '%Y-%m-%d %H:%M:%S'):
                     is_sell_signal = True
@@ -1050,27 +1064,19 @@ async def sell_monitor_task(app):
 
                 if is_relay_updated:
                     try:
-                        with open(INV_FILE, "w") as f:
-                            json.dump(inv_data, f, indent=4)
+                        with inv_lock:
+                            with open(INV_FILE, "w") as f:
+                                json.dump(inv_data, f, indent=4)
                     except Exception as e:
                         logger.error(f"Profit Timer Save Error: {e}")
-                elapsed_min = 0
+
+                # 2. 매도 유예 관리: [2대 원칙 적용]
                 if is_sell_signal:
-                    # [1] 긴급 매도(is_urgent) 확인
-                    # strategy.py에서 True로 넘어온 경우 유예 없이 바로 True 처리
                     if is_urgent:
                         is_sell_final = True
-                        # 긴급 매도는 유예 리스트에 넣지 않고 즉시 로직 아래에서 처리되게 합니다.
-                        
-                    # [2] 일반 매도 (유예 시스템 작동)
                     elif symbol not in pending_approvals:
-                        # 모든 일반 매도 사유에 대해 유예 시간을 10분으로 통합
+                        # [원칙 1] 이미 명단에 있으면 Pass, 없을 때만 10분 번호표 신규 발급
                         wait_limit = 10 
-                        
-                        # 텔레그램 알림 아이콘 설정 (긴박함을 알리기 위해 🚨 사용)
-                        icon = "🚨" 
-                        
-                        # 유예 리스트 등록
                         pending_approvals[symbol] = {
                             'status': 'NOTIFIED',
                             'start_time': datetime.now(),
@@ -1078,37 +1084,40 @@ async def sell_monitor_task(app):
                             'reason': sell_reason,
                             'wait_limit': wait_limit
                         }
-                        
-                        # 텔레그램 알림 발송
                         kb = telegram_ui.get_sell_signal_kb(symbol, wait_limit)
                         await app.bot.send_message(
                             config.CHAT_ID,
-                            f"{icon} [{wait_limit}분 유예 시작] {symbol}\n"
-                            f"사유: {sell_reason}\n"
-                            f"현재수익률: {this_profit:+.2f}% | 현재가: {this_curr_p:,.0f}원\n"
-                            f"⏱ 대응 선택 대기 (10분 뒤 자동 매도)", 
-                            reply_markup=kb
+                            f"🟡 [{wait_limit}분 유예 시작] {symbol}\n사유: {sell_reason}\n"
+                            f"현재수익률: {this_profit:+.2f}% | 10분 뒤 자동 매도 판단", reply_markup=kb
                         )
 
-                    else:
-                        wait_data = pending_approvals[symbol]
-                        # [기존 로직] 수익률 회복 시 유예 취소
-                        if this_profit > wait_data.get('entry_profit', 0) + 0.5:
-                            del pending_approvals[symbol]
-                            await app.bot.send_message(config.CHAT_ID, f"✅ [매도 취소] {symbol} 수익률 회복")
-                        elif wait_data.get('status') in ['WAITING', 'NOTIFIED']:
-                            elapsed_min = (datetime.now() - wait_data['start_time']).total_seconds() / 60
-                            current_limit = wait_data.get('wait_limit', 30)
-                            if elapsed_min >= current_limit:
-                                is_sell_final = True
-                else:
-                    if symbol in pending_approvals: del pending_approvals[symbol]
+                # 매도 신호 유무 무관, 유예 중인 놈은 상시 감시
+                if symbol in pending_approvals:
+                    wait_data = pending_approvals[symbol]
+                    elapsed_min = (datetime.now() - wait_data['start_time']).total_seconds() / 60
+                    current_limit = wait_data.get('wait_limit', 10)
+                    
+                    if elapsed_min >= current_limit:
+                        # [원칙 2] 10분 정각 만료 시점에만 성적 검사
+                        if this_profit > wait_data.get('entry_profit', 0):
+                            # 개선 시: 보류하고 10분 추가 연장
+                            wait_data['start_time'] = datetime.now()
+                            wait_data['entry_profit'] = this_profit
+                            pending_approvals[symbol] = wait_data
+                            await app.bot.send_message(config.CHAT_ID, f"✅ [유예 연장] {symbol} 반등 성공({this_profit:+.2f}%)으로 10분 추가")
+                            is_sell_final = False
+                        else:
+                            # 하락 또는 동일 시: 봐주지 않고 즉시 매도
+                            is_sell_final = True
+                            sell_reason = f"🚨 [유예만료] 반등 실패 및 매도 집행 ({this_profit:+.2f}%)"
 
-                # 4단계: 리포트 라인 생성 (등급 및 아이콘 복구)
+                # 3. 리포트 라인 및 모드 세분화 아이콘 생성
+                is_emergency = emergency_mode.get(symbol, 0) >= 1
+                is_sell_pending = symbol in pending_approvals
+                is_profit_timer = inv_item.get('profit_deadline') is not None
+
                 if status == 'KEEP' and not (is_sell_signal and "0순위" in sell_reason):
-                    report_color = "🟢"
-                    status_text = "유지 중"
-                    mode_icon = " 🔒"
+                    report_color, status_text, mode_str = "🟢", "유지 중", " 🔒"
                 else:
                     report_color, status_text = strategy.get_report_visuals(
                         this_profit, is_sell_signal, this_curr_p, ma40_line,
@@ -1116,39 +1125,30 @@ async def sell_monitor_task(app):
                     )
                     mode_icon = " 🤖" if status == 'AUTO' else ""
 
-                # 1. strategy.emergency_mode -> emergency_mode (main.py 전역변수로 수정)
-                mode_str = "긴급" if (emergency_mode.get(symbol, 0) >= 1 or symbol in pending_approvals) else "일반"
-                
-                # 2. 긴급 모드일 경우 줄 앞의 아이콘을 🚨로 덮어쓰기 (상단 요약 카운트에 반영됨)
-                if mode_str == "긴급":
-                    report_color = "🚨"
-                
-                # [최종 출력] 등급 및 모드 포함 한 줄 구성
+                # 직관적인 아이콘 우선순위 (초정밀 > 하락유예 > 수익유예 > 일반)
+                if is_emergency:
+                    mode_str, report_color = "긴급", "🚨"
+                elif is_sell_pending:
+                    mode_str, report_color = "유예", "🟡"
+                elif is_profit_timer:
+                    mode_str, report_color = "수익", "🔵"
+                else:
+                    mode_str = "일반"
+
                 report_line = f"{report_color} [{this_grade} | {mode_str}] {symbol.split('/')[0]:<6} | {this_curr_p:,.0f}원 | {this_profit:+.2f}%({this_profit_krw:+,.0f}원) | {status_text}{mode_icon}"
-                ##### [수정/추가] 정렬을 위해 딕셔너리 형태로 데이터를 임시 저장합니다. #####
                 report_lines.append({
                     'text': report_line,
                     'profit': this_profit,
                     'button': InlineKeyboardButton(f"🔍 {symbol.split('/')[0]}", callback_data=f"manage_asset:{symbol}")
                 })
 
-                # 5단계: 최종 집행
-                # 감시 루프 하단부
+                # 4. 최종 매도 집행 (불필요한 중복 알림 코드 제거 완료)
                 if is_sell_final:
-                    # 이미 위에서 execute_sell을 했다면 중복 실행 방지 로직 필요
                     await execute_sell(app, symbol, sell_reason)
-                    comp_msg = (
-                        f"✅ [{symbol}] 매도 실행 완료\n"
-                        f"━━━━━━━━━━━━━━\n"
-                        f"💰 최종 수익률: {this_profit:+.2f}%\n"
-                        f"💵 요청 단가: {this_curr_p:,.0f}원\n"
-                        f"📝 사유: {sell_reason}\n"
-                        f"━━━━━━━━━━━━━━"
-                    )
                     if symbol in pending_approvals: del pending_approvals[symbol]
                     continue
                 elif not is_sell_signal:
-                    if symbol in pending_approvals: del pending_approvals[symbol]
+                    pass # 신호가 해제되어도 사용자의 [원칙 2]에 따라 만료 시점까지 대기함
             # 정기 리포트 발송 (기존 로직 유지)
             if (datetime.now() - last_report_time).total_seconds() >= config.REPORT_INTERVAL:
                 if report_lines:
@@ -1566,12 +1566,10 @@ async def process_report_logic(update, context, query=None):
             # 비주얼 판정 (기존 로직 보존)
             if status == 'KEEP' and not (is_sell_signal and "0순위" in sell_reason):
                 report_color, status_text, mode_str = "🟢", "유지 중", " 🔒"
+                mode_icon = ""
             else:
                 # [수정] pending_approvals에 없더라도 is_sell_signal이 True면 
                 # 유예 로직을 시뮬레이션하여 색상을 결정합니다.
-                
-                # 만약 지금 신호는 왔는데 아직 정기 루프가 등록을 안 했다면?
-                # 가상의 대기 데이터를 만들어 visuals 함수에 전달합니다.
                 temp_approvals = pending_approvals.copy()
                 if is_sell_signal and symbol not in temp_approvals:
                     temp_approvals[symbol] = {
@@ -1582,14 +1580,29 @@ async def process_report_logic(update, context, query=None):
 
                 report_color, status_text = strategy.get_report_visuals(
                     this_profit, is_sell_signal, this_curr_p, ma40_line,
-                    sell_reason, symbol, temp_approvals # 보정된 approvals 전달
+                    sell_reason, symbol, temp_approvals
                 )
-                mode_str = " 🤖" if status == 'AUTO' else ""
+                
+                # ==============================================================================
+                # [복구 내용 1: 자동 리포트와 동일한 모드 판별 및 아이콘 강제 적용]
+                # ==============================================================================
+                is_emergency = emergency_mode.get(symbol, 0) >= 1
+                is_sell_pending = symbol in temp_approvals
+                is_profit_timer = inv_item.get('profit_deadline') is not None
+                
+                if is_emergency:
+                    mode_str, report_color = "긴급", "🚨"
+                elif is_sell_pending:
+                    mode_str, report_color = "유예", "🟡"
+                elif is_profit_timer:
+                    mode_str, report_color = "수익", "🔵"
+                else:
+                    mode_str = "일반"
+                
+                mode_icon = " 🤖" if status == 'AUTO' else ""
 
-            if report_color == "🚨": urgent_count += 1
-
-            # [기존 출력 포맷 유지]
-            report_line = f"{report_color} [{this_grade}] {symbol.split('/')[0]:<6} | {this_curr_p:,.0f}원 | {this_profit:+.2f}%({this_profit_krw:+,.0f}원) | {status_text}{mode_str}"
+            # [복구 내용 2: 꼬여있던 리포트 출력 포맷 정상화]
+            report_line = f"{report_color} [{this_grade} | {mode_str}] {symbol.split('/')[0]:<6} | {this_curr_p:,.0f}원 | {this_profit:+.2f}%({this_profit_krw:+,.0f}원) | {status_text}{mode_icon}"
             ##### [변경] 정렬을 위해 데이터 객체로 저장 #####
             report_data_list.append({
                 'text': report_line,
@@ -1604,15 +1617,21 @@ async def process_report_logic(update, context, query=None):
         final_text_lines = [item['text'] for item in report_data_list]
         symbol_buttons = [item['button'] for item in report_data_list]
 
-        ##### [추가] 2. 요약 집계 생성 (초-파-노-빨 순서) #####
+        # ==============================================================================
+        # [복구 내용 3: 🚨 카운트 요약본에 추가 누락분 복구]
+        # ==============================================================================
         summary = ""
         if final_text_lines:
             summary = (
                 f"🟢:{sum(1 for l in final_text_lines if '🟢' in l)} | "
                 f"🔵:{sum(1 for l in final_text_lines if '🔵' in l)} | "
                 f"🟡:{sum(1 for l in final_text_lines if '🟡' in l)} | "
-                f"🔴:{sum(1 for l in final_text_lines if '🔴' in l)}\n"
+                f"🔴:{sum(1 for l in final_text_lines if '🔴' in l)}"
             )
+            urgent_count = sum(1 for l in final_text_lines if '🚨' in l)
+            if urgent_count > 0:
+                summary += f" | 🚨:{urgent_count}"
+            summary += "\n"
 
         # [원본 로직] 하단 버튼 키보드 구성 (기능 유지)
         final_rows = [symbol_buttons[i:i + 4] for i in range(0, len(symbol_buttons), 4)]

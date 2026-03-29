@@ -747,9 +747,9 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     data_dict['disparity_185_pct'] = disparity_185_pct
     data_dict['disparity_gold'] = disparity_gold
     
-    if rsi_val >= 60:
-        logger.info(f"DEBUG: {symbol} RSI 과열({rsi_val:.1f} >= 60, 현재가:{curr_price:,.0f})")
-        reason = f"RSI 과열({rsi_val:.1f} >= 60, 현재가:{curr_price:,.0f})"
+    if rsi_val >= 65:
+        logger.info(f"DEBUG: {symbol} RSI 과열({rsi_val:.1f} >= 65, 현재가:{curr_price:,.0f})")
+        reason = f"RSI 과열({rsi_val:.1f} >= 65, 현재가:{curr_price:,.0f})"
         data_dict['pattern_labels'] = _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_val)
         return False, reason, "", data_dict
 
@@ -813,9 +813,9 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         slope_improvements = sum(1 for i in range(5) if slopes[i] > slopes[i+1])
         has_positive_ma5 = any(s > -0.03 for s in slopes[:6])
         is_185_trend_ok = (slopes_185[0] > 0) or (slopes_185[0] > slopes_185[1])
-        is_t2_rebound = (slope_improvements >= 3) and has_positive_ma5 and is_185_trend_ok and is_valid_convergence
+        is_t2_rebound = (slope_improvements >= 2) and has_positive_ma5 and is_185_trend_ok and is_valid_convergence
         if not is_t2_rebound:
-            if slope_improvements < 3: t2_fail_reason = f"5선가속도부족({slope_improvements}/3)"
+            if slope_improvements < 2: t2_fail_reason = f"5선가속도부족({slope_improvements}/2)"
             elif not has_positive_ma5: t2_fail_reason = "5선문턱(-0.03)미달"
             elif not is_185_trend_ok: t2_fail_reason = "185선대추세하락"
             elif not is_valid_convergence: t2_fail_reason = "수렴/5선발산실패"
@@ -942,7 +942,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     reasons_t4 = []
     if not is_t4_safe: reasons_t4.append(f"변동성초과({vol_sectional:.1f}%)")
     if not is_t4_alignment: reasons_t4.append(f"배열/수렴미달")
-    if gap_5_40_pct > 2.5: reasons_t4.append(f"5/40이격과다({gap_5_40_pct:.1f}%)")
+    if gap_5_40_pct > 4.0: reasons_t4.append(f"5/40이격과다({gap_5_40_pct:.1f}%)")
     if not (gc_count_t1 == 0): reasons_t4.append(f"GC이력({gc_count_t1}회)")
     
     # [수정] 수급 문턱만 3.0으로 낮추기
@@ -1024,7 +1024,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 if vol_sectional > dynamic_vol_limit: safe_detail.append(f"변동성 과다({vol_sectional:.1f}% > 기준:{dynamic_vol_limit:.1f}%)")
                 if not is_fresh: safe_detail.append("T1이력없음")
                 reasons.append(f"안전가드({', '.join(safe_detail)})")
-            if gap_5_40_pct > 2.5: reasons.append(f"5/40이격과다({gap_5_40_pct:.1f}%)")
+            if gap_5_40_pct > 4.0: reasons.append(f"5/40이격과다({gap_5_40_pct:.1f}%)")
             if not is_t2_rebound: reasons.append(f"수렴실패({t2_fail_reason})")            
             if not has_t1_history_clean: reasons.append(f"역사오염(GC:{gc_count_150}, DC:{dc_count_after_gc})")
             if ma90_up_count < 5: reasons.append(f"90선추세({ma90_up_count})")
