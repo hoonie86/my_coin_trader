@@ -1043,25 +1043,25 @@ async def sell_monitor_task(app):
                     if this_profit >= 1.0 and not is_urgent and not is_sell_signal:
                         p_deadline = inv_item.get('profit_deadline')
                         if not p_deadline:
-                            inv_item['profit_deadline'] = (now_time + timedelta(minutes=10)).strftime('%Y-%m-%d %H:%M:%S')
+                            inv_item['profit_deadline'] = (now_time + timedelta(minutes=3)).strftime('%Y-%m-%d %H:%M:%S')
                             inv_item['max_profit_seen'] = this_profit
                             inv_data[symbol] = inv_item
                             is_relay_updated = True
-                            await app.bot.send_message(config.CHAT_ID, f"🚨 [{symbol}] 수익 1% 돌파! 10분 매도 유예 시작")
+                            await app.bot.send_message(config.CHAT_ID, f"🚨 [{symbol}] 수익 1% 돌파! 3분 매도 유예 시작")
                         elif this_profit > inv_item.get('max_profit_seen', 0) or is_t2_signal_alive:
                             update_reason = "고점 갱신" if this_profit > inv_item.get('max_profit_seen', 0) else "TYPE2 시그널 유지"
-                            inv_item['profit_deadline'] = (now_time + timedelta(minutes=10)).strftime('%Y-%m-%d %H:%M:%S')
+                            inv_item['profit_deadline'] = (now_time + timedelta(minutes=3)).strftime('%Y-%m-%d %H:%M:%S')
                             inv_item['max_profit_seen'] = max(this_profit, inv_item.get('max_profit_seen', 0))
                             inv_data[symbol] = inv_item
                             is_relay_updated = True
-                            await app.bot.send_message(config.CHAT_ID, f"🔄 [{symbol}] {update_reason}({this_profit:+.2f}%)! 10분 재설정")
+                            await app.bot.send_message(config.CHAT_ID, f"🔄 [{symbol}] {update_reason}({this_profit:+.2f}%)! 3분 재설정")
 
                 # 수익 릴레이 만료 시 
                 p_deadline = inv_item.get('profit_deadline')
                 if p_deadline and now_time > datetime.strptime(p_deadline, '%Y-%m-%d %H:%M:%S'):
                     is_sell_signal = True
                     is_sell_final = True
-                    sell_reason = "⏰ [익절] 수익 경신 멈춤으로 10분 유예 만료"
+                    sell_reason = "⏰ [익절] 수익 경신 멈춤으로 3분 유예 만료"
                     del inv_item['profit_deadline']
                     inv_data[symbol] = inv_item
                     is_relay_updated = True
@@ -1079,8 +1079,8 @@ async def sell_monitor_task(app):
                     if is_urgent:
                         is_sell_final = True
                     elif symbol not in pending_approvals:
-                        # [원칙 1] 이미 명단에 있으면 Pass, 없을 때만 10분 번호표 신규 발급
-                        wait_limit = 10 
+                        # [원칙 1] 이미 명단에 있으면 Pass, 없을 때만 5분 번호표 신규 발급
+                        wait_limit = 5 
                         pending_approvals[symbol] = {
                             'status': 'NOTIFIED',
                             'start_time': datetime.now(),
@@ -1092,7 +1092,7 @@ async def sell_monitor_task(app):
                         await app.bot.send_message(
                             config.CHAT_ID,
                             f"🟡 [{wait_limit}분 유예 시작] {symbol}\n사유: {sell_reason}\n"
-                            f"현재수익률: {this_profit:+.2f}% | 10분 뒤 자동 매도 판단", reply_markup=kb
+                            f"현재수익률: {this_profit:+.2f}% | 5분 뒤 자동 매도 판단", reply_markup=kb
                         )
 
                 # 매도 신호 유무 무관, 유예 중인 놈은 상시 감시

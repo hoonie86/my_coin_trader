@@ -6,6 +6,8 @@ import time
 from datetime import datetime
 from datetime import datetime, timedelta
 from config import logger
+import os
+import json
 
 MARKET_STATUS_FILE = 'market_status.json'
 
@@ -842,7 +844,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     if gap_14_40_pct <= 0:
         slopes_14 = [df['ma14'].iloc[-i] - df['ma14'].iloc[-(i+1)] for i in range(1, 8)]
         has_positive_ma14 = any(s >= 0 for s in slopes_14[:6])
-        is_bullish_breakout = (curr_price > float(curr['open'])) and ((curr_price > ma14_val) or (float(curr['open']) > ma14_val))
+        is_bullish_breakout = (curr_price >= float(curr['open'])) and ((curr_price > ma14_val) or (float(curr['open']) > ma14_val))
         if not is_bullish_breakout:
             # 봇이 계산한 실제 숫자를 로그에 찍어서 차트와 비교합니다.
             logger.debug(f"🔍 [양봉판정로그] {symbol} | 현재가:{curr_price} | 시가:{curr['open']} | MA14:{ma14_val:.2f} | 결과:FAIL")
@@ -867,12 +869,20 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             elif not is_185_trend_ok: t2_fail_reason = "185선대추세하락"
             elif not is_valid_convergence: t2_fail_reason = "수렴/5선발산실패"
     ma14_slope_v = ((ma14_val - prev_ma14) / prev_ma14) * 100 if prev_ma14 > 0 else 0
-    is_true_trigger_t2 = (curr_price > ma14_val) and (curr_price <= ma14_val * 1.03) and (ma14_slope_v >= -0.02) and (vol_ratio >= 1.1)
+    is_true_trigger_t2 = (curr_price > ma14_val) and (curr_price <= ma14_val * 1.03) and (ma14_slope_v >= -0.02) and (vol_ratio >= 0.8)
     
     gap_90_185 = abs(ma90_val - ma185_val) / ma185_val * 100 if ma185_val > 0 else 999
     prev_gap_90_185 = abs(prev_ma90 - prev_ma185) / prev_ma185 * 100 if prev_ma185 > 0 else 999
-    is_death_conv = (abs(gap_90_185) <= 1.5) and (gap_90_185 < prev_gap_90_185)
-    is_t4_volume_surge = (data_dict.get('vol_ratio', 0) >= 3.0)
+    is_death_conv = False
+    if ma90_val < ma185_val:
+        # 90선이 아래일 때: 거리가 벌어지는(발산) '나쁜 상황' + 1.5% 이내면 차단
+        if (gap_90_185 > prev_gap_90_185) and (gap_90_185 <= 1.5):
+            is_death_conv = True
+    elif ma90_val > ma185_val:
+        # 90선이 위일 때: 거리가 좁혀지는(수렴) '나쁜 상황' + 1.5% 이내면 차단
+        if (gap_90_185 < prev_gap_90_185) and (gap_90_185 <= 1.5):
+            is_death_conv = True
+    is_t4_volume_surge = (data_dict.get('vol_ratio', 0) >= 1.5)
 
     # ==========================================================================
     # [TYPE1: 밥그릇 바닥 탈출 및 변곡점 포착]
@@ -1087,10 +1097,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     t2_fail_str = f"T2({', '.join(reasons)})" if ('reasons' in locals() and reasons) else "T2(미달)"
     t4_fail_str = f"T4({', '.join(reasons_t4)})" if ('reasons_t4' in locals() and reasons_t4) else "T4(미달)"
     fail_reason_str = f"{t2_fail_str} | {t4_fail_str}"
-    
-    if curr_price <= ma40_val:
-        return False, f"현재가({curr_price:,.0f}) ≤ 40일선({ma40_val:,.0f}) | {fail_reason_str}", "F", data_dict 
-        
+            
     return False, f"🚫 탈락사유: {fail_reason_str}", "F", data_dict
     ###### [수정 끝] ######
 
