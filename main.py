@@ -7,6 +7,7 @@ import shutil
 from datetime import datetime, timedelta
 import threading
 inv_lock = threading.RLock()
+buy_queue = asyncio.Queue()
 # 1. 필수 폴더 생성
 for folder in ['logs', 'trades']:
     if not os.path.exists(folder):
@@ -157,6 +158,9 @@ async def safe_market_buy(symbol, cost, grade="A", buy_type=1):
             raw_amount = safe_cost / target_p
             amount = math.floor(raw_amount * 10000) / 10000.0
             
+            target_p = float(exchange.price_to_precision(symbol, target_p))
+            amount = float(exchange.amount_to_precision(symbol, amount))
+
             # 3. 디버그 로그: API 서버로 전송되기 직전의 날것(Raw) 데이터 검증
             raw_total = target_p * amount
             logger.info(
@@ -379,7 +383,17 @@ async def buy_scan_task(app):
             ]
 
             # [수정] dna_collector 성공 로직: 전체 티커를 quoteId 파라미터로 안전하게 호출
-            all_tickers = await asyncio.to_thread(exchange.fetch_tickers, params={'quoteId': 'KRW'})
+            try:
+                all_tickers = await asyncio.to_thread(exchange.fetch_tickers, params={'quoteId': 'KRW'})
+                # [추가: 정기 점검 등 비정상 응답 방어]
+                if not isinstance(all_tickers, dict):
+                    logger.warning("⚠️ [입구 컷] fetch_tickers: 딕셔너리가 아닌 응답 (정기점검 의심). 스캔을 1회 건너뜁니다.")
+                    await asyncio.sleep(60)
+                    continue
+            except Exception as e:
+                logger.error(f"fetch_tickers 오류: {e}")
+                await asyncio.sleep(60)
+                continue
 
             market_rates = [
                 float(all_tickers[m['symbol']]['percentage']) for m in krw_filtered 
@@ -563,31 +577,21 @@ async def buy_scan_task(app):
                                 print(f"⚠️ [잔액부족] {symbol} 매수 스킵 (가용:{free_krw:,.0f}원)")
                                 continue
 
-                           # [수정] 1차 매수 시도 후 실패 시 금액 깎아서 재시도
-                            success, msg = await safe_market_buy(symbol, final_buy_cost, current_grade, extracted_type)
+                            ###### [수정 지점 3 교체 시작] 기존 대기 로직 삭제 후 큐(Queue) 예약으로 변경 ######
+                            buy_job = {
+                                'symbol': symbol, 
+                                'cost': final_buy_cost, 
+                                'grade': current_grade, 
+                                'buy_type': extracted_type,
+                                'reason': reason
+                            }
+                            buy_queue.put_nowait(buy_job)
+                            config.logger.info(f"📥 [큐 예약] {symbol} 매수 워커로 전달 (스캔 계속됨)")
                             
-                            # 잔액 부족 에러 발생 시 재시도 로직
-                            if not success and ("사용가능 KRW을 초과" in str(msg) or "잔액" in str(msg)):
-                                retry_cost = int(final_buy_cost * 0.9) # 30% 더 감액
-                                if retry_cost >= 5000:
-                                    print(f"🔄 [재시도] {symbol} 잔액 초과로 금액 조정: {final_buy_cost:,.0f} -> {retry_cost:,.0f}")
-                                    success, msg = await safe_market_buy(symbol, retry_cost, current_grade, extracted_type)
-                                    if success:
-                                        final_buy_cost = retry_cost # 성공 시 표시 금액 갱신
-                            if success:
-                                temp_inv = load_inventory()
-                                actual_price = float(temp_inv.get(symbol, {}).get('purchase_price', 0))
-                                display_grade = f"{current_grade}급"
-                                buy_msg = (
-                                    f"🤖 [{display_grade} 즉시매수 완료] {symbol}\n"
-                                    f"━━━━━━━━━━━━━━\n"
-                                    f"💵 평균 매수가: {actual_price:,.2f}원\n"
-                                    f"💰 투입 금액: {final_buy_cost:,.0f}원\n"
-                                    f"💡 사유: {reason}\n"
-                                    f"━━━━━━━━━━━━━━"
-                                )
-                                await app.bot.send_message(config.CHAT_ID, buy_msg)
-                                if symbol in pending_s_buys: del pending_s_buys[symbol]
+                            if symbol in pending_s_buys: 
+                                del pending_s_buys[symbol]
+                            ###### [수정 지점 3 교체 끝] ######
+
                     else:
                         display_grade = f"{current_grade}급"
                         # if display_grade == "B급":    continue
@@ -1768,9 +1772,15 @@ async def pending_buy_task(app):
                         final_grade = 'S' # 강등 방지 로직
 
                     if is_still_good:
-                        success, msg = await safe_market_buy(sym, info['cost'], final_grade, extracted_type)
-                        if success:
-                            await app.bot.send_message(config.CHAT_ID, f"🤖 [S급 10분 정각집행] {sym} 자동 매수 완료")
+                        buy_job = {
+                            'symbol': sym, 
+                            'cost': info['cost'], 
+                            'grade': final_grade, 
+                            'buy_type': extracted_type,
+                            'reason': final_reason
+                        }
+                        buy_queue.put_nowait(buy_job)
+                        config.logger.info(f"📥 [S급 정각 큐 예약] {sym} 매수 워커로 전달")
                     else:
                         # [추가] 매수 취소 알림: 10분 대기 중 지표 이탈 시 사용자에게 보고 (무단 잠수 방지)
                         await app.bot.send_message(config.CHAT_ID, f"⚠️ [매수취소] {sym} 지표 이탈로 10분 집행 포기 ({final_reason})")
@@ -1780,6 +1790,26 @@ async def pending_buy_task(app):
         except Exception as e:
             logger.error(f"Error in pending_buy_task: {e}")
             await asyncio.sleep(10)
+
+async def buy_worker(app):
+    config.logger.info("👷 [매수 워커 가동] 비차단 매수 시스템 시작")
+    while True:
+        job = await buy_queue.get()
+        try:
+            symbol = job['symbol']
+            cost = job['cost']
+            grade = job['grade']
+            buy_type = job['buy_type']
+            reason = job.get('reason', '알 수 없음') # [추가] Key 에러 방어
+            
+            success, msg = await safe_market_buy(symbol, cost, grade, buy_type)
+            if success:
+                # [수정] 큐 매수 완료 메시지에 reason 변수 추가
+                await app.bot.send_message(config.CHAT_ID, f"🚀 [큐 집행 완료] {symbol}\n금액: {cost:,.0f}원\n사유: {reason}\n메시지: {msg}")
+        except Exception as e:
+            config.logger.error(f"❌ [Worker Error] {symbol} 매수 처리 중 오류: {e}")
+        finally:
+            buy_queue.task_done()
 
 async def main():
     print("🚀 가상화폐 자동 매매 시스템 가동...")
@@ -1796,7 +1826,7 @@ async def main():
     sell_task = asyncio.create_task(sell_monitor_task(app))
     emergency_task = asyncio.create_task(emergency_monitor_task(app))
     pending_task = asyncio.create_task(pending_buy_task(app))
-
+    worker_task = asyncio.create_task(buy_worker(app))
     # 텔레그램 인터페이스 시작
     await app.initialize()
     await app.start()

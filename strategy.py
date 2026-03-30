@@ -7,11 +7,40 @@ from datetime import datetime
 from datetime import datetime, timedelta
 from config import logger
 
-market_ref_rate = 0.0
-is_buy_locked = False
+MARKET_STATUS_FILE = 'market_status.json'
+
+def load_market_status():
+    if os.path.exists(MARKET_STATUS_FILE):
+        try:
+            with open(MARKET_STATUS_FILE, 'r') as f:
+                data = json.load(f)
+                # datetime 객체 복구 로직 포함
+                cleared_time = data.get('panic_cleared_time')
+                if cleared_time:
+                    cleared_time = datetime.fromisoformat(cleared_time)
+                return data.get('is_buy_locked', False), data.get('market_ref_rate', 0.0), cleared_time
+        except Exception as e:
+            logger.error(f"시장 상태 파일 로드 오류: {e}")
+    return False, 0.0, None
+
+def save_market_status():
+    try:
+        data = {
+            'is_buy_locked': is_buy_locked,
+            'market_ref_rate': market_ref_rate,
+            'panic_cleared_time': panic_cleared_time.isoformat() if panic_cleared_time else None
+        }
+        with open(MARKET_STATUS_FILE, 'w') as f:
+            json.dump(data, f)
+    except Exception as e:
+        logger.error(f"시장 상태 파일 저장 오류: {e}")
+
+# 초기화 시 파일에서 상태 로드
+is_buy_locked, market_ref_rate, panic_cleared_time = load_market_status()
+# --- [수정/추가 끝] ---
+
 panic_msg_sent = False
 cooldown_dict = {}
-panic_cleared_time = None
 
 def is_in_cooldown(symbol):
     if symbol in cooldown_dict:
@@ -21,12 +50,16 @@ def is_in_cooldown(symbol):
     
 async def update_market_panic_status(current_avg):
     global market_ref_rate, is_buy_locked, panic_cleared_time
+
+    status_changed = False # 파일 저장을 위한 플래그 추가
     # 1. 최초 잠금: -3% 돌파 시
     if not is_buy_locked and current_avg <= -3.0:
         is_buy_locked = True
         market_ref_rate = current_avg
+        status_changed = True # 상태 변경 표시
         logger.info(f"🚨 [시장잠금] 패닉 상태 감지 (기준점: {market_ref_rate:.2f}%)")
         msg = f"🚨 [시장잠금] 패닉 상태 감지\n기준점: {market_ref_rate:.2f}%\n현재 모든 매수가 중단됩니다."
+        save_market_status() # 변경 즉시 저장
         return True, msg # 호출부(main.py)에서 이 메시지를 받아 알림 전송
     # 2. 잠금 상태일 때 (해제 또는 바닥 갱신)
     elif is_buy_locked:
@@ -43,20 +76,25 @@ async def update_market_panic_status(current_avg):
             is_buy_locked = False
             panic_cleared_time = datetime.now()
             market_ref_rate = current_avg
+            status_changed = True
             logger.info(f"✅ 시장 반등 확인({threshold}%): 매수 잠금 해제 (기준점: {market_ref_rate:.2f}%)")
         
         # 3. 바닥 실시간 추적 (사용자님 철학: 기준점은 하향 갱신만 허용)
         elif current_avg < market_ref_rate:
             market_ref_rate = current_avg
+            status_changed = True
             logger.info(f"📉 시장 바닥 갱신: 기준점 하향 조정 ({market_ref_rate:.2f}%)")
     # 3. 해제 상태일 때 (재잠금/데드캣 방지)
     else:
         if current_avg <= market_ref_rate - 2.0:
             is_buy_locked = True
             market_ref_rate = current_avg
+            status_changed = True
+            save_market_status()
             # [추가] 상태 변화 시 메시지 리턴
             return True, f"🚨 [재잠금] 데드캣 방지 필터 작동\n기준점: {market_ref_rate:.2f}%"
-
+    if status_changed:
+        save_market_status()
     # [추가] 함수 맨 끝에 어떤 경우에도 에러 안 나게 빈 값 리턴
     return False, None
 
@@ -92,7 +130,13 @@ def get_warning_list():
     try:
         url = "https://api.bithumb.com/public/assetsstatus/ALL"
         res = requests.get(url, timeout=5).json()
+        if not isinstance(res, dict):
+            logger.warning("⚠️ [입구 컷] get_warning_list: 비정상 응답 (정기점검 의심)")
+            return []
+            
         data = res.get('data', {})
+        if not isinstance(data, dict):
+             return []
         
         ###### [수정 시작: 거래중지(halt)뿐만 아니라 입출금 제한 종목까지 모두 차단] ######
         warning_coins = []
@@ -799,6 +843,9 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         slopes_14 = [df['ma14'].iloc[-i] - df['ma14'].iloc[-(i+1)] for i in range(1, 8)]
         has_positive_ma14 = any(s >= 0 for s in slopes_14[:6])
         is_bullish_breakout = (curr_price > float(curr['open'])) and ((curr_price > ma14_val) or (float(curr['open']) > ma14_val))
+        if not is_bullish_breakout:
+            # 봇이 계산한 실제 숫자를 로그에 찍어서 차트와 비교합니다.
+            logger.debug(f"🔍 [양봉판정로그] {symbol} | 현재가:{curr_price} | 시가:{curr['open']} | MA14:{ma14_val:.2f} | 결과:FAIL")
         is_t2_rebound = (-3.0 <= gap_14_40_pct <= 0) and (ma14_up_count >= 1) and has_positive_ma14 and is_bullish_breakout and is_valid_convergence
         
         if not is_t2_rebound:
@@ -1185,7 +1232,7 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
         return False, f"진입 초기 유예({current_age}봉)", False
 
         # 1. 본절 방어 (수정된 동적 기준 적용)
-    if profit_threshold <= max_profit_rate_pct < 1.5 and purchase_price * 1.000 <= curr_p <= purchase_price * 1.002:
+    if profit_threshold <= max_profit_rate_pct < 1.5 and purchase_price * 0.999 <= curr_p <= purchase_price * 1.001:
         cooldown_dict[symbol] = datetime.now() + timedelta(hours=6)
         return True, f"🛡️ [S-TS-0.7] 본절방어(즉시)", True
 
@@ -1321,7 +1368,7 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
             # 2. 익절 구간 A (1.5% ~ 3.0% 미만): 고점 대비 0.7% 하락 시 매도
             if 1.5 <= max_profit_rate_pct < 3.0:
                 if drop_from_peak > profit_threshold:
-                    return True, f"💰 [S-TS-1.5] 익절 A (낙폭 {profit_threshold:,.2f}% 초과)", True
+                    return True, f"💰 [S-TS-1.5] 익절 A (낙폭 {profit_threshold:,.1f}% 초과)", True
 
             # 3. 익절 구간 B (2.0% ~ 3.5% 미만): 고점 대비 1.0% 하락 시 매도
             elif 3.0 <= max_profit_rate_pct < 4.5:
