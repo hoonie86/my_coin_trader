@@ -442,7 +442,9 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     # 1. 0 이상(평행/상향)이거나 2. 음수 구간에서 직전보다 수치상 커져야(완만해져야) True
     # -3 > -3 (False), -3 > -5 (True)
     ma185_intensity_ok = (ma185_v > 0) | (ma185_v > ma185_v.shift(1))
-    ma185_up_count = ma185_intensity_ok.tail(10).sum()
+    # 2. 새로운 안전장치: 최근 10개 중 '실제로 수치가 상승(>0)'한 횟수 계산
+    actual_up_count = (ma185_v.tail(10) > 0).sum()
+    ma185_up_count = ma185_intensity_ok.tail(10).sum() if actual_up_count >= 2 else 0
     # 2. 5-40선 이격도 및 수렴 여부
     gap_5_40_pct = (ma5_val - ma40_val) / ma40_val * 100 if ma40_val > 0 else 0
     # 11봉의 데이터를 수집하여 10번의 인접 비교 구간을 생성
@@ -839,9 +841,9 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     ma14_up_count = ma14_intensity_ok.tail(6).sum()
     is_ma14_strong = ma14_up_count >= 3
     gap_14_40_pct = ((ma14_val - ma40_val) / ma40_val) * 100 if ma40_val > 0 else 0
-    is_valid_convergence = is_converging_5_40 if ma5_val < ma40_val else (ma5_slope > 0)
     t2_fail_reason = ""
     if gap_14_40_pct <= 0:
+        is_valid_convergence = is_converging_5_40 if ma5_val < ma40_val else (ma5_slope > 0)
         slopes_14 = [df['ma14'].iloc[-i] - df['ma14'].iloc[-(i+1)] for i in range(1, 8)]
         has_positive_ma14 = any(s >= 0 for s in slopes_14[:6])
         is_bullish_breakout = (curr_price >= float(curr['open'])) and ((curr_price > ma14_val) or (float(curr['open']) > ma14_val))
@@ -857,6 +859,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             elif not is_bullish_breakout: t2_fail_reason = "양봉돌파실패"
             elif not is_valid_convergence: t2_fail_reason = "수렴/5선발산실패"
     else:
+        is_valid_convergence = is_converging_5_40 if ma5_val > ma40_val else (ma5_slope > 0)
         slopes = [df['ma5'].iloc[-i] - df['ma5'].iloc[-(i+1)] for i in range(1, 8)]
         slopes_185 = [df['ma185'].iloc[-i] - df['ma185'].iloc[-(i+1)] for i in range(1, 8)]
         slope_improvements = sum(1 for i in range(5) if slopes[i] > slopes[i+1])
@@ -991,7 +994,11 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         (not is_t4_base_alignment) and 
         (disparity_185_40 <= 0.015) and        # [기준1: 1.5% 이격]
         (ma40_up_count >= 5) and                 # [기준2,3: 기울기 개선]
-        (ma40_slope_common >= -0.02)           # [기준4: 기울기 마지노선]
+        (ma40_slope_common >= -0.02) and           # [기준4: 기울기 마지노선]
+        ###### [추가] 타입4 독립 방어: 185일선 품질 공통 변수 강제 결합 ######
+        (ma185_up_count >= 5) and
+        (ma185_intensity_ok.iloc[-1]) and
+        (slope_rate >= -0.01)
     )
     is_t4_alignment = is_t4_base_alignment or is_t4_hybrid_alignment
     # ---------------------------
@@ -1006,7 +1013,9 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     if vol_ratio < 3.0: reasons_t4.append(f"수급미달({vol_ratio:.1f}x<3x)")
     
     # [핵심] 기존 엔진은 그대로 사용! (단, REI를 위해 has_down_touch만 선택적 제거)
-    if not is_t2_rebound: reasons_t4.append(f"수렴실패({t2_fail_reason})")
+    ###### [수정/추가] 격돌 로직 이식 및 대추세(185선) 급락 가드 결합 ######
+    if not is_t2_rebound: reasons_t4.append(f"격돌/수렴실패({t2_fail_reason})")
+    if slope_rate < -0.01: reasons_t4.append(f"185선급락({slope_rate:.4f})")
     
     # REI 같은 강한 종목을 위해 TYPE 4에서만 '터치' 조건 주석 처리하거나 완화
     # if not has_down_touch: reasons_t4.append("40선터치없음") 

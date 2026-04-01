@@ -364,6 +364,8 @@ async def buy_scan_task(app):
     global notified_symbols, buy_individual_status, pending_s_buys, missed_60m_tracker
     while True:
         try:
+            krw_filtered = []
+
             m_data = await asyncio.to_thread(exchange.load_markets, params={'quoteId': 'KRW'})
             markets = list(m_data.values())
             
@@ -605,7 +607,7 @@ async def buy_scan_task(app):
                         )
 
             print(f"\n✅ 스캔 완료 | {datetime.now().strftime('%H:%M:%S')}")
-            await asyncio.sleep(300)
+            await asyncio.sleep(180)
 
         except Exception as e:
             logger.error(f"Buy Task Error: {e}")
@@ -673,6 +675,12 @@ async def execute_sell(app, symbol, reason):
             
             # 3회 모두 실패 시 유예 재시작 및 함수 종료
             if not fill_success:
+                try:
+                    await asyncio.to_thread(exchange.cancel_order, order['id'], symbol)
+                    logger.info(f"⏭️ [매도락방지-최종] {symbol} 미체결 주문 전량 취소 완료")
+                except Exception as e:
+                    pass
+
                 alert_msg = f"❌ [매도보류] {symbol} 호가창 얇음 (슬리피지 방어)\n사유: {reason}\n지정가 매도 3회 실패로 3분 유예를 재시작합니다."
                 await app.bot.send_message(config.CHAT_ID, alert_msg)
                 logger.warning(alert_msg)
@@ -1061,7 +1069,7 @@ async def sell_monitor_task(app):
                 if p_deadline and now_time > datetime.strptime(p_deadline, '%Y-%m-%d %H:%M:%S'):
                     is_sell_signal = True
                     is_sell_final = True
-                    sell_reason = "⏰ [익절] 수익 경신 멈춤으로 3분 유예 만료"
+                    sell_reason = "⏰ [익절] 수익 경신 멈춤으로 5분 유예 만료"
                     del inv_item['profit_deadline']
                     inv_data[symbol] = inv_item
                     is_relay_updated = True
