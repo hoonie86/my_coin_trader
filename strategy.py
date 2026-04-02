@@ -169,7 +169,7 @@ def get_updated_emergency_level(symbol, current_level, buy_type, rsi, is_3m_belo
 
     # 1. 트리거 (0 -> 2): 진입 조건 (기존 유지)
     if current_level == 0:
-        if (profit_pct >= 10.0 or has_rsi_spike or soaring_rate >= 1.2 or 
+        if (profit_pct >= 1.5 or has_rsi_spike or soaring_rate >= 1.0 or 
             (buy_type == 3 and not is_type3_stable) or max_profit_pct >= 5.0):
             return 2
     
@@ -359,7 +359,16 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     """
     grade = ""
     # [시장 방어막 체크]
-    global is_buy_locked, market_ref_rate
+    
+    # ###### [추가] 실시간 파일 참조로 시장 락 무력화 방지 ######
+    global is_buy_locked, market_ref_rate, panic_cleared_time
+    file_locked, file_ref, file_cleared = load_market_status()
+    is_buy_locked = file_locked
+    market_ref_rate = file_ref
+    panic_cleared_time = file_cleared
+    # #######################################################
+    
+    # global is_buy_locked, market_ref_rate # 기존 코드는 주석 처리
     # [[ UPDATE: 잔고 및 데이터 오류, 재매수 제한 필터 ]]
     try:
         curr = df.iloc[-1]
@@ -865,12 +874,19 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         slope_improvements = sum(1 for i in range(5) if slopes[i] > slopes[i+1])
         has_positive_ma5 = any(s > -0.03 for s in slopes[:6])
         is_185_trend_ok = (slopes_185[0] > 0) or (slopes_185[0] > slopes_185[1])
-        is_t2_rebound = (slope_improvements >= 2) and has_positive_ma5 and is_185_trend_ok and is_valid_convergence
+        
+        # //======== [수정 사항: 14선이 40선 위에 있을 때 고점 추격 매수 방지 로직 보강] ========//
+        is_bullish_breakout_high = (curr_price >= float(curr['open'])) and ((curr_price > ma14_val) or (float(curr['open']) > ma14_val))
+        is_gap_40_safe = gap_14_40_pct <= 3.0 # 40선 대비 이격도 3% 이내 강제
+        
+        is_t2_rebound = (slope_improvements >= 2) and has_positive_ma5 and is_185_trend_ok and is_valid_convergence and is_bullish_breakout_high and is_gap_40_safe
         if not is_t2_rebound:
             if slope_improvements < 2: t2_fail_reason = f"5선가속도부족({slope_improvements}/2)"
             elif not has_positive_ma5: t2_fail_reason = "5선문턱(-0.03)미달"
             elif not is_185_trend_ok: t2_fail_reason = "185선대추세하락"
             elif not is_valid_convergence: t2_fail_reason = "수렴/5선발산실패"
+            elif not is_bullish_breakout_high: t2_fail_reason = "고공양봉돌파실패"
+            elif not is_gap_40_safe: t2_fail_reason = f"14/40이격과다({gap_14_40_pct:.2f}%)"
     ma14_slope_v = ((ma14_val - prev_ma14) / prev_ma14) * 100 if prev_ma14 > 0 else 0
     is_true_trigger_t2 = (curr_price > ma14_val) and (curr_price <= ma14_val * 1.03) and (ma14_slope_v >= -0.02) and (vol_ratio >= 0.8)
     
@@ -1363,8 +1379,8 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
             logger.error(f"비상 엔진 에러 (L{new_lvl}): {e}")
 
 
-    if new_lvl == 0:   # 일반 모드(Level 0)인 경우에만 30분봉 로직 수행
-        logger.info(f"DEBUG: {symbol} | 일반 매도 모드")
+    elif new_lvl == 0:   # 일반 모드(Level 0)인 경우에만 30분봉 로직 수행
+        logger.info(f"DEBUG: {symbol} | 일반 매도 모드 (5분 유예 감시)")
         current_type = str(buy_type)
 
         if current_type in ['1', '2', '3']:
@@ -1418,6 +1434,7 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
                 # 상승 초입 눌림목(지지선의 98%)은 유예해줌
                 if not (is_early_stage and curr_p >= support_price * 0.98):
                     return True, f"📉 40선 지지선({support_price:,.2f}) 이탈", False
+    """
     # ---------------------------------------------------------
     ######### [급등 모드 : 수익 10% 이상이거나 RSI 80 이상이면 3분봉 정밀 감시 가동] #########
     # ---------------------------------------------------------
@@ -1453,7 +1470,7 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
         except Exception as e:
             logger.error(f"3분봉 분석 에러: {e}")
             # 에러 시에는 안전하게 기존 30분봉 로직으로 흐르게 둡니다.
-
+    """
    
 
     # ---------------------------------------------------------
