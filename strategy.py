@@ -11,34 +11,38 @@ import json
 
 MARKET_STATUS_FILE = 'market_status.json'
 
+# ###### 수정 시작: 파일 로드/저장 누적 변수 추가 ######
 def load_market_status():
     if os.path.exists(MARKET_STATUS_FILE):
         try:
             with open(MARKET_STATUS_FILE, 'r') as f:
                 data = json.load(f)
-                # datetime 객체 복구 로직 포함
                 cleared_time = data.get('panic_cleared_time')
                 if cleared_time:
                     cleared_time = datetime.fromisoformat(cleared_time)
-                return data.get('is_buy_locked', False), data.get('market_ref_rate', 0.0), cleared_time
+                return data.get('is_buy_locked', False), data.get('market_ref_rate', 0.0), cleared_time, data.get('prev_day_offset', 0.0), data.get('last_date', datetime.now().strftime('%Y-%m-%d')), data.get('last_current_avg', 0.0)
         except Exception as e:
             logger.error(f"시장 상태 파일 로드 오류: {e}")
-    return False, 0.0, None
+    return False, 0.0, None, 0.0, datetime.now().strftime('%Y-%m-%d'), 0.0
 
 def save_market_status():
     try:
         data = {
             'is_buy_locked': is_buy_locked,
             'market_ref_rate': market_ref_rate,
-            'panic_cleared_time': panic_cleared_time.isoformat() if panic_cleared_time else None
+            'panic_cleared_time': panic_cleared_time.isoformat() if panic_cleared_time else None,
+            'prev_day_offset': prev_day_offset,
+            'last_date': last_date,
+            'last_current_avg': last_current_avg
         }
         with open(MARKET_STATUS_FILE, 'w') as f:
             json.dump(data, f)
     except Exception as e:
         logger.error(f"시장 상태 파일 저장 오류: {e}")
 
-# 초기화 시 파일에서 상태 로드
-is_buy_locked, market_ref_rate, panic_cleared_time = load_market_status()
+is_buy_locked, market_ref_rate, panic_cleared_time, prev_day_offset, last_date, last_current_avg = load_market_status()
+# ###### 수정 끝 ######
+
 # --- [수정/추가 끝] ---
 
 panic_msg_sent = False
@@ -50,55 +54,64 @@ def is_in_cooldown(symbol):
             return True
     return False
     
-async def update_market_panic_status(current_avg):
-    global market_ref_rate, is_buy_locked, panic_cleared_time
+# ###### 수정 시작: 시장 락 누적 합산 및 리턴 신호 복구 ######
+async def update_market_panic_status(current_avg, symbol_count=0):
+    global market_ref_rate, is_buy_locked, panic_cleared_time, prev_day_offset, last_date, last_current_avg
 
-    status_changed = False # 파일 저장을 위한 플래그 추가
-    # 1. 최초 잠금: -3% 돌파 시
-    if not is_buy_locked and current_avg <= -3.0:
+    if symbol_count < 10:
+        return False, None
+
+    current_date_str = datetime.now().strftime('%Y-%m-%d')
+    
+    if current_date_str != last_date:
+        prev_day_offset += last_current_avg
+        last_date = current_date_str
+    
+    last_current_avg = current_avg
+    total_avg = current_avg + prev_day_offset
+    
+    if not is_buy_locked and total_avg <= -3.0:
         is_buy_locked = True
-        market_ref_rate = current_avg
-        status_changed = True # 상태 변경 표시
-        logger.info(f"🚨 [시장잠금] 패닉 상태 감지 (기준점: {market_ref_rate:.2f}%)")
-        msg = f"🚨 [시장잠금] 패닉 상태 감지\n기준점: {market_ref_rate:.2f}%\n현재 모든 매수가 중단됩니다."
-        save_market_status() # 변경 즉시 저장
-        return True, msg # 호출부(main.py)에서 이 메시지를 받아 알림 전송
-    # 2. 잠금 상태일 때 (해제 또는 바닥 갱신)
-    elif is_buy_locked:
-        # 1. 차등 해제 기준 설정
-        if market_ref_rate <= -5.0:
-            threshold = 2.0  # 폭락장 (-5% 이하) : 2.0% 이상 반등 시 해제 (신중)
-        elif market_ref_rate <= -3.0:
-            threshold = 1.5  # 하락장 (-3% ~ -5%) : 1.5% 이상 반등 시 해제 (보통)
-        else:
-            threshold = 1.0  # 일반조정 (0% ~ -3%)  : 1.0% 이상 반등 시 해제 (공격)
+        market_ref_rate = total_avg
+        save_market_status()
+        logger.info(f"🚨 [시장잠금] 패닉 감지 (기준점: {market_ref_rate:.2f}%)")
+        return True, f"🚨 [시장잠금] 패닉 상태 감지\n기준점: {market_ref_rate:.2f}%\n현재 모든 매수가 중단됩니다."
 
-        # 2. 해제 조건 판단
-        if current_avg >= market_ref_rate + threshold:
+    elif is_buy_locked:
+        if market_ref_rate <= -5.0:
+            threshold = 2.0
+        elif market_ref_rate <= -3.0:
+            threshold = 1.5
+        else:
+            threshold = 1.0
+
+        if total_avg >= market_ref_rate + threshold:
             is_buy_locked = False
             panic_cleared_time = datetime.now()
-            market_ref_rate = current_avg
-            status_changed = True
-            logger.info(f"✅ 시장 반등 확인({threshold}%): 매수 잠금 해제 (기준점: {market_ref_rate:.2f}%)")
-        
-        # 3. 바닥 실시간 추적 (사용자님 철학: 기준점은 하향 갱신만 허용)
-        elif current_avg < market_ref_rate:
-            market_ref_rate = current_avg
-            status_changed = True
-            logger.info(f"📉 시장 바닥 갱신: 기준점 하향 조정 ({market_ref_rate:.2f}%)")
-    # 3. 해제 상태일 때 (재잠금/데드캣 방지)
-    else:
-        if current_avg <= market_ref_rate - 2.0:
-            is_buy_locked = True
-            market_ref_rate = current_avg
-            status_changed = True
+            market_ref_rate = total_avg
+            prev_day_offset = 0.0
+            last_current_avg = current_avg
             save_market_status()
-            # [추가] 상태 변화 시 메시지 리턴
+            logger.info(f"✅ 시장 반등 확인({threshold}%): 매수 잠금 해제 (기준점: {market_ref_rate:.2f}%)")
+            return True, f"✅ 시장 반등 확인({threshold}%): 매수 잠금 해제 (기준점: {market_ref_rate:.2f}%)"
+        
+        elif total_avg < market_ref_rate:
+            market_ref_rate = total_avg
+            save_market_status()
+            logger.info(f"📉 시장 바닥 갱신: 기준점 하향 조정 ({market_ref_rate:.2f}%)")
+            return True, f"📉 시장 바닥 갱신: 기준점 하향 조정 ({market_ref_rate:.2f}%)"
+
+    else:
+        if total_avg <= market_ref_rate - 2.0:
+            is_buy_locked = True
+            market_ref_rate = total_avg
+            save_market_status()
+            logger.info(f"🚨 [재잠금] 데드캣 방지 필터 작동 (기준점: {market_ref_rate:.2f}%)")
             return True, f"🚨 [재잠금] 데드캣 방지 필터 작동\n기준점: {market_ref_rate:.2f}%"
-    if status_changed:
-        save_market_status()
-    # [추가] 함수 맨 끝에 어떤 경우에도 에러 안 나게 빈 값 리턴
+
+    save_market_status()
     return False, None
+# ###### 수정 끝 ######
 
 def get_bithumb_tick_size(price, direction=None):
     # [1] 기본 틱 사이즈 결정 (분석용 이격/기울기 계산의 기준점)
@@ -360,13 +373,16 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     grade = ""
     # [시장 방어막 체크]
     
-    # ###### [추가] 실시간 파일 참조로 시장 락 무력화 방지 ######
-    global is_buy_locked, market_ref_rate, panic_cleared_time
-    file_locked, file_ref, file_cleared = load_market_status()
+    # ###### 수정 시작: 실시간 파일 참조 언패킹 변수 확대 ######
+    global is_buy_locked, market_ref_rate, panic_cleared_time, prev_day_offset, last_date, last_current_avg
+    file_locked, file_ref, file_cleared, file_offset, file_ldate, file_lavg = load_market_status()
     is_buy_locked = file_locked
     market_ref_rate = file_ref
     panic_cleared_time = file_cleared
-    # #######################################################
+    prev_day_offset = file_offset
+    last_date = file_ldate
+    last_current_avg = file_lavg
+    # ###### 수정 끝 ######
     
     # global is_buy_locked, market_ref_rate # 기존 코드는 주석 처리
     # [[ UPDATE: 잔고 및 데이터 오류, 재매수 제한 필터 ]]
