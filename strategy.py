@@ -189,23 +189,26 @@ def get_updated_emergency_level(symbol, current_level, buy_type, rsi, is_3m_belo
     # 2. 하향 (Level 2 -> 1): 타입별로 분기된 변수에 따라 전환
     if current_level == 2:
         if is_recovering_general or is_recovering_type3:
-            logger.info(f"✅ {symbol} 지표 안정화 시작 -> Level 1(CAUTION) 전환")
-            return 1
+                logger.info(f"✅ {symbol} 지표 안정화 시작 -> Level 1(CAUTION) 전환")
+                return 1
+                    
+        # ////////// [긴급 모드 강제 해제 방지 시작] //////////
+        # 3. 해제 (Level 1 -> 0): 타입별 독립 기준 적용 (주석 처리하여 해제 방지)
+        # if current_level == 1:
+        #     if buy_type == 3:
+        #         # [Type 3 해제] 40선 우상향 및 185선 이격 축소
+        #         if ma40_slope > 0 and is_converging and (not is_3m_below_ma40):
+        #             logger.info(f"✨ {symbol} [Type 3 안정] 40선 반등 및 안착 확인으로 해제")
+        #             return 0
+        #     else:
+        #         # [Type 1, 2 해제] RSI 50 미만 도달
+        #         if rsi < 50:
+        #             logger.info(f"✨ {symbol} [Type 1,2 안정] RSI 50 미만으로 해제")
+        #             return 0
+        pass
+        # ////////// [긴급 모드 강제 해제 방지 끝] //////////
                 
-    # 3. 해제 (Level 1 -> 0): 타입별 독립 기준 적용
-    if current_level == 1:
-        if buy_type == 3:
-            # [Type 3 해제] 40선 우상향 및 185선 이격 축소
-            if ma40_slope > 0 and is_converging and (not is_3m_below_ma40):
-                logger.info(f"✨ {symbol} [Type 3 안정] 40선 반등 및 안착 확인으로 해제")
-                return 0
-        else:
-            # [Type 1, 2 해제] RSI 50 미만 도달
-            if rsi < 50:
-                logger.info(f"✨ {symbol} [Type 1,2 안정] RSI 50 미만으로 해제")
-                return 0
-            
-    return current_level
+        return current_level
 
 # [사용자 원본 버전 1]
 def check_buy_signal_v1(df, symbol, warning_list):
@@ -288,8 +291,28 @@ def check_buy_signal_v1(df, symbol, warning_list):
         return False, "에러발생"
 
 
-# 긴급 감시 상태 저장 변수
-emergency_mode = {}
+# ////////// [상태 저장 로직 추가 시작] //////////
+EMERGENCY_STATUS_FILE = 'emergency_status.json'
+
+def load_emergency_mode():
+    if os.path.exists(EMERGENCY_STATUS_FILE):
+        try:
+            with open(EMERGENCY_STATUS_FILE, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"비상 상태 로드 오류: {e}")
+    return {}
+
+def save_emergency_mode():
+    try:
+        with open(EMERGENCY_STATUS_FILE, 'w') as f:
+            json.dump(emergency_mode, f)
+    except Exception as e:
+        logger.error(f"비상 상태 저장 오류: {e}")
+
+# 긴급 감시 상태 저장 변수 (기존 빈 딕셔너리 대체)
+emergency_mode = load_emergency_mode()
+# ////////// [상태 저장 로직 추가 끝] //////////
 
 
 # ---------- [신규] data_dict 전체 수치 채우기 (조건 탈락 여부와 관계없이) ----------
@@ -1329,12 +1352,16 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
     if old_lvl >= 1:
         new_lvl = max(old_lvl, new_lvl)
         
-    emergency_mode[symbol] = new_lvl
+    if emergency_mode.get(symbol) != new_lvl:
+        emergency_mode[symbol] = new_lvl
+        save_emergency_mode()
 
     if current_age == 0 and max_profit_rate_pct >= 1.0 and new_lvl == 0:
         new_lvl = 1
         emergency_mode[symbol] = new_lvl
+        save_emergency_mode()
         logger.info(f"⚡ [하이패스] {symbol} 30분 내 1.0% 이상 급등, L1 강제 전환")
+        return False, f"🚨 [비상감시] {symbol} 1% 돌파 L1 전환", False
     # Level 1, 2 모두 3분봉 엔진 가동 (사용자 요청: 하락 시 즉시 대응)
     if new_lvl >= 1 and df_3m is not None:
         logger.info(f"DEBUG: 🔥 [L{new_lvl} 엔진 가동] {symbol} | 수익: {profit_rate_pct:.2f}%")
@@ -1531,6 +1558,11 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
 
 def get_report_visuals(this_profit, is_sell_signal, this_curr_p, ma40_val, sell_reason, symbol, pending_approvals):
     from datetime import datetime
+    lvl = emergency_mode.get(symbol, 0)
+    
+    if lvl >= 1:
+        # 레벨 1(Caution)이나 2(Emergency)일 때는 무조건 사이렌 아이콘 반환
+        return "🚨", f"🔥 긴급감시(L{lvl})"
     wait_data = pending_approvals.get(symbol)
     
     # [추가] 상세 사유에서 중복 종목명(예: DBR/KRW) 제거
