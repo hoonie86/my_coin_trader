@@ -811,6 +811,13 @@ async def emergency_monitor_task(app):
 
                 ###### [완성] 비상 종목용 실시간 데이터 수집 및 매도 엔진 호출 ######
                 inv_item = load_inventory().get(symbol, {})
+                m_status = sell_mute_status.get(symbol)
+                is_global_auto = config.is_sleeping_time() or getattr(config, 'buy_mute_mode', 'MANUAL') == 'AUTO'
+                curr_mode = m_status if m_status else ('AUTO' if is_global_auto else 'WATCH')
+                if curr_mode == 'KEEP':
+                    continue 
+                # // ------------------------------------------ //
+
                 ticker = await asyncio.to_thread(exchange.fetch_ticker, symbol)
                 curr_p = float(ticker.get('last') or 0)
                 
@@ -824,9 +831,36 @@ async def emergency_monitor_task(app):
                 )
 
                 if is_sell:
-                    await execute_sell(app, symbol, reason)
+                    # // --- [수정: 모드별 매도 집행 및 타이머 체크] --- //
+                    if curr_mode == 'WATCH':
+                        continue 
+                    elif curr_mode == 'AUTO':
+                        if GLOBAL_BUY_MODE == "LIGHTNING":
+                            await execute_sell(app, symbol, reason)
+                        else:
+                            now_time = datetime.now()
+                            start_time_str = inv_item.get('pending_start_time')
+                            
+                            if not start_time_str:
+                                inv_item['pending_start_time'] = now_time.strftime('%Y-%m-%d %H:%M:%S')
+                                inv_item['pending_limit_min'] = 10
+                                inv_item['last_action_by'] = 'SYSTEM'
+                                inv_data = load_inventory()
+                                inv_data[symbol] = inv_item
+                                with open(INV_FILE, "w") as f: json.dump(inv_data, f, indent=4)
+                                
+                                kb = telegram_ui.get_sell_signal_kb(symbol, 10)
+                                await app.bot.send_message(config.CHAT_ID, f"🚨 [긴급 감지] {symbol}\n사유: {reason}\n(10분 무응답 시 자동 매도)", reply_markup=kb)
+                                continue
+                            
+                            start_time = datetime.strptime(start_time_str, '%Y-%m-%d %H:%M:%S')
+                            elapsed = (now_time - start_time).total_seconds() / 60
+                            if elapsed >= inv_item.get('pending_limit_min', 10):
+                                reason_prefix = "[무응답 자동매도]" if inv_item.get('last_action_by') == 'SYSTEM' else "[유예만료]"
+                                await execute_sell(app, symbol, f"{reason_prefix} {reason}")
+                    # // ------------------------------------------ //
                 
-            await asyncio.sleep(1) 
+            await asyncio.sleep(1)
         except Exception as e:
             logger.error(f"Emergency Loop Error: {e}")
             await asyncio.sleep(1)
@@ -942,6 +976,14 @@ async def sell_monitor_task(app):
                             f"현재가: {this_curr_p:,.0f}원",
                             reply_markup=kb
                         )
+                if emergency_mode.get(symbol, 0) >= 1:
+                    report_line = f"🚨 [{this_grade} | 긴급] {symbol.split('/')[0]:<6} | {this_curr_p:,.0f}원 | {this_profit:+.2f}%({this_profit_krw:+,.0f}원) | 비상 대기 중"
+                    report_lines.append({
+                        'text': report_line,
+                        'profit': this_profit,
+                        'button': InlineKeyboardButton(f"🔍 {symbol.split('/')[0]}", callback_data=f"manage_asset:{symbol}")
+                    })
+                    continue
 
                 # 2단계: 차트 데이터 및 익절 엔진 (기존 로직 보존)
                 ohlcv = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '30m', limit=100)
@@ -1394,6 +1436,25 @@ async def handle_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await query.answer("30분간 알람을 중단합니다.")
 
         elif action == "set_pending_30m":
+            inv_data = load_inventory()
+            user_limit = 5
+            
+            # 1. 일반 유예 종목인 경우
+            if symbol in pending_approvals:
+                user_limit = pending_approvals[symbol].get('wait_limit', 5)
+            # 2. 긴급 유예 종목인 경우 (인벤토리에 기록된 시간 유지)
+            elif symbol in inv_data and 'pending_limit_min' in inv_data[symbol]:
+                user_limit = inv_data[symbol]['pending_limit_min']
+                
+            if symbol in inv_data:
+                inv_data[symbol]['pending_start_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                inv_data[symbol]['pending_limit_min'] = user_limit
+                inv_data[symbol]['last_action_by'] = 'USER'
+                try:
+                    with open(INV_FILE, "w") as f: json.dump(inv_data, f, indent=4)
+                except Exception as e:
+                    logger.error(f"Save Inventory Error: {e}")
+
             if symbol in pending_approvals:
                 limit = pending_approvals[symbol].get('wait_limit', 30)
                 pending_approvals[symbol].update({
@@ -1406,6 +1467,13 @@ async def handle_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     f"{icon} {symbol.split('/')[0]} 매도 유예 시작\n"
                     f"지금부터 {limit}분간 감시 후 자동 매도를 결정합니다.\n"
                     f"(수익률 +0.5% 회복 시 자동 취소)"
+                )
+            elif symbol in inv_data and 'pending_limit_min' in inv_data[symbol]:
+                # 긴급 종목 메시지 처리 (에러 팝업 방지 및 정상 갱신)
+                icon = "🚨" if user_limit >= 10 else "🟡"
+                await query.edit_message_text(
+                    f"{icon} {symbol.split('/')[0]} 긴급 매도 유예(수동)\n"
+                    f"지금부터 {user_limit}분간 주인의 명령에 따라 대기합니다."
                 )
             else:
                 await query.answer("이미 처리되었거나 유효하지 않은 요청입니다.", show_alert=True)
