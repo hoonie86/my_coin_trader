@@ -1326,6 +1326,9 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
         ma40_slope, is_converging, profit_rate_pct, soaring_rate, 
         has_rsi_spike, max_profit_rate_pct, is_type3_stable
     )
+    if old_lvl >= 1:
+        new_lvl = max(old_lvl, new_lvl)
+        
     emergency_mode[symbol] = new_lvl
 
     if current_age == 0 and max_profit_rate_pct >= 1.0 and new_lvl == 0:
@@ -1339,10 +1342,11 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
             # [기존 ATOM 사례 대응 로직 유지]
             vol_30m = (df['high'].tail(3).max() - df['low'].tail(3).min()) / df['low'].tail(3).min() * 100
             if vol_30m < 1.2 and profit_rate_pct > 7.0:
-                if new_lvl == 2: emergency_mode[symbol] = 1 # 안정적 우상향 시 레벨 다운 유도
+                # if new_lvl == 2: emergency_mode[symbol] = 1 # 안정적 우상향 시 레벨 다운 유도
+                pass  ###### [수정 1-2] 레벨 다운 금지 (들여쓰기 유지용 pass)
             else:
                 high_10_3m = df_3m['high'].tail(10).max()
-                curr_3m_p, curr_3m_data = df_3m['close'].iloc[-1], df_3m.iloc[-1]
+                curr_3m_p, curr_3m_data = curr_p, df_3m.iloc[-1]
 
                 # ======== [수정 시작: C1-C2-C3 50% 허리 이탈 논리 적용] ========
                 # (1) [수정] 고점 직전봉(C1) 허리(50%) 실시간 이탈 체크
