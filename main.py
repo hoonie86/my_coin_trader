@@ -632,7 +632,7 @@ async def execute_sell(app, symbol, reason, sell_ratio=1.0):
         # 1. 현재 잔고 확인
         balance = await asyncio.to_thread(exchange.fetch_balance)
         base = symbol.split('/')[0]
-        quantity = float(balance['free'].get(base, 0))
+        quantity = float(balance['free'].get(base, 0)) * sell_ratio
 
         if quantity <= 0:
             logger.warning(f"⏭️ {symbol} 매도 가능 잔고가 0입니다 (이미 체결되었거나 잠김 상태). 인벤토리에서 제외합니다.")
@@ -1129,7 +1129,7 @@ async def sell_monitor_task(app):
                     continue
                 
                 # 비상 모드인 종목은 아래의 '일반 유예(5분)' 로직을 타지 않도록 최종 블록
-                if is_emergency_mode:
+                if is_emergency:
                     continue
                 ###### [수정 끝] ######
 
