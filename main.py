@@ -624,7 +624,7 @@ def get_next_tick_down(price):
     if price < 500000: return int(price - 500)
     return int(price - 1000)
 
-async def execute_sell(app, symbol, reason):
+async def execute_sell(app, symbol, reason, sell_ratio=1.0):
     """
     실제 거래소 매도 주문을 실행하고, 인벤토리 정리 및 거래 로그를 기록한 뒤 알림을 보냅니다.
     """
@@ -632,7 +632,20 @@ async def execute_sell(app, symbol, reason):
         # 1. 현재 잔고 확인
         balance = await asyncio.to_thread(exchange.fetch_balance)
         base = symbol.split('/')[0]
-        quantity = float(balance['total'].get(base, 0))
+        quantity = float(balance['free'].get(base, 0))
+
+        if quantity <= 0:
+            logger.warning(f"⏭️ {symbol} 매도 가능 잔고가 0입니다 (이미 체결되었거나 잠김 상태). 인벤토리에서 제외합니다.")
+            
+            # 잔고가 없으므로 무한 루프 탈출을 위해 인벤토리 즉시 삭제
+            inv = load_inventory()
+            if symbol in inv:
+                del inv[symbol]
+                with open("trades/inventory.json", "w") as f:
+                    json.dump(inv, f, indent=4)
+            if symbol in pending_approvals:
+                del pending_approvals[symbol]
+            return
 
         ###### 거래소 수량 정밀도 맞춤 (먼지 잔고 방지) ######
         try:
@@ -681,21 +694,27 @@ async def execute_sell(app, symbol, reason):
                 except Exception as e:
                     pass
 
-                alert_msg = f"❌ [매도보류] {symbol} 호가창 얇음 (슬리피지 방어)\n사유: {reason}\n지정가 매도 3회 실패로 3분 유예를 재시작합니다."
+                ###### [수정 시작] 매도 실패 시 모든 유예 상태를 초기화하여 감시 루프에서 재탐지되도록 수정 ######
+                alert_msg = f"❌ [매도취소] {symbol} 호가창 얇음 (슬리피지 방어)\n사유: {reason}\n지정가 매도 3회 실패로 매도 대기 상태를 초기화합니다."
                 await app.bot.send_message(config.CHAT_ID, alert_msg)
                 logger.warning(alert_msg)
                 
-                # 인벤토리 데이터 불러와서 deadline 3분 연장
+                # 인벤토리 데이터 불러와서 profit_deadline 삭제 및 pending_approvals 제거
                 try:
                     inv_data = load_inventory()
-                    if symbol in inv_data:
-                        inv_data[symbol]['profit_deadline'] = (datetime.now() + timedelta(minutes=3)).strftime('%Y-%m-%d %H:%M:%S')
+                    if symbol in inv_data and 'profit_deadline' in inv_data[symbol]:
+                        del inv_data[symbol]['profit_deadline']
                         with open(INV_FILE, "w") as f:
                             json.dump(inv_data, f, indent=4)
+                            
+                    if symbol in pending_approvals:
+                        del pending_approvals[symbol]
                 except Exception as e:
                     logger.error(f"Failed to reset deadline: {e}")
                 
                 return  # 즉시 함수 종료 (인벤토리 삭제 방지)
+                ###### [수정 끝] ######
+
         # 3. 비상 모드 판정 및 6시간 쿨다운 설정
         lvl = emergency_mode.get(symbol, 0)
         if lvl >= 1:
@@ -738,14 +757,19 @@ async def execute_sell(app, symbol, reason):
         # [누락방지 1] 거래 내역 CSV 저장 (이미 main.py에 있는 save_trade_log 호출)
         save_trade_log(symbol, item.get('grade', 'A'), avg_buy_price, sell_price, this_profit, reason)
 
-        # [누락방지 2] 로컬 인벤토리 파일에서 해당 종목 삭제 (중요)
+        # [누락방지 2] 로컬 인벤토리 파일 정리
         if symbol in inv:
-            global sell_cooldown
-            sell_cooldown[symbol] = datetime.now()
-            del inv[symbol]
+            if sell_ratio == 1.0:
+                global sell_cooldown
+                sell_cooldown[symbol] = datetime.now()
+                del inv[symbol]
+                logger.info(f"💾 [인벤토리 정리] {symbol} 전량 매도로 데이터 삭제 완료")
+            else:
+                inv[symbol]['total_quantity'] = float(inv[symbol].get('total_quantity', 0)) - precision_qty
+                logger.info(f"💾 [인벤토리 갱신] {symbol} 분할 매도로 잔여 수량 업데이트 완료")
+                
             with open("trades/inventory.json", "w") as f:
                 json.dump(inv, f, indent=4)
-            logger.info(f"💾 [인벤토리 정리] {symbol} 데이터 삭제 완료")
 
         # 7. 텔레그램 최종 알림
         completion_msg = (
@@ -965,9 +989,9 @@ async def sell_monitor_task(app):
 
                 # 1단계: 수익 알람 (기존 로직 유지)
                 if this_profit >= 1.0:
-                    last_alert_p = profit_alerts.get(symbol, 0)
-                    if this_profit >= last_alert_p + 1.0:
-                        profit_alerts[symbol] = int(this_profit)
+                    last_alert_p = profit_alerts.get(symbol, 0.0)
+                    if this_profit > last_alert_p:
+                        profit_alerts[symbol] = this_profit
                         kb = telegram_ui.get_profit_alert_kb(symbol)
                         await app.bot.send_message(
                             config.CHAT_ID,
@@ -1048,41 +1072,13 @@ async def sell_monitor_task(app):
                 sell_reason = res[1]
                 is_urgent = res[2] if len(res) > 2 else False
 
-                ############################################################################
-                ######### [신규: 급등주 즉시 매도 비상구] #########
-                ############################################################################
-                if is_sell_signal and is_urgent:
-                    logger.info(f"🚨🚨🚨 {symbol} 긴급 매도 신호 감지! 유예 없이 즉시 집행: {sell_reason}")
-                    await execute_sell(app, symbol, f"[긴급]{sell_reason}")
-                    continue # 다음 종목으로 점프
-
-                # [추가 로직: 3번 타입 하락 후 상승 종목 전용 방어막] #####
-                if is_sell_signal and this_buy_type == 3:
-                    # [1순위] 절대 손절선 감시 (6봉 여부와 상관없이 항상 작동)
-                    if this_profit <= -3.0:
-                        is_sell_signal = True
-                        sell_reason = "📉 [3번-절대손절] 매수가 대비 -3% 도달"
-                    
-                    # [2순위] 유예 기간 및 40선 감시
-                    else:
-                        # A. 40, 90선 관련 신호는 3번 타입에선 항상 무시 + 6봉(3시간) 이전 무시
-                        if "40선" in sell_reason or "90선" in sell_reason or this_elapsed_bars < 6:
-                            is_sell_signal = False
-                            sell_reason = ""
-                        # C. 6봉 이후일 때
-                        else:
-                            # 40선 이탈 신호가 오면 그대로 수용 (is_sell_signal 유지)
-                            if is_sell_signal and "40선" in sell_reason:
-                                sell_reason = "⚠️ [3번-유예종료] 6봉 경과 후 40선 이탈"
-
+                ###### [수정 시작] 긴급 1분 / 일반 5분 유예 적용 및 중복 선언 제거 ######
                 # 0순위 급등/절대익절 판정
-                if status == 'KEEP' and is_sell_signal and "0순위" in sell_reason:
-                    is_sell_final = True
-                else:
-                    is_sell_final = False
-                ###### 수익 10분 유예 타이머 (수익 릴레이) ######
-                now_time = datetime.now()
+                is_sell_final = (status == 'KEEP' and is_sell_signal and "0순위" in sell_reason)
+                
                 is_relay_updated = False 
+                is_emergency = emergency_mode.get(symbol, 0) >= 1
+                relay_min = 1 if is_emergency else 5
                 
                 w_list = strategy.get_warning_list()
                 is_buy_now, buy_reason_now, _, _ = await strategy.check_buy_signal(exchange, df, symbol, w_list)
@@ -1090,28 +1086,30 @@ async def sell_monitor_task(app):
                 
                 # 1. 수익 릴레이 (매도 유예 중이면 간섭 완전 차단)
                 if symbol not in pending_approvals:
-                    if this_profit >= 1.0 and not is_urgent and not is_sell_signal:
+                    # 긴급 종목이거나 (일반 종목 중 비긴급+매도신호없음) 일 때 릴레이 작동
+                    can_relay = (this_profit >= 1.0) and (is_emergency or (not is_urgent and not is_sell_signal))
+                    
+                    if can_relay:
                         p_deadline = inv_item.get('profit_deadline')
                         if not p_deadline:
-                            inv_item['profit_deadline'] = (now_time + timedelta(minutes=3)).strftime('%Y-%m-%d %H:%M:%S')
+                            inv_item['profit_deadline'] = (datetime.now() + timedelta(minutes=relay_min)).strftime('%Y-%m-%d %H:%M:%S')
                             inv_item['max_profit_seen'] = this_profit
                             inv_data[symbol] = inv_item
                             is_relay_updated = True
-                            await app.bot.send_message(config.CHAT_ID, f"🚨 [{symbol}] 수익 1% 돌파! 3분 매도 유예 시작")
+                            icon = "🚨" if is_emergency else "🔄"
+                            await app.bot.send_message(config.CHAT_ID, f"{icon} [{symbol}] 수익 1% 돌파! {relay_min}분 매도 유예(정체감시) 시작")
                         elif this_profit > inv_item.get('max_profit_seen', 0) or is_t2_signal_alive:
-                            update_reason = "고점 갱신" if this_profit > inv_item.get('max_profit_seen', 0) else "TYPE2 시그널 유지"
-                            inv_item['profit_deadline'] = (now_time + timedelta(minutes=3)).strftime('%Y-%m-%d %H:%M:%S')
+                            inv_item['profit_deadline'] = (datetime.now() + timedelta(minutes=relay_min)).strftime('%Y-%m-%d %H:%M:%S')
                             inv_item['max_profit_seen'] = max(this_profit, inv_item.get('max_profit_seen', 0))
                             inv_data[symbol] = inv_item
                             is_relay_updated = True
-                            await app.bot.send_message(config.CHAT_ID, f"🔄 [{symbol}] {update_reason}({this_profit:+.2f}%)! 3분 재설정")
 
                 # 수익 릴레이 만료 시 
                 p_deadline = inv_item.get('profit_deadline')
-                if p_deadline and now_time > datetime.strptime(p_deadline, '%Y-%m-%d %H:%M:%S'):
+                if p_deadline and datetime.now() > datetime.strptime(p_deadline, '%Y-%m-%d %H:%M:%S'):
                     is_sell_signal = True
                     is_sell_final = True
-                    sell_reason = "⏰ [익절] 수익 경신 멈춤으로 5분 유예 만료"
+                    sell_reason = f"⏰ [익절] 수익 경신 멈춤({relay_min}분 정체)으로 릴레이 만료"
                     del inv_item['profit_deadline']
                     inv_data[symbol] = inv_item
                     is_relay_updated = True
@@ -1123,6 +1121,17 @@ async def sell_monitor_task(app):
                                 json.dump(inv_data, f, indent=4)
                     except Exception as e:
                         logger.error(f"Profit Timer Save Error: {e}")
+
+                # 릴레이 만료 시 즉각 매도 집행 및 루프 스킵
+                if is_sell_final:
+                    await execute_sell(app, symbol, sell_reason)
+                    if symbol in pending_approvals: del pending_approvals[symbol]
+                    continue
+                
+                # 비상 모드인 종목은 아래의 '일반 유예(5분)' 로직을 타지 않도록 최종 블록
+                if is_emergency_mode:
+                    continue
+                ###### [수정 끝] ######
 
                 # 2. 매도 유예 관리: [2대 원칙 적용]
                 if is_sell_signal:
@@ -1351,15 +1360,14 @@ async def handle_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE)
         elif action == "sell_all":
             assets = await get_my_assets()
             if symbol in assets:
-                await asyncio.to_thread(exchange.create_market_sell_order, symbol, assets[symbol]['total'])
-                if symbol in pending_approvals: del pending_approvals[symbol]
-                await query.edit_message_text(f"✅ {symbol} 전량 매도 완료.")
+                await query.edit_message_text(f"🔄 [{symbol.split('/')[0]}] 수동 전량 매도를 실행 중입니다...")
+                await execute_sell(app, symbol, "수동 전량 매도")
 
         elif action == "sell_half":
             assets = await get_my_assets()
             if symbol in assets:
-                await asyncio.to_thread(exchange.create_market_sell_order, symbol, assets[symbol]['total'] * 0.5)
-                await query.edit_message_text(f"🟠 {symbol} 50% 분할 매도 완료.")
+                await query.edit_message_text(f"🔄 [{symbol.split('/')[0]}] 수동 50% 분할 매도를 실행 중입니다...")
+                await execute_sell(app, symbol, "수동 절반 매도", sell_ratio=0.5)
 
         elif action == "adj_amt":
             try:

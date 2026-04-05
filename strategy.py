@@ -189,26 +189,22 @@ def get_updated_emergency_level(symbol, current_level, buy_type, rsi, is_3m_belo
     # 2. 하향 (Level 2 -> 1): 타입별로 분기된 변수에 따라 전환
     if current_level == 2:
         if is_recovering_general or is_recovering_type3:
-                logger.info(f"✅ {symbol} 지표 안정화 시작 -> Level 1(CAUTION) 전환")
-                return 1
+            logger.info(f"✅ {symbol} 지표 안정화 시작 -> Level 1(CAUTION) 전환")
+            return 1
                     
-        # ////////// [긴급 모드 강제 해제 방지 시작] //////////
-        # 3. 해제 (Level 1 -> 0): 타입별 독립 기준 적용 (주석 처리하여 해제 방지)
-        # if current_level == 1:
-        #     if buy_type == 3:
-        #         # [Type 3 해제] 40선 우상향 및 185선 이격 축소
-        #         if ma40_slope > 0 and is_converging and (not is_3m_below_ma40):
-        #             logger.info(f"✨ {symbol} [Type 3 안정] 40선 반등 및 안착 확인으로 해제")
-        #             return 0
-        #     else:
-        #         # [Type 1, 2 해제] RSI 50 미만 도달
-        #         if rsi < 50:
-        #             logger.info(f"✨ {symbol} [Type 1,2 안정] RSI 50 미만으로 해제")
-        #             return 0
+    # ////////// [수정] 섹션 3을 섹션 2(if == 2) 블록 밖으로 독립시킴 //////////
+    # 3. 해제 (Level 1 -> 0): 주석 처리하여 긴급 모드 해제 방지
+    if current_level == 1:
+        # if buy_type == 3:
+        #     if ma40_slope > 0 and is_converging and (not is_3m_below_ma40):
+        #         return 0
+        # elif rsi < 50:
+        #     return 0
         pass
-        # ////////// [긴급 모드 강제 해제 방지 끝] //////////
+    # ////////////////////////////////////////////////////////////////////
                 
-        return current_level
+    # [중요] 반드시 모든 if 블록 밖에서 현재 레벨을 최종 반환해야 NoneType 에러가 나지 않습니다.
+    return current_level
 
 # [사용자 원본 버전 1]
 def check_buy_signal_v1(df, symbol, warning_list):
@@ -1575,7 +1571,7 @@ def get_report_visuals(this_profit, is_sell_signal, this_curr_p, ma40_val, sell_
         remains = max(0, int(limit - elapsed))
         
         # 긴급 판단(2음봉, 급락 등)은 사이렌(🚨) 고정, 일반은 파랑(🔵)
-        is_urgent = ("🚨" in wait_data.get('last_icon', '') or "급등" in sell_reason or "2음봉" in sell_reason)
+        is_urgent = ("🚨" in wait_data.get('last_icon', '') or "급등" in sell_reason or "2음봉" in sell_reason or "🚨" in sell_reason)
         icon = "🚨" if is_urgent else "🔵"
         msg = "긴급매도유예" if is_urgent else "일반매도유예"
         return icon, f"⏳ {remains}m 후 {msg}"
