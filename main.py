@@ -683,13 +683,13 @@ async def execute_sell(app, symbol, reason, sell_ratio=1.0):
                     logger.info(f"DEBUG: 💰 {symbol} 지정가 매도 체결: {reason} | 수량: {precision_qty} | 체결가: {target_p}")
                     break
                 else:
-                    await asyncio.to_thread(exchange.cancel_order, order['id'], symbol)
+                    await asyncio.to_thread(exchange.cancel_order, order['id'], symbol, params={'side': 'sell'})
                     logger.info(f"⏭️ [미체결취소] {symbol} {i+1}차 지정가 실패. 주문을 취소합니다.")
             
             # 3회 모두 실패 시 유예 재시작 및 함수 종료
             if not fill_success:
                 try:
-                    await asyncio.to_thread(exchange.cancel_order, order['id'], symbol)
+                    await asyncio.to_thread(exchange.cancel_order, order['id'], symbol, params={'side': 'sell'})
                     logger.info(f"⏭️ [매도락방지-최종] {symbol} 미체결 주문 전량 취소 완료")
                 except Exception as e:
                     pass
@@ -1087,7 +1087,7 @@ async def sell_monitor_task(app):
                 # 1. 수익 릴레이 (매도 유예 중이면 간섭 완전 차단)
                 if symbol not in pending_approvals:
                     # 긴급 종목이거나 (일반 종목 중 비긴급+매도신호없음) 일 때 릴레이 작동
-                    can_relay = (this_profit >= 1.0) and (is_emergency or (not is_urgent and not is_sell_signal))
+                    can_relay = (this_profit >= 0.7) and (is_emergency or (not is_urgent and not is_sell_signal))
                     
                     if can_relay:
                         p_deadline = inv_item.get('profit_deadline')
