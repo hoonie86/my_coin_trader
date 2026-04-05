@@ -9,7 +9,7 @@ import threading
 inv_lock = threading.RLock()
 buy_queue = asyncio.Queue()
 # 1. 필수 폴더 생성
-for folder in ['logs', 'trades']:
+for folder in ['/home/rocky/my_coin_trader/logs', '/home/rocky/my_coin_trader/trades']:
     if not os.path.exists(folder):
         os.makedirs(folder)
         print(f"📁 폴더 생성 완료: {folder}")
@@ -46,7 +46,7 @@ missed_60m_tracker = {}
 # [추가] 비상 체제 상태를 저장할 딕셔너리 선언
 emergency_mode = strategy.emergency_mode
 # [평단가 로컬 관리용]
-INV_FILE = "trades/inventory.json"
+INV_FILE = "/home/rocky/my_coin_trader/trades/inventory.json"
 
 
 def load_inventory():
@@ -641,7 +641,7 @@ async def execute_sell(app, symbol, reason, sell_ratio=1.0):
             inv = load_inventory()
             if symbol in inv:
                 del inv[symbol]
-                with open("trades/inventory.json", "w") as f:
+                with open("/home/rocky/my_coin_trader/trades/inventory.json", "w") as f:
                     json.dump(inv, f, indent=4)
             if symbol in pending_approvals:
                 del pending_approvals[symbol]
@@ -768,7 +768,7 @@ async def execute_sell(app, symbol, reason, sell_ratio=1.0):
                 inv[symbol]['total_quantity'] = float(inv[symbol].get('total_quantity', 0)) - precision_qty
                 logger.info(f"💾 [인벤토리 갱신] {symbol} 분할 매도로 잔여 수량 업데이트 완료")
                 
-            with open("trades/inventory.json", "w") as f:
+            with open("/home/rocky/my_coin_trader/trades/inventory.json", "w") as f:
                 json.dump(inv, f, indent=4)
 
         # 7. 텔레그램 최종 알림
@@ -1046,8 +1046,8 @@ async def sell_monitor_task(app):
 
                 # 3단계: 매도 엔진 & 유예 관리 (야간 AUTO 반영)
                 m_status = sell_mute_status.get(symbol, 'WATCH')
-                # 밤이면 무조건 AUTO로 동작하게 함
-                status = 'AUTO' if is_night else m_status
+                # 사용자가 KEEP을 눌렀다면 야간이라도 KEEP 유지
+                status = m_status if m_status == 'KEEP' else ('AUTO' if is_night else m_status)
 
                 ticker = await asyncio.to_thread(exchange.fetch_ticker, symbol)
                 this_curr_p = float(ticker.get('last') or ticker.get('close') or 0)
@@ -1074,8 +1074,8 @@ async def sell_monitor_task(app):
 
                 ###### [수정 시작] 긴급 1분 / 일반 5분 유예 적용 및 중복 선언 제거 ######
                 # 0순위 급등/절대익절 판정
-                is_sell_final = (status == 'KEEP' and is_sell_signal and "0순위" in sell_reason)
-                
+                # is_sell_final = (status == 'KEEP' and is_sell_signal and "0순위" in sell_reason)
+                is_sell_final = False
                 is_relay_updated = False 
                 is_emergency = emergency_mode.get(symbol, 0) >= 1
                 relay_min = 1 if is_emergency else 5
@@ -1125,7 +1125,7 @@ async def sell_monitor_task(app):
                         logger.error(f"Profit Timer Save Error: {e}")
 
                 # 릴레이 만료 시 즉각 매도 집행 및 루프 스킵
-                if is_sell_final:
+                if is_sell_final and status != 'KEEP':
                     await execute_sell(app, symbol, sell_reason)
                     if symbol in pending_approvals: del pending_approvals[symbol]
                     continue
@@ -1136,7 +1136,8 @@ async def sell_monitor_task(app):
                 ###### [수정 끝] ######
 
                 # 2. 매도 유예 관리: [2대 원칙 적용]
-                if is_sell_signal:
+                # if is_sell_signal:
+                if is_sell_signal and status != 'KEEP':
                     if is_urgent:
                         is_sell_final = True
                     elif symbol not in pending_approvals:
@@ -1208,7 +1209,7 @@ async def sell_monitor_task(app):
                 })
 
                 # 4. 최종 매도 집행 (불필요한 중복 알림 코드 제거 완료)
-                if is_sell_final:
+                if is_sell_final and status != 'KEEP':
                     await execute_sell(app, symbol, sell_reason)
                     if symbol in pending_approvals: del pending_approvals[symbol]
                     continue
@@ -1270,7 +1271,7 @@ async def sell_monitor_task(app):
 # main.py 상단 적당한 위치
 def save_trade_log(symbol, grade, buy_p, sell_p, profit, reason):
     """매도 결과를 CSV 파일에 기록하여 사후 분석 및 통계용으로 사용"""
-    log_file = "trades/trade_history.csv"
+    log_file = "/home/rocky/my_coin_trader/trades/trade_history.csv"
     try:
         log_data = {
             'date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -1609,7 +1610,7 @@ async def process_report_logic(update, context, query=None):
             # 야간 모드 및 모드 아이콘 판정
             raw_status = sell_mute_status.get(symbol, 'WATCH')
             is_global_auto = is_night or is_manual_auto
-            status = 'AUTO' if is_global_auto else raw_status
+            status = raw_status if raw_status == 'KEEP' else ('AUTO' if is_global_auto else raw_status)
 
             ohlcv = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '30m', limit=100)
             df = pd.DataFrame(ohlcv, columns=['time', 'open', 'high', 'low', 'close', 'vol'])

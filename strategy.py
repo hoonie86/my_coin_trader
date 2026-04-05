@@ -9,7 +9,7 @@ from config import logger
 import os
 import json
 
-MARKET_STATUS_FILE = 'market_status.json'
+MARKET_STATUS_FILE = '/home/rocky/my_coin_trader/market_status.json'
 
 # ###### 수정 시작: 파일 로드/저장 누적 변수 추가 ######
 def load_market_status():
@@ -288,7 +288,7 @@ def check_buy_signal_v1(df, symbol, warning_list):
 
 
 # ////////// [상태 저장 로직 추가 시작] //////////
-EMERGENCY_STATUS_FILE = 'emergency_status.json'
+EMERGENCY_STATUS_FILE = '/home/rocky/my_coin_trader/emergency_status.json'
 
 def load_emergency_mode():
     if os.path.exists(EMERGENCY_STATUS_FILE):
