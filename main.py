@@ -636,7 +636,7 @@ async def execute_sell(app, symbol, reason, sell_ratio=1.0):
 
         if quantity <= 0:
             logger.warning(f"⏭️ {symbol} 매도 가능 잔고가 0입니다 (이미 체결되었거나 잠김 상태). 인벤토리에서 제외합니다.")
-            
+            await app.bot.send_message(config.CHAT_ID, f"👻 [{symbol}] 매도 완료 (잔고 소진 확인 / 감시 종료)")
             # 잔고가 없으므로 무한 루프 탈출을 위해 인벤토리 즉시 삭제
             inv = load_inventory()
             if symbol in inv:
@@ -988,7 +988,7 @@ async def sell_monitor_task(app):
                 this_buy_type = inv_item.get('buy_type', 1)
 
                 # 1단계: 수익 알람 (기존 로직 유지)
-                if this_profit >= 1.0:
+                if this_profit >= 0.7:
                     last_alert_p = profit_alerts.get(symbol, 0.0)
                     if this_profit > last_alert_p:
                         profit_alerts[symbol] = this_profit
@@ -1000,14 +1000,14 @@ async def sell_monitor_task(app):
                             f"현재가: {this_curr_p:,.0f}원",
                             reply_markup=kb
                         )
-                if emergency_mode.get(symbol, 0) >= 1:
-                    report_line = f"🚨 [{this_grade} | 긴급] {symbol.split('/')[0]:<6} | {this_curr_p:,.0f}원 | {this_profit:+.2f}%({this_profit_krw:+,.0f}원) | 비상 대기 중"
-                    report_lines.append({
-                        'text': report_line,
-                        'profit': this_profit,
-                        'button': InlineKeyboardButton(f"🔍 {symbol.split('/')[0]}", callback_data=f"manage_asset:{symbol}")
-                    })
-                    continue
+                #if emergency_mode.get(symbol, 0) >= 1:
+                #    report_line = f"🚨 [{this_grade} | 긴급] {symbol.split('/')[0]:<6} | {this_curr_p:,.0f}원 | {this_profit:+.2f}%({this_profit_krw:+,.0f}원) | 비상 대기 중"
+                #    report_lines.append({
+                #        'text': report_line,
+                #        'profit': this_profit,
+                #        'button': InlineKeyboardButton(f"🔍 {symbol.split('/')[0]}", callback_data=f"manage_asset:{symbol}")
+                #    })
+                #    continue
 
                 # 2단계: 차트 데이터 및 익절 엔진 (기존 로직 보존)
                 ohlcv = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '30m', limit=100)
@@ -1109,7 +1109,9 @@ async def sell_monitor_task(app):
                 if p_deadline and datetime.now() > datetime.strptime(p_deadline, '%Y-%m-%d %H:%M:%S'):
                     is_sell_signal = True
                     is_sell_final = True
-                    sell_reason = f"⏰ [익절] 수익 경신 멈춤({relay_min}분 정체)으로 릴레이 만료"
+                    prefix = "🚨 [긴급익절]" if is_emergency else "⏰ [일반익절]"
+                    sell_reason = f"{prefix} 수익 경신 멈춤({relay_min}분 정체)으로 릴레이 만료"
+                    #sell_reason = f"⏰ [익절] 수익 경신 멈춤({relay_min}분 정체)으로 릴레이 만료"
                     del inv_item['profit_deadline']
                     inv_data[symbol] = inv_item
                     is_relay_updated = True

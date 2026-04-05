@@ -451,6 +451,8 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     ma14_val = float(curr['ma14']) if not pd.isna(curr['ma14']) else 0
     prev_ma14 = float(prev['ma14'])
     ma40_val = float(curr['ma40']) if not pd.isna(curr['ma40']) else 0
+    ma5_above_14_count = (df['ma5'].iloc[-15:] > df['ma14'].iloc[-15:]).sum()
+    is_trend_stable = (ma5_above_14_count >= 11)
     ma90_val = float(curr['ma90']) if not pd.isna(curr['ma90']) else 0
     ma185_val = float(curr['ma185']) if not pd.isna(curr['ma185']) else 0
     rsi_val = float(curr['rsi']) if not pd.isna(curr['rsi']) else 50
@@ -1061,7 +1063,10 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     if not (gc_count_t1 == 0): reasons_t4.append(f"GC이력({gc_count_t1}회)")
     
     # [수정] 수급 문턱만 3.0으로 낮추기
-    if vol_ratio < 3.0: reasons_t4.append(f"수급미달({vol_ratio:.1f}x<3x)")
+    if not is_trend_stable:
+        reasons_t4.append(f"추세지속부족({ma5_above_14_count}/15)")
+    if vol_ratio < 1.5: 
+        reasons_t4.append(f"수급미달({vol_ratio:.1f}x<1.5x)")
     
     # [핵심] 기존 엔진은 그대로 사용! (단, REI를 위해 has_down_touch만 선택적 제거)
     ###### [수정/추가] 격돌 로직 이식 및 대추세(185선) 급락 가드 결합 ######
@@ -1124,7 +1129,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
 
         # [C] 최종 판정 및 요청하신 키워드 로그 반영
         # ======== [수정 시작: VANA 필터 조건 추가 및 185선 지하실 추락 가드] ========
-        if is_type2_safe and is_t2_rebound and has_t1_history_clean and (ma90_up_count >= 5) and (ma185_up_count >= 5) and is_185_landing_stable and has_down_touch and is_true_trigger_t2 and not is_death_conv:
+        if is_type2_safe and is_t2_rebound and is_trend_stable and has_t1_history_clean and (ma90_up_count >= 5) and (ma185_up_count >= 5) and is_185_landing_stable and has_down_touch and is_true_trigger_t2 and not is_death_conv:
             gc_idx = valid_gc_idx
             d_cnt = sum(1 for k in range(gc_idx-96, gc_idx-10) if df['ma185'].iloc[k] <= df['ma185'].iloc[k-1]) if gc_idx != -1 else 0
             height_pct = (curr_price - ma185_val) / ma185_val * 100
