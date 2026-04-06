@@ -476,8 +476,9 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     # 논리: (현재 기울기가 0 이상인가?) OR (음수라면 현재 기울기가 이전보다 크거나 같은가?)
     # 5 -> 3 (True), -5 -> -3 (True), -3 -> -5 (False)
     ma90_intensity_ok = (ma90_v > 0) | (ma90_v > ma90_v.shift(1))
-    # 최근 10봉 중 위 조건을 만족하는 횟수가 6번(60%) 이상인지 계산
-    ma90_up_count = ma90_intensity_ok.tail(10).sum()
+    # 최근 10봉 중 위 조건을 만족하는 횟수가 6번(60%) 이상인지 계산 (기존 로직 주석 처리)
+    actual_up_count_90 = (ma90_v.tail(10) > 0).sum()
+    ma90_up_count = ma90_intensity_ok.tail(10).sum() if actual_up_count_90 >= 2 else 0
 
     ma40_v = df['ma40'].diff()
     # 양수 프리패스 OR 음수 구간 내 변곡점(현재 기울기 >= 이전 기울기) 체크
@@ -493,10 +494,10 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     ma185_up_count = ma185_intensity_ok.tail(10).sum() if actual_up_count >= 2 else 0
     # 2. 5-40선 이격도 및 수렴 여부
     gap_5_40_pct = (ma5_val - ma40_val) / ma40_val * 100 if ma40_val > 0 else 0
-    # 11봉의 데이터를 수집하여 10번의 인접 비교 구간을 생성
-    disps_common = [abs(df['ma5'].iloc[-i] - df['ma40'].iloc[-i]) / df['ma40'].iloc[-i] * 100 if df['ma40'].iloc[-i] > 0 else 999 for i in range(1, 12)]
-    # 10회의 비교 중 40% (4회) 이상 수렴하거나 평행하면 통과 (일시적 발산 노이즈 무시)
-    is_converging_5_40 = (sum(1 for i in range(10) if disps_common[i] <= disps_common[i+1]) >= 4)
+    # 7봉의 데이터를 수집하여 6번의 인접 비교 구간을 생성
+    disps_common = [abs(df['ma5'].iloc[-i] - df['ma40'].iloc[-i]) / df['ma40'].iloc[-i] * 100 if df['ma40'].iloc[-i] > 0 else 999 for i in range(1, 8)]
+    # 6회의 비교 중 2회 이상 수렴하거나 평행하면 통과 (일시적 발산 노이즈 무시)
+    is_converging_5_40 = (sum(1 for i in range(6) if disps_common[i] <= disps_common[i+1]) >= 2)
     # 3. 185일선 안착 안정성 (최근 10봉 하락 틱 수)
     t1_v2_tick = get_bithumb_tick_size(ma185_val)
     total_drop_ticks = ((df['ma185'].diff().tail(8) * -1) / t1_v2_tick).clip(lower=0).sum() if t1_v2_tick > 0 else 999
