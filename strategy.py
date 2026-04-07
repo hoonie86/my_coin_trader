@@ -560,8 +560,8 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         print(f"DEBUG: {symbol} 매수 탈락 - 변동성 과다({volatility:.1f}% >= {dynamic_vol_limit}%)")
         return False, f"🚫 [상단방어] 구간 변동성({volatility:.1f}%) > 허용치({dynamic_vol_limit}%)", "F", {}
         
-    if curr_price < curr['high'] * 0.95:
-        return False, f"🚫 [설거지방어] 고가대비 이탈(-5.0%↑)", "F", {}
+    if curr_price < curr['high'] * 0.90:
+        return False, f"🚫 [설거지방어] 고가대비 이탈(-10.0%↑)", "F", {}
 
     if upper_wick >= 5.0:
         print(f"DEBUG: {symbol} 매수 탈락 - 윗꼬리 과다({upper_wick:.1f}%)")
@@ -703,6 +703,25 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
 
     data_dict = _fill_data_dict_full(df, curr, prev, curr_price, symbol)
 
+    # 1. 지옥행 가드 (Panic Sell 차단)
+    is_panic_sell = (data_dict.get('vol_ratio', 0) >= 1.5) and (curr_price < float(curr['open']))
+    if is_panic_sell:
+        return False, "🚫 [지옥행가드] 대량 매도 음봉 출현(Panic Sell)", "F", data_dict
+
+    # 2. 거래량 질적 분석 (Volume Profile - 1.5배)
+    recent_10_df = df.tail(10)
+    vol_sum_red = recent_10_df[recent_10_df['close'] > recent_10_df['open']]['vol'].sum()
+    vol_sum_blue = recent_10_df[recent_10_df['close'] < recent_10_df['open']]['vol'].sum()
+    is_volume_quality_ok = vol_sum_red > (vol_sum_blue * 1.5)
+
+    # 3. 7봉 내 2회 상향 돌파 (동적 진입)
+    is_cross_up_14 = (df['close'].shift(1) <= df['ma14'].shift(1)) & (df['close'] > df['ma14'])
+    is_dynamic_entry_ok = (is_cross_up_14.tail(7).sum() >= 2) and (curr_price > float(curr['ma14']))
+
+    # 4. 장기 이평 대전제 (Type 2, 4 전용)
+    ma185_slope_val = float(curr['ma185']) - float(prev['ma185']) if not pd.isna(curr['ma185']) and not pd.isna(prev['ma185']) else 0
+    is_trend_safe = (float(curr['ma90']) > float(curr['ma185'])) and (ma185_up_count >= 2)
+    
     is_was_descending = True  # 2일간 지속 하락 여부
     is_now_stabilized = True  # 5시간 전부터 안착 여부
 
@@ -1058,6 +1077,9 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     # ---------------------------
 
     reasons_t4 = []
+    if not is_trend_safe: reasons_t4.append("장기이평역배열또는하락(T4)")
+    if not is_volume_quality_ok: reasons_t4.append("매집수급미달(1.5배)")
+    if not is_dynamic_entry_ok: reasons_t4.append("동적진입(14선)실패")
     if not is_t4_safe: reasons_t4.append(f"변동성초과({vol_sectional:.1f}%)")
     if not is_t4_alignment: reasons_t4.append(f"배열/수렴미달")
     if gap_5_40_pct > 4.0: reasons_t4.append(f"5/40이격과다({gap_5_40_pct:.1f}%)")
@@ -1130,7 +1152,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
 
         # [C] 최종 판정 및 요청하신 키워드 로그 반영
         # ======== [수정 시작: VANA 필터 조건 추가 및 185선 지하실 추락 가드] ========
-        if is_type2_safe and is_t2_rebound and is_trend_stable and has_t1_history_clean and (ma90_up_count >= 5) and (ma185_up_count >= 5) and is_185_landing_stable and has_down_touch and is_true_trigger_t2 and not is_death_conv:
+        if is_type2_safe and is_t2_rebound and is_trend_stable and has_t1_history_clean and (ma90_up_count >= 5) and (ma185_up_count >= 5) and is_185_landing_stable and has_down_touch and is_true_trigger_t2 and not is_death_conv and is_trend_safe and is_volume_quality_ok and is_dynamic_entry_ok:
             gc_idx = valid_gc_idx
             d_cnt = sum(1 for k in range(gc_idx-96, gc_idx-10) if df['ma185'].iloc[k] <= df['ma185'].iloc[k-1]) if gc_idx != -1 else 0
             height_pct = (curr_price - ma185_val) / ma185_val * 100
@@ -1153,7 +1175,10 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             if ma90_up_count < 5: reasons.append(f"90선추세({ma90_up_count})")
             if not is_185_landing_stable: reasons.append(f"185선불안정")
             if is_death_conv: reasons.append("중장기죽음의수렴")
-            
+            if not is_trend_safe: reasons.append("장기이평역배열또는하락(T2)")
+            if not is_volume_quality_ok: reasons.append("매집수급미달(1.5배)")
+            if not is_dynamic_entry_ok: reasons.append("동적진입(14선)실패")
+
             if reasons:
                 logger.info(f"DEBUG: {symbol} | [TYPE2] 탈락 이유: {', '.join(reasons)}")
 
