@@ -710,13 +710,22 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
 
     # 2. 거래량 질적 분석 (Volume Profile - 1.5배)
     recent_10_df = df.tail(10)
-    vol_sum_red = recent_10_df[recent_10_df['close'] > recent_10_df['open']]['vol'].sum()
-    vol_sum_blue = recent_10_df[recent_10_df['close'] < recent_10_df['open']]['vol'].sum()
-    is_volume_quality_ok = vol_sum_red > (vol_sum_blue * 1.5)
+    ###### [수정 시작: 수급 필터(1.5배 배수)를 10봉 중 6양봉 로직으로 교체] ######
+    # vol_sum_red = recent_10_df[recent_10_df['close'] > recent_10_df['open']]['vol'].sum()
+    # vol_sum_blue = recent_10_df[recent_10_df['close'] < recent_10_df['open']]['vol'].sum()
+    # is_volume_quality_ok = vol_sum_red > (vol_sum_blue * 1.5)
+                            
+    bull_count = (recent_10_df['close'] >= recent_10_df['open']).sum()
+    is_volume_quality_ok = bull_count >= 6
 
-    # 3. 7봉 내 2회 상향 돌파 (동적 진입)
-    is_cross_up_14 = (df['close'].shift(1) <= df['ma14'].shift(1)) & (df['close'] > df['ma14'])
-    is_dynamic_entry_ok = (is_cross_up_14.tail(7).sum() >= 2) and (curr_price > float(curr['ma14']))
+    # 3. 4봉 내 1회 상향 돌파 및 안착 유지
+    ###### [수정 시작: 14선 위로 고개 들고 유지되는 패턴만 허용 (++++, -+++, --++, ---+)] ######
+    # 최근 4개 봉의 14선 위(+) 여부를 리스트로 추출
+    last_4_status = (df['close'] > df['ma14']).tail(4)
+    
+    # 1. 중간에 다시 14선 밑으로 꺾이지 않아야 함 (단조 증가성)
+    # 2. 현재 봉(마지막 인덱스)은 반드시 14선 위(+)여야 함
+    is_dynamic_entry_ok = last_4_status.is_monotonic_increasing and last_4_status.iloc[-1]
 
     # 4. 장기 이평 대전제 (Type 2, 4 전용)
     ma185_slope_val = float(curr['ma185']) - float(prev['ma185']) if not pd.isna(curr['ma185']) and not pd.isna(prev['ma185']) else 0
@@ -1078,7 +1087,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
 
     reasons_t4 = []
     if not is_trend_safe: reasons_t4.append("장기이평역배열또는하락(T4)")
-    if not is_volume_quality_ok: reasons_t4.append("매집수급미달(1.5배)")
+    if not is_volume_quality_ok: reasons_t4.append("매집수급미달(양봉부족.(양봉 {bull_count}개))")
     if not is_dynamic_entry_ok: reasons_t4.append("동적진입(14선)실패")
     if not is_t4_safe: reasons_t4.append(f"변동성초과({vol_sectional:.1f}%)")
     if not is_t4_alignment: reasons_t4.append(f"배열/수렴미달")
@@ -1088,8 +1097,8 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     # [수정] 수급 문턱만 3.0으로 낮추기
     if not is_trend_stable:
         reasons_t4.append(f"추세지속부족({ma5_above_14_count}/15)")
-    if vol_ratio < 1.5: 
-        reasons_t4.append(f"수급미달({vol_ratio:.1f}x<1.5x)")
+    #if vol_ratio < 1.5: 
+    #    reasons_t4.append(f"수급미달({vol_ratio:.1f}x<1.5x)")
     
     # [핵심] 기존 엔진은 그대로 사용! (단, REI를 위해 has_down_touch만 선택적 제거)
     ###### [수정/추가] 격돌 로직 이식 및 대추세(185선) 급락 가드 결합 ######
@@ -1176,7 +1185,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             if not is_185_landing_stable: reasons.append(f"185선불안정")
             if is_death_conv: reasons.append("중장기죽음의수렴")
             if not is_trend_safe: reasons.append("장기이평역배열또는하락(T2)")
-            if not is_volume_quality_ok: reasons.append("매집수급미달(1.5배)")
+            if not is_volume_quality_ok: reasons.append("매집수급미달(양봉부족.(양봉 {bull_count}개))")
             if not is_dynamic_entry_ok: reasons.append("동적진입(14선)실패")
 
             if reasons:
