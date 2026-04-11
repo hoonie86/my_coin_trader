@@ -47,6 +47,7 @@ is_buy_locked, market_ref_rate, panic_cleared_time, prev_day_offset, last_date, 
 
 panic_msg_sent = False
 cooldown_dict = {}
+last_profit_dict = {}
 
 def is_in_cooldown(symbol):
     if symbol in cooldown_dict:
@@ -592,6 +593,9 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     min_185 = recent_185.min()
     max_185 = recent_185.max()
     curr_185 = float(curr['ma185']) if not pd.isna(curr['ma185']) else 0
+    # ======== [오류 방지: 초기값 선언 필수] ========
+    pos_185 = 0.0
+    is_high_pos_185 = False
 
     if max_185 > min_185 > 0:
         pos_185 = (curr_185 - min_185) / (max_185 - min_185)
@@ -1087,7 +1091,8 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
 
     reasons_t4 = []
     if not is_trend_safe: reasons_t4.append("장기이평역배열또는하락(T4)")
-    if not is_volume_quality_ok: reasons_t4.append("매집수급미달(양봉부족.(양봉 {bull_count}개))")
+    if ma90_up_count < 5: reasons_t4.append(f"90선추세하락({ma90_up_count}/10)")
+    if not is_volume_quality_ok: reasons_t4.append(f"매집수급미달(양봉부족.(양봉 {bull_count}개))")
     if not is_dynamic_entry_ok: reasons_t4.append("동적진입(14선)실패")
     if not is_t4_safe: reasons_t4.append(f"변동성초과({vol_sectional:.1f}%)")
     if not is_t4_alignment: reasons_t4.append(f"배열/수렴미달")
@@ -1160,8 +1165,12 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         is_type2_safe = (vol_sectional <= dynamic_vol_limit) and is_fresh
 
         # [C] 최종 판정 및 요청하신 키워드 로그 반영
-        # ======== [수정 시작: VANA 필터 조건 추가 및 185선 지하실 추락 가드] ========
-        if is_type2_safe and is_t2_rebound and is_trend_stable and has_t1_history_clean and (ma90_up_count >= 5) and (ma185_up_count >= 5) and is_185_landing_stable and has_down_touch and is_true_trigger_t2 and not is_death_conv and is_trend_safe and is_volume_quality_ok and is_dynamic_entry_ok:
+        # ======== [2026-04-11 수정: 기본(질서) 필수화 및 터치(has_down_touch) 옵션화] ========
+        is_foundation_ok = (ma185_val < ma90_val < ma40_val)
+
+        # 1. 기존의 빡빡한 AND 체인에서 'has_down_touch'만 제거하고, 필수 기본인 'is_foundation_ok'를 넣습니다.
+        if is_foundation_ok and is_type2_safe and is_t2_rebound and is_trend_stable and has_t1_history_clean and (ma90_up_count >= 5) and (ma185_up_count >= 5) and is_185_landing_stable and is_true_trigger_t2 and not is_death_conv and is_trend_safe and is_volume_quality_ok and is_dynamic_entry_ok:
+        # ======================================================================================
             gc_idx = valid_gc_idx
             d_cnt = sum(1 for k in range(gc_idx-96, gc_idx-10) if df['ma185'].iloc[k] <= df['ma185'].iloc[k-1]) if gc_idx != -1 else 0
             height_pct = (curr_price - ma185_val) / ma185_val * 100
@@ -1169,7 +1178,10 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             if d_cnt >= 50 and (-3.0 <= height_pct <= 8.0):
                 grade = "S+" if curr_price >= ma185_val else "S"
                 data_dict['grade'] = grade
-                return True, f"💎 [TYPE2-{grade}] 40선 내려앉음 후 찐 트리거 안착 ({grade})", grade, data_dict
+                
+                # 2. has_down_touch는 진입을 막는 문지기가 아니라, 패턴을 알려주는 용도로 메시지에 녹여 넣습니다.
+                touch_msg = "40선 터치 눌림" if has_down_touch else "대추세 기반 안착"
+                return True, f"💎 [TYPE2-{grade}] {touch_msg} 후 찐 트리거", grade, data_dict
             else:
                 logger.info(f"DEBUG: {symbol} | [TYPE2] T1질적지표 탈락 이유: d_cnt={d_cnt}, height={height_pct:.1f}%")
         else:
@@ -1178,6 +1190,9 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 if vol_sectional > dynamic_vol_limit: safe_detail.append(f"변동성 과다({vol_sectional:.1f}% > 기준:{dynamic_vol_limit:.1f}%)")
                 if not is_fresh: safe_detail.append("T1이력없음")
                 reasons.append(f"안전가드({', '.join(safe_detail)})")
+            
+            # 3. 기본 질서가 무너졌을 때의 탈락 사유를 명확히 추가합니다.
+            if not is_foundation_ok: reasons.append("대추세질서(185<90<40)미달") 
             if gap_5_40_pct > 4.0: reasons.append(f"5/40이격과다({gap_5_40_pct:.1f}%)")
             if not is_t2_rebound: reasons.append(f"수렴실패({t2_fail_reason})")            
             if not has_t1_history_clean: reasons.append(f"역사오염(GC:{gc_count_150}, DC:{dc_count_after_gc})")
@@ -1185,7 +1200,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             if not is_185_landing_stable: reasons.append(f"185선불안정")
             if is_death_conv: reasons.append("중장기죽음의수렴")
             if not is_trend_safe: reasons.append("장기이평역배열또는하락(T2)")
-            if not is_volume_quality_ok: reasons.append("매집수급미달(양봉부족.(양봉 {bull_count}개))")
+            if not is_volume_quality_ok: reasons.append(f"매집수급미달(양봉부족.(양봉 {bull_count}개))")
             if not is_dynamic_entry_ok: reasons.append("동적진입(14선)실패")
 
             if reasons:
@@ -1247,7 +1262,10 @@ def check_3_2_negative_candles(target_df):
 # ---------------------------------------------------------
 async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, grade='A', symbol_inventory_age=99, status=None, realtime_p=None, buy_type=1):
     global emergency_mode
-    
+    # //======== [2026-04-11 수정: 전역 변수 호출 추가] ========//
+    global last_profit_dict
+    # //========================================================//
+
     buy_type = int(buy_type) # 타입 비교 에러 방지용 강제 형변환
     support_price = 0.0      # NameError 원천 차단 방어막
 
@@ -1257,7 +1275,21 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
 
     if curr_p <= 0:
         return False, "데이터오류(0원)", False
-        
+
+    # //======== [2026-04-11 수정: L0 전용 1.5% 스파이크 안전 번개 익절] ========//
+    old_lvl = emergency_mode.get(symbol, 0)
+    temp_p_pct = ((curr_p - purchase_price) / purchase_price * 100) if purchase_price > 0 else 0
+    prev_p = last_profit_dict.get(symbol, temp_p_pct)
+
+    if old_lvl == 0 and (temp_p_pct - prev_p) >= 1.5:
+        if temp_p_pct >= 1.0: # 1% 수익 마지노선 가드
+            last_profit_dict[symbol] = temp_p_pct
+            # 현재가 지정가 매도 및 재시도를 유도하는 메시지 반환
+            return True, f"⚡ [번개익절] 1.5% 스파이크 감지. 현재가({curr_p}) 지정가 매도 시도 (수익 {temp_p_pct:.2f}%)", True
+
+    last_profit_dict[symbol] = temp_p_pct
+    # //========================================================================//
+
     # 2. [핵심] 실시간 가격 주입 및 모든 지표 재계산
     df.loc[df.index[-1], 'close'] = curr_p
     df['ma5'] = df['close'].rolling(5).mean()
