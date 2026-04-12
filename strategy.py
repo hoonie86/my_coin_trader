@@ -470,6 +470,31 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     
     slope_rate = ((ma185_val - prev_ma185) / prev_ma185) * 100 if prev_ma185 > 0 else 0
     ma5_slope = ((ma5_val - prev_ma5) / prev_ma5) * 100 if prev_ma5 > 0 else 0
+    is_slide_setup = False
+    if len(df) >= 25:
+        ma5_slopes_20 = [df['ma5'].iloc[i] - df['ma5'].iloc[i-1] for i in range(len(df)-20, len(df))]
+        filtered_signs = [1 if s > 0 else (-1 if s < 0 else 0) for s in ma5_slopes_20 if s != 0]
+
+        found_plus3_anchor = False
+        neg_streak = 0
+        plus_streak = 0
+        for s in filtered_signs:
+            if s == 1:
+                plus_streak += 1
+                if plus_streak >= 3: found_plus3_anchor = True
+                neg_streak = 0 
+            elif s == -1:
+                plus_streak = 0
+                if found_plus3_anchor:
+                    neg_streak += 1
+                    if neg_streak >= 3: is_slide_setup = True 
+
+    disparity_40_line = (curr_price / ma40_val) * 100 if ma40_val > 0 else 0
+    is_trend_alive = disparity_40_line >= 99.0 
+
+    is_not_doji_bull = (curr_price > float(curr['open']))
+    has_recovered_close = (curr_price >= float(prev['close']))
+    has_recovered_high = (curr_price >= float(prev['high']))
     ##########################################################################
     # [1단계: TYPE 1, 2 공통 지표 사전 계산]
     # 1. 90선 세기: 양수이거나, 음수일 때 직전보다 완만해져야 True
@@ -1093,7 +1118,10 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     if not is_trend_safe: reasons_t4.append("장기이평역배열또는하락(T4)")
     if ma90_up_count < 5: reasons_t4.append(f"90선추세하락({ma90_up_count}/10)")
     if not is_volume_quality_ok: reasons_t4.append(f"매집수급미달(양봉부족.(양봉 {bull_count}개))")
-    if not is_dynamic_entry_ok: reasons_t4.append("동적진입(14선)실패")
+    #if not is_dynamic_entry_ok: reasons_t4.append("동적진입(14선)실패")
+    if not is_slide_setup: reasons_t4.append("6봉파동(3상3하)미달")
+    if not is_trend_alive: reasons_t4.append(f"40선이격사망({disparity_40_line:.2f}%)")
+    if not is_not_doji_bull: reasons_t4.append("음봉/도지탈락")
     if not is_t4_safe: reasons_t4.append(f"변동성초과({vol_sectional:.1f}%)")
     if not is_t4_alignment: reasons_t4.append(f"배열/수렴미달")
     if gap_5_40_pct > 4.0: reasons_t4.append(f"5/40이격과다({gap_5_40_pct:.1f}%)")
@@ -1123,9 +1151,18 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     if upper_shadow_pct > 2.0: reasons_t4.append(f"윗꼬리과다({upper_shadow_pct:.1f}%)")
 
     if not reasons_t4:
-        grade = "S+" if curr_price >= ma185_val else "S"
-        data_dict['grade'] = grade
-        return True, f"🚀 [TYPE4-{grade}] 정배열(수렴) 돌파 (기존엔진+수급완화)", grade, data_dict
+        if has_recovered_close:
+            grade = "S+"
+            data_dict['grade'] = grade
+            return True, f"💎 [TYPE4-S+] 파동 확인 후 종가 탈환", grade, data_dict
+        elif has_recovered_high:
+            grade = "S"
+            data_dict['grade'] = grade
+            return True, f"⭐ [TYPE4-S] 파동 확인 후 고가 장악", grade, data_dict
+        else:
+            reasons_t4.append("회복트리거부족")
+            logger.info(f"DEBUG: {symbol} | [TYPE4] 탈락 이유: {', '.join(reasons_t4)}")
+            return False, f"🚫 [TYPE4] 회복트리거부족", "F", data_dict
     else:
         logger.info(f"DEBUG: {symbol} | [TYPE4] 탈락 이유: {', '.join(reasons_t4)}")
     # ==========================================================================
@@ -1169,19 +1206,23 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         is_foundation_ok = (ma185_val < ma90_val < ma40_val)
 
         # 1. 기존의 빡빡한 AND 체인에서 'has_down_touch'만 제거하고, 필수 기본인 'is_foundation_ok'를 넣습니다.
-        if is_foundation_ok and is_type2_safe and is_t2_rebound and is_trend_stable and has_t1_history_clean and (ma90_up_count >= 5) and (ma185_up_count >= 5) and is_185_landing_stable and is_true_trigger_t2 and not is_death_conv and is_trend_safe and is_volume_quality_ok and is_dynamic_entry_ok:
-        # ======================================================================================
+        if is_foundation_ok and is_type2_safe and is_trend_stable and has_t1_history_clean and (ma90_up_count >= 5) and (ma185_up_count >= 5) and is_185_landing_stable and not is_death_conv and is_trend_safe and is_volume_quality_ok and is_slide_setup and is_trend_alive and is_not_doji_bull:
+        # //======================================================================================//
             gc_idx = valid_gc_idx
             d_cnt = sum(1 for k in range(gc_idx-96, gc_idx-10) if df['ma185'].iloc[k] <= df['ma185'].iloc[k-1]) if gc_idx != -1 else 0
             height_pct = (curr_price - ma185_val) / ma185_val * 100
             
             if d_cnt >= 50 and (-3.0 <= height_pct <= 8.0):
-                grade = "S+" if curr_price >= ma185_val else "S"
-                data_dict['grade'] = grade
-                
-                # 2. has_down_touch는 진입을 막는 문지기가 아니라, 패턴을 알려주는 용도로 메시지에 녹여 넣습니다.
-                touch_msg = "40선 터치 눌림" if has_down_touch else "대추세 기반 안착"
-                return True, f"💎 [TYPE2-{grade}] {touch_msg} 후 찐 트리거", grade, data_dict
+                # //======== [2026-04-12 수정: 가격 장악 기반 등급 판정(S+/S)] ========//
+                if has_recovered_close:
+                    grade = "S+"
+                    data_dict['grade'] = grade
+                    return True, f"💎 [TYPE2-S+] 대추세 눌림 후 종가 탈환", grade, data_dict
+                elif has_recovered_high:
+                    grade = "S"
+                    data_dict['grade'] = grade
+                    return True, f"⭐ [TYPE2-S] 대추세 눌림 후 고가 장악", grade, data_dict
+                # //==============================================================//
             else:
                 logger.info(f"DEBUG: {symbol} | [TYPE2] T1질적지표 탈락 이유: d_cnt={d_cnt}, height={height_pct:.1f}%")
         else:
@@ -1194,7 +1235,11 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             # 3. 기본 질서가 무너졌을 때의 탈락 사유를 명확히 추가합니다.
             if not is_foundation_ok: reasons.append("대추세질서(185<90<40)미달") 
             if gap_5_40_pct > 4.0: reasons.append(f"5/40이격과다({gap_5_40_pct:.1f}%)")
-            if not is_t2_rebound: reasons.append(f"수렴실패({t2_fail_reason})")            
+            # if not is_t2_rebound: reasons.append(f"수렴실패({t2_fail_reason})")            
+            # if not is_dynamic_entry_ok: reasons.append("동적진입(14선)실패")
+            if not is_slide_setup: reasons.append("6봉파동(3상3하)미달")
+            if not is_trend_alive: reasons.append(f"40선이격사망({disparity_40_line:.2f}%)")
+            if not is_not_doji_bull: reasons.append("음봉/도지탈락")
             if not has_t1_history_clean: reasons.append(f"역사오염(GC:{gc_count_150}, DC:{dc_count_after_gc})")
             if ma90_up_count < 5: reasons.append(f"90선추세({ma90_up_count})")
             if not is_185_landing_stable: reasons.append(f"185선불안정")
@@ -1261,6 +1306,8 @@ def check_3_2_negative_candles(target_df):
 # [복구 및 추가] 매도 감시 메인 함수 (ERROR 방지 핵심)
 # ---------------------------------------------------------
 async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, grade='A', symbol_inventory_age=99, status=None, realtime_p=None, buy_type=1):
+    if status == 'KEEP':
+        return False, "🛡️ [수동유예] 사용자 명령으로 봇 매도 중단 중", False
     global emergency_mode
     # //======== [2026-04-11 수정: 전역 변수 호출 추가] ========//
     global last_profit_dict
