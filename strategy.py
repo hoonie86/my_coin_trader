@@ -470,24 +470,31 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     
     slope_rate = ((ma185_val - prev_ma185) / prev_ma185) * 100 if prev_ma185 > 0 else 0
     ma5_slope = ((ma5_val - prev_ma5) / prev_ma5) * 100 if prev_ma5 > 0 else 0
-    is_slide_setup = False
-    if len(df) >= 25:
-        ma5_slopes_20 = [df['ma5'].iloc[i] - df['ma5'].iloc[i-1] for i in range(len(df)-20, len(df))]
-        filtered_signs = [1 if s > 0 else (-1 if s < 0 else 0) for s in ma5_slopes_20 if s != 0]
-
-        found_plus3_anchor = False
-        neg_streak = 0
-        plus_streak = 0
+    
+    # //======== [2026-04-13 수정 시작: 공용 파동 엔진 및 타입별 셋업 변수 정의] ========//
+    def get_wave_setup(df_local, neg_threshold):
+        if len(df_local) < 25: return False
+        ma5_slopes = [df_local['ma5'].iloc[i] - df_local['ma5'].iloc[i-1] for i in range(len(df_local)-20, len(df_local))]
+        filtered_signs = [1 if s > 0 else (-1 if s < 0 else 0) for s in ma5_slopes if s != 0]
+        found_plus3_anchor, neg_streak, plus_streak = False, 0, 0
         for s in filtered_signs:
             if s == 1:
                 plus_streak += 1
                 if plus_streak >= 3: found_plus3_anchor = True
-                neg_streak = 0 
+                neg_streak = 0 # + 발생 시 하락 카운트만 리셋
             elif s == -1:
                 plus_streak = 0
-                if found_plus3_anchor:
-                    neg_streak += 1
-                    if neg_streak >= 3: is_slide_setup = True 
+                if found_plus3_anchor: neg_streak += 1
+        return found_plus3_anchor and (neg_streak >= neg_threshold)
+
+    # 각 타입별 하락 횟수(4, 3, 5)를 적용한 셋업 상태 확인
+    is_slide_setup_t1 = get_wave_setup(df.iloc[:-1], 4)
+    is_slide_setup_t24 = get_wave_setup(df.iloc[:-1], 3)
+    is_slide_setup_t3 = get_wave_setup(df.iloc[:-1], 5)
+    
+    # TYPE 2, 4 기존 참조 변수 호환성을 위해 기본값 할당
+    is_slide_setup = is_slide_setup_t24
+    # //======== [2026-04-13 수정 끝] ========//
 
     disparity_40_line = (curr_price / ma40_val) * 100 if ma40_val > 0 else 0
     is_trend_alive = disparity_40_line >= 99.0 
@@ -863,17 +870,24 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                     disps_5b = [abs(df['ma5'].iloc[-i] - df['ma40'].iloc[-i]) / df['ma40'].iloc[-i] * 100 if df['ma40'].iloc[-i] > 0 else 999 for i in range(1, 6)]
                     is_converging_5b = all(disps_5b[i] < disps_5b[i+1] for i in range(4))
 
-                    # [수정] S급: 하한선(-0.5) 확장 + 상한선(0.03) 제한 + 5봉 수렴 조건(is_converging_5b) 추가
-                    if (not has_prior_gc) and (prev_ma5 <= prev_ma40) and (ma5_slope > 0) and (curr_slope_40 > -0.07) and (-0.8 < disparity_5_40 < 0) and is_converging_5b:
-                        if (-0.5 <= disparity_5_40 < 0) and vol_ratio_t3 < 0.7 and is_true_trigger:
-                            # [S+급] 40선 아래에서 격돌 중 (골크 전) + 찐 트리거
+                    # //======== [2026-04-13 수정 시작: TYPE 3 등급 순서 및 5회 하락 적용] ========//
+                    global s_plus_tracker
+                    if 's_plus_tracker' not in globals(): s_plus_tracker = {}
+
+                    if (not has_prior_gc) and (prev_ma5 <= prev_ma40) and (curr_slope_40 > -0.07) and (-0.8 < disparity_5_40 < 0) and is_converging_5b:
+                        # S+ 판정: 5회 하락 완료 + 첫 양봉 종가탈환
+                        if is_slide_setup_t3 and has_recovered_close and is_not_doji_bull:
                             data_dict['grade'] = 'S+'
                             data_dict['multiplier'] = 2.0  
-                            return True, f"💎 [TYPE3-S+] 골크 전 바닥 격돌 및 찐 트리거 ({disparity_5_40:.2f}%)", "S+", data_dict
-                        elif vol_ratio_t3 < 0.7 and is_true_trigger:
-                            # [S급] 찐 트리거 및 거래량 조건 만족 시 S급 확정 (격격 이격도 완화)
-                            data_dict['grade'] = 'S'
-                            return True, f"💎 [TYPE3-S] 바닥 40선 찐 트리거 안착 및 수렴 ({disparity_5_40:.2f}%)", "S", data_dict
+                            s_plus_tracker[symbol] = {'index': len(df), 'high': float(curr['high'])}
+                            return True, f"💎 [TYPE3-S+] 5회하락 후 첫 양봉 종가탈환", "S+", data_dict
+                        # S 판정: 직전 S+의 고가 돌파
+                        elif is_not_doji_bull and symbol in s_plus_tracker:
+                            prev_s_plus = s_plus_tracker[symbol]
+                            if prev_s_plus['index'] == len(df) - 1 and curr_price >= prev_s_plus['high']:
+                                data_dict['grade'] = 'S'
+                                return True, f"⭐ [TYPE3-S] 직전 S+ 양봉의 고가 연속 장악", "S", data_dict
+                    # //======== [2026-04-13 수정 끝] ========//
                     else:
                         logger.info(f"DEBUG: {symbol} | [TYPE3-S] 탈락 이유 | 조건1(골크 미존재) :  {not has_prior_gc} and 조건2(prev_ma5-prev_ma40): {prev_ma5 - prev_ma40:.2f} <= 0 and 조건3(ma5_slope): {ma5_slope:.2f} > 0 and 조건4(curr_slope_40): {curr_slope_40 + 0.1:.2f} > 0 and 조건5(5/40 수렴): {is_converging_5b} and 조건6(이격): {disparity_5_40:.2f}")
                     # [A급] 40선 기울기가 0 이상으로 전환 (추세 반전 확인)
@@ -1056,15 +1070,24 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 # 최근 6봉의 185-40 이격도를 구하여 전봉 대비 감소(수렴)한 횟수 계산
                 hist_disp = [abs(df['ma40'].iloc[-i] - df['ma185'].iloc[-i]) / df['ma185'].iloc[-i] if df['ma185'].iloc[-i] > 0 else 999 for i in range(1, 8)]
                 conv_cnt = sum(1 for i in range(6) if hist_disp[i] < hist_disp[i+1])
-                # 1.5% 이격 이내 + 3회 이상 수렴 + 기존 조건 필수 만족
-                if disparity_gold <= 0.015 and conv_cnt >= 3 and is_converging_5_40 and (-0.8 <= gap_5_40_pct <= 0.3) and (ma90_up_count >= 5) and is_true_trigger:
-                    if is_40_90_gc:
+                
+                # //======== [2026-04-13 수정 시작: TYPE 1 등급 순서 및 4회 하락 적용] ========//
+                global s_plus_tracker
+                if 's_plus_tracker' not in globals(): s_plus_tracker = {}
+
+                if disparity_gold <= 0.015 and conv_cnt >= 3 and is_converging_5_40 and (-0.8 <= gap_5_40_pct <= 0.3) and (ma90_up_count >= 5):
+                    # S+ 판정: 4회 하락 완료 + 첫 양봉 종가탈환
+                    if is_slide_setup_t1 and has_recovered_close and is_not_doji_bull:
                         data_dict['grade'] = 'S+'
-                        return True, "💎 [TYPE1-S+] 밥그릇 수렴 및 40/90 골크 + 찐 트리거", "S+", data_dict
-                    else:
-                        if disparity_gold <= 0.010:
+                        s_plus_tracker[symbol] = {'index': len(df), 'high': float(curr['high'])}
+                        return True, "💎 [TYPE1-S+] 밥그릇 4회하락 후 첫 양봉 종가탈환", "S+", data_dict
+                    # S 판정: 직전 S+의 고가 돌파
+                    elif is_not_doji_bull and symbol in s_plus_tracker:
+                        prev_s_plus = s_plus_tracker[symbol]
+                        if prev_s_plus['index'] == len(df) - 1 and curr_price >= prev_s_plus['high']:
                             data_dict['grade'] = 'S'
-                            return True, "💎 [TYPE1-S] 밥그릇 바닥 수렴 및 40선 찐 트리거 안착", "S", data_dict
+                            return True, "⭐ [TYPE1-S] 직전 S+ 양봉의 고가 연속 장악", "S", data_dict
+                # //======== [2026-04-13 수정 끝] ========//
                 else:
                     logger.info(f"DEBUG: {symbol} | [TYPE1-S/S+] 격돌 실패 | 골크 : {disparity_gold} <= 0.005 | 5/40수렴: {is_converging_5_40} | 5/40 gap pct: -0.8 <= {gap_5_40_pct:.2f}% <= 0.3 | 90선 상승: {ma90_up_count} >= 5")
 
@@ -1150,19 +1173,29 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     if not is_bullish: reasons_t4.append("음봉탈락")
     if upper_shadow_pct > 2.0: reasons_t4.append(f"윗꼬리과다({upper_shadow_pct:.1f}%)")
 
+    # //======== [2026-04-13 수정 시작: TYPE 4 등급 순서 및 3회 하락 적용] ========//
+    global s_plus_tracker
+    if 's_plus_tracker' not in globals(): s_plus_tracker = {}
+
     if not reasons_t4:
-        if has_recovered_close:
+        # S+ 판정: 3회 하락 완료 + 첫 양봉 종가탈환
+        if is_slide_setup_t24 and has_recovered_close and is_not_doji_bull:
             grade = "S+"
             data_dict['grade'] = grade
-            return True, f"💎 [TYPE4-S+] 파동 확인 후 종가 탈환", grade, data_dict
-        elif has_recovered_high:
-            grade = "S"
-            data_dict['grade'] = grade
-            return True, f"⭐ [TYPE4-S] 파동 확인 후 고가 장악", grade, data_dict
-        else:
-            reasons_t4.append("회복트리거부족")
-            logger.info(f"DEBUG: {symbol} | [TYPE4] 탈락 이유: {', '.join(reasons_t4)}")
-            return False, f"🚫 [TYPE4] 회복트리거부족", "F", data_dict
+            s_plus_tracker[symbol] = {'index': len(df), 'high': float(curr['high'])}
+            return True, f"💎 [TYPE4-S+] 3회하락 후 첫 양봉 종가탈환", grade, data_dict
+        # S 판정: 직전 S+의 고가 돌파
+        elif is_not_doji_bull and symbol in s_plus_tracker:
+            prev_s_plus = s_plus_tracker[symbol]
+            if prev_s_plus['index'] == len(df) - 1 and curr_price >= prev_s_plus['high']:
+                grade = "S"
+                data_dict['grade'] = grade
+                return True, f"⭐ [TYPE4-S] 직전 S+ 양봉의 고가 연속 장악", grade, data_dict
+                
+        reasons_t4.append("회복트리거부족(또는 도지대기)")
+        logger.info(f"DEBUG: {symbol} | [TYPE4] 탈락 이유: {', '.join(reasons_t4)}")
+        return False, f"🚫 [TYPE4] 회복트리거부족", "F", data_dict
+    # //======== [2026-04-13 수정 끝] ========//
     else:
         logger.info(f"DEBUG: {symbol} | [TYPE4] 탈락 이유: {', '.join(reasons_t4)}")
     # ==========================================================================
@@ -1213,16 +1246,26 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             height_pct = (curr_price - ma185_val) / ma185_val * 100
             
             if d_cnt >= 50 and (-3.0 <= height_pct <= 8.0):
-                # //======== [2026-04-12 수정: 가격 장악 기반 등급 판정(S+/S)] ========//
-                if has_recovered_close:
+                # //======== [2026-04-13 수정 시작: TYPE 2 등급 순서 및 3회 하락 적용] ========//
+                global s_plus_tracker
+                if 's_plus_tracker' not in globals(): s_plus_tracker = {}
+
+                # S+ 판정: 3회 하락 완료 + 첫 양봉 종가탈환
+                if is_slide_setup_t24 and has_recovered_close and is_not_doji_bull:
                     grade = "S+"
                     data_dict['grade'] = grade
-                    return True, f"💎 [TYPE2-S+] 대추세 눌림 후 종가 탈환", grade, data_dict
-                elif has_recovered_high:
-                    grade = "S"
-                    data_dict['grade'] = grade
-                    return True, f"⭐ [TYPE2-S] 대추세 눌림 후 고가 장악", grade, data_dict
-                # //==============================================================//
+                    s_plus_tracker[symbol] = {'index': len(df), 'high': float(curr['high'])}
+                    return True, f"💎 [TYPE2-S+] 3회하락 후 첫 양봉 종가탈환", grade, data_dict
+                # S 판정: 직전 S+의 고가 돌파
+                elif is_not_doji_bull and symbol in s_plus_tracker:
+                    prev_s_plus = s_plus_tracker[symbol]
+                    if prev_s_plus['index'] == len(df) - 1 and curr_price >= prev_s_plus['high']:
+                        grade = "S"
+                        data_dict['grade'] = grade
+                        return True, f"⭐ [TYPE2-S] 직전 S+ 양봉의 고가 연속 장악", grade, data_dict
+                        
+                logger.info(f"DEBUG: {symbol} | [TYPE2] 탈락 이유: 회복트리거부족(또는 도지대기)")
+                # //======== [2026-04-13 수정 끝] ========//
             else:
                 logger.info(f"DEBUG: {symbol} | [TYPE2] T1질적지표 탈락 이유: d_cnt={d_cnt}, height={height_pct:.1f}%")
         else:
