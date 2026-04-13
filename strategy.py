@@ -950,7 +950,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         is_valid_convergence = is_converging_5_40 if ma5_val < ma40_val else (ma5_slope > 0)
         slopes_14 = [df['ma14'].iloc[-i] - df['ma14'].iloc[-(i+1)] for i in range(1, 8)]
         has_positive_ma14 = any(s >= 0 for s in slopes_14[:6])
-        is_bullish_breakout = (curr_price >= float(curr['open'])) and ((curr_price > ma14_val) or (float(curr['open']) > ma14_val))
+        is_bullish_breakout = (curr_price > float(curr['open'])) and (curr_price >= float(prev['close']))
         if not is_bullish_breakout:
             # 봇이 계산한 실제 숫자를 로그에 찍어서 차트와 비교합니다.
             logger.debug(f"🔍 [양봉판정로그] {symbol} | 현재가:{curr_price} | 시가:{curr['open']} | MA14:{ma14_val:.2f} | 결과:FAIL")
@@ -971,7 +971,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         is_185_trend_ok = (slopes_185[0] > 0) or (slopes_185[0] > slopes_185[1])
         
         # //======== [수정 사항: 14선이 40선 위에 있을 때 고점 추격 매수 방지 로직 보강] ========//
-        is_bullish_breakout_high = (curr_price >= float(curr['open'])) and ((curr_price > ma14_val) or (float(curr['open']) > ma14_val))
+        is_bullish_breakout_high = (curr_price > float(curr['open'])) and (curr_price >= float(prev['close']))
         is_gap_40_safe = gap_14_40_pct <= 3.0 # 40선 대비 이격도 3% 이내 강제
         
         is_t2_rebound = (slope_improvements >= 2) and has_positive_ma5 and is_185_trend_ok and is_valid_convergence and is_bullish_breakout_high and is_gap_40_safe
@@ -983,7 +983,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             elif not is_bullish_breakout_high: t2_fail_reason = "고공양봉돌파실패"
             elif not is_gap_40_safe: t2_fail_reason = f"14/40이격과다({gap_14_40_pct:.2f}%)"
     ma14_slope_v = ((ma14_val - prev_ma14) / prev_ma14) * 100 if prev_ma14 > 0 else 0
-    is_true_trigger_t2 = (curr_price > ma14_val) and (curr_price <= ma14_val * 1.03) and (ma14_slope_v >= -0.02) and (vol_ratio >= 0.8)
+    is_true_trigger_t2 = (curr_price >= ma14_val * 0.98) and (curr_price <= ma14_val * 1.03) and (ma14_slope_v >= -0.06) and (vol_ratio >= 0.8)
     
     gap_90_185 = abs(ma90_val - ma185_val) / ma185_val * 100 if ma185_val > 0 else 999
     prev_gap_90_185 = abs(prev_ma90 - prev_ma185) / prev_ma185 * 100 if prev_ma185 > 0 else 999
