@@ -118,7 +118,7 @@ def get_bithumb_tick_size(price, direction=None):
     # [1] 기본 틱 사이즈 결정 (분석용 이격/기울기 계산의 기준점)
     if price < 10: tick = 0.001
     elif price < 100: tick = 0.01
-    elif price < 1000: tick = 0.1
+    elif price < 1000: tick = 1.0
     elif price < 5000: tick = 1
     elif price < 10000: tick = 5
     elif price < 50000: tick = 10
@@ -391,6 +391,9 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         tuple: (is_buy: bool, reason: str, grade: str, data_dict: dict)
     """
     grade = ""
+    global s_plus_tracker
+    if 's_plus_tracker' not in globals():
+        s_plus_tracker = {}
     # [시장 방어막 체크]
     
     # ###### 수정 시작: 실시간 파일 참조 언패킹 변수 확대 ######
@@ -871,9 +874,6 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                     is_converging_5b = all(disps_5b[i] < disps_5b[i+1] for i in range(4))
 
                     # //======== [2026-04-13 수정 시작: TYPE 3 등급 순서 및 5회 하락 적용] ========//
-                    global s_plus_tracker
-                    if 's_plus_tracker' not in globals(): s_plus_tracker = {}
-
                     if (not has_prior_gc) and (prev_ma5 <= prev_ma40) and (curr_slope_40 > -0.07) and (-0.8 < disparity_5_40 < 0) and is_converging_5b:
                         # S+ 판정: 5회 하락 완료 + 첫 양봉 종가탈환
                         if is_slide_setup_t3 and has_recovered_close and is_not_doji_bull:
@@ -1072,9 +1072,6 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 conv_cnt = sum(1 for i in range(6) if hist_disp[i] < hist_disp[i+1])
                 
                 # //======== [2026-04-13 수정 시작: TYPE 1 등급 순서 및 4회 하락 적용] ========//
-                global s_plus_tracker
-                if 's_plus_tracker' not in globals(): s_plus_tracker = {}
-
                 if disparity_gold <= 0.015 and conv_cnt >= 3 and is_converging_5_40 and (-0.8 <= gap_5_40_pct <= 0.3) and (ma90_up_count >= 5):
                     # S+ 판정: 4회 하락 완료 + 첫 양봉 종가탈환
                     if is_slide_setup_t1 and has_recovered_close and is_not_doji_bull:
@@ -1174,9 +1171,6 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     if upper_shadow_pct > 2.0: reasons_t4.append(f"윗꼬리과다({upper_shadow_pct:.1f}%)")
 
     # //======== [2026-04-13 수정 시작: TYPE 4 등급 순서 및 3회 하락 적용] ========//
-    global s_plus_tracker
-    if 's_plus_tracker' not in globals(): s_plus_tracker = {}
-
     if not reasons_t4:
         # S+ 판정: 3회 하락 완료 + 첫 양봉 종가탈환
         if is_slide_setup_t24 and has_recovered_close and is_not_doji_bull:
@@ -1247,9 +1241,6 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             
             if d_cnt >= 50 and (-3.0 <= height_pct <= 8.0):
                 # //======== [2026-04-13 수정 시작: TYPE 2 등급 순서 및 3회 하락 적용] ========//
-                global s_plus_tracker
-                if 's_plus_tracker' not in globals(): s_plus_tracker = {}
-
                 # S+ 판정: 3회 하락 완료 + 첫 양봉 종가탈환
                 if is_slide_setup_t24 and has_recovered_close and is_not_doji_bull:
                     grade = "S+"
@@ -1514,12 +1505,13 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
         emergency_mode[symbol] = new_lvl
         save_emergency_mode()
 
-    if current_age == 0 and max_profit_rate_pct >= 1.0 and new_lvl == 0:
+    trigger_l1 = max(1.0, 3 * one_tick_pct)
+    if current_age == 0 and max_profit_rate_pct >= trigger_l1 and new_lvl == 0:
         new_lvl = 1
         emergency_mode[symbol] = new_lvl
         save_emergency_mode()
-        logger.info(f"⚡ [하이패스] {symbol} 30분 내 1.0% 이상 급등, L1 강제 전환")
-        return False, f"🚨 [비상감시] {symbol} 1% 돌파 L1 전환", False
+        logger.info(f"⚡ [하이패스] {symbol} {max_profit_rate_pct:.2f}% 돌파(기준:{trigger_l1:.2f}%), L1 강제 전환")
+        return False, f"🚨 [비상감시] {symbol} {trigger_l1:.1f}% 돌파 L1 전환", False
     # Level 1, 2 모두 3분봉 엔진 가동 (사용자 요청: 하락 시 즉시 대응)
     if new_lvl >= 1 and df_3m is not None:
         logger.info(f"DEBUG: 🔥 [L{new_lvl} 엔진 가동] {symbol} | 수익: {profit_rate_pct:.2f}%")
@@ -1560,9 +1552,9 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
                     if is_2_neg_3m: return True, reason_2_neg_3m, True
 
                 max_yield_3m = (high_10_3m - purchase_price) / purchase_price * 100
-                if current_age == 0 and max_yield_3m >= 1.0:
-                    if curr_3m_p < (purchase_price * 1.001):
-                        return True, f"🛡️[본절가드] 30분내 급등({max_yield_3m:.1f}%) 후 이탈, 0.1% 수익 보존", True
+                if current_age == 0 and max_yield_3m >= trigger_l1:
+                    if curr_3m_p <= (purchase_price + get_bithumb_tick_size(purchase_price)):
+                        return True, f"🛡️[본절가드] 급등 후 1틱 수익 보존 매도", True
 
                 # (3) [기존 로직 100% 유지] 위치별 차등 낙폭
                 if soaring_rate >= 8.0:

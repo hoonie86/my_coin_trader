@@ -6,6 +6,7 @@ import os
 import shutil
 from datetime import datetime, timedelta
 import threading
+from telegram.error import BadRequest
 inv_lock = threading.RLock()
 buy_queue = asyncio.Queue()
 # 1. 필수 폴더 생성
@@ -1389,6 +1390,13 @@ async def handle_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 else:
                     await query.edit_message_reply_markup(reply_markup=telegram_ui.get_amt_kb(config.DEFAULT_TEST_BUY))
                 await query.answer(f"💰 설정 금액: {config.DEFAULT_TEST_BUY:,}원")
+            # ###### [수정 시작: 금액 조정 버튼 중복 클릭 에러 무시] ######
+            except BadRequest as e:
+                if "Message is not modified" in str(e):
+                    pass
+                else:
+                    logger.error(f"❌ 금액 조정 오류: {e}")
+            # ###### [수정 끝] ######
             except Exception as e:
                 logger.error(f"❌ 금액 조정 오류: {e}")
 
@@ -1396,6 +1404,13 @@ async def handle_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE)
             try:
                 config.DEFAULT_TEST_BUY = int(symbol)
                 await query.edit_message_reply_markup(reply_markup=telegram_ui.get_amt_kb(config.DEFAULT_TEST_BUY))
+            # ###### [수정 시작: 프리셋 버튼 중복 클릭 에러 무시] ######
+            except BadRequest as e:
+                if "Message is not modified" in str(e):
+                    pass
+                else:
+                    logger.error(f"❌ 프리셋 설정 오류: {e}")
+            # ###### [수정 끝] ######
             except Exception as e:
                 logger.error(f"❌ 프리셋 설정 오류: {e}")
 
