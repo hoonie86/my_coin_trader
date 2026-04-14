@@ -456,7 +456,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     prev_ma14 = float(prev['ma14'])
     ma40_val = float(curr['ma40']) if not pd.isna(curr['ma40']) else 0
     ma5_above_14_count = (df['ma5'].iloc[-15:] > df['ma14'].iloc[-15:]).sum()
-    is_trend_stable = (ma5_above_14_count >= 11)
+    is_trend_stable = (ma5_above_14_count >= 8)
     ma90_val = float(curr['ma90']) if not pd.isna(curr['ma90']) else 0
     ma185_val = float(curr['ma185']) if not pd.isna(curr['ma185']) else 0
     rsi_val = float(curr['rsi']) if not pd.isna(curr['rsi']) else 50
@@ -755,7 +755,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     # is_volume_quality_ok = vol_sum_red > (vol_sum_blue * 1.5)
                             
     bull_count = (recent_10_df['close'] >= recent_10_df['open']).sum()
-    is_volume_quality_ok = bull_count >= 6
+    is_volume_quality_ok = bull_count >= 3
 
     # 3. 4봉 내 1회 상향 돌파 및 안착 유지
     ###### [수정 시작: 14선 위로 고개 들고 유지되는 패턴만 허용 (++++, -+++, --++, ---+)] ######
@@ -997,7 +997,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             elif not is_bullish_breakout_high: t2_fail_reason = "고공양봉돌파실패"
             elif not is_gap_40_safe: t2_fail_reason = f"14/40이격과다({gap_14_40_pct:.2f}%)"
     ma14_slope_v = ((ma14_val - prev_ma14) / prev_ma14) * 100 if prev_ma14 > 0 else 0
-    is_true_trigger_t2 = (curr_price >= ma14_val * 0.98) and (curr_price <= ma14_val * 1.03) and (ma14_slope_v >= -0.06) and (vol_ratio >= 0.8)
+    is_true_trigger_t2 = (curr_price >= ma14_val * 0.98) and (curr_price <= ma14_val * 1.03) and (ma14_slope_v >= -0.06) and (vol_ratio >= 0.4)
     
     gap_90_185 = abs(ma90_val - ma185_val) / ma185_val * 100 if ma185_val > 0 else 999
     prev_gap_90_185 = abs(prev_ma90 - prev_ma185) / prev_ma185 * 100 if prev_ma185 > 0 else 999
