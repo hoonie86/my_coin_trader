@@ -1088,7 +1088,7 @@ async def sell_monitor_task(app):
                 # 1. 수익 릴레이 (매도 유예 중이면 간섭 완전 차단)
                 if symbol not in pending_approvals:
                     # 긴급 종목이거나 (일반 종목 중 비긴급+매도신호없음) 일 때 릴레이 작동
-                    can_relay = (this_profit >= 0.7) and (is_emergency or (not is_urgent and not is_sell_signal))
+                    can_relay = (this_profit >= 1.3) and (is_emergency or (not is_urgent and not is_sell_signal))
                     
                     if can_relay:
                         p_deadline = inv_item.get('profit_deadline')
