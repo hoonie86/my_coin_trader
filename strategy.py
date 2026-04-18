@@ -546,12 +546,13 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     ma40_up_count = ma40_intensity_ok.tail(10).sum()
     # ////////// [수정: MA185 하락 강도 완화 및 변곡점 60% 로직] //////////
     ma185_v = df['ma185'].diff()
-    # 1. 0 이상(평행/상향)이거나 2. 음수 구간에서 직전보다 수치상 커져야(완만해져야) True
+    # 1. 0 초과(상향)이거나 2. 음수 구간에서 직전보다 수치상 커져야(완만해져야) True
     # -3 > -3 (False), -3 > -5 (True)
-    ma185_intensity_ok = (ma185_v >= 0) | (ma185_v > ma185_v.shift(1))
+    ma185_intensity_ok = (ma185_v > 0) | (ma185_v > ma185_v.shift(1))
     # 2. 새로운 안전장치: 최근 10개 중 '실제로 수치가 횡보나 상승(>=0)'한 횟수 계산
-    actual_up_count = (ma185_v.tail(10) >= -0.0001).sum()
-    ma185_up_count = ma185_intensity_ok.tail(10).sum() if actual_up_count >= 2 else 0
+    # actual_up_count = (ma185_v.tail(10) >= -0.0001).sum()
+    # ma185_up_count = ma185_intensity_ok.tail(10).sum() if actual_up_count >= 2 else 0
+    ma185_up_count = ma185_intensity_ok.tail(10).sum()
     # 2. 5-40선 이격도 및 수렴 여부
     gap_5_40_pct = (ma5_val - ma40_val) / ma40_val * 100 if ma40_val > 0 else 0
     # 7봉의 데이터를 수집하여 6번의 인접 비교 구간을 생성
@@ -1080,8 +1081,8 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             strict_descending = True if descending_count >= 60 else False 
         else: strict_descending = False
 
-        # [수정] GC가 0회이고 변곡점이거나 안정화되었을 때 통과
-        strict_stabilized = (is_turning_up or (stabilized_count >= 0)) and (gc_count_t1 == 0)
+        # GC가 0회이고 변곡점이거나 안정화(최소 3봉 이상 바닥 지지)되었을 때 통과
+        strict_stabilized = (is_turning_up or (stabilized_count >= 3)) and (gc_count_t1 == 0)
         is_t1_structure_ready = is_40_90_close and is_ma14_strong
         # 전수 조사를 통과한 깨끗한 밥그릇만 아래 등급 판정 진행
         if strict_descending and strict_stabilized and is_t1_structure_ready:
@@ -1094,8 +1095,8 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             # 기준 A: 185일선이 우상향(>0)하면서, 최근 10봉 중 6봉 이상 안정화되었을 때 (가짜 반등 방지)
             is_slope_strong = (slope_rate > 0) and (stabilized_count >= 6)
             
-            # 기준 B: -0.06 ~ 0 사이의 하락 구간이지만, 기울기 개선세가 10봉 중 2봉 이상일 때 (XTER 등 구제)
-            is_slope_dense = (-0.06 <= slope_rate <= 0) and (ma185_up_count >= 2)
+            # 기준 B: -0.06 ~ 0 사이의 하락 구간이지만, 기울기 개선세가 10봉 중 6봉 이상일 때
+            is_slope_dense = (-0.06 <= slope_rate <= 0) and (ma185_up_count >= 6)
             
             # 둘 중 하나라도 만족하면 '바닥 안착'으로 인정하고 진입 타점 계산 시작
             if is_slope_strong or is_slope_dense:
@@ -1154,8 +1155,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 raw_diffs = [round(v, 6) for v in ma185_v.tail(10).tolist()]
 
                 logger.info(f"DEBUG: {symbol} | [TYPE1] 탈락 상세 | 185선 기울기: {slope_rate:.2f} | "
-                            f"actual_up: {actual_up_count}, stabilized: {stabilized_count} | "
-                                        f"Raw Diffs: {raw_diffs}")
+                            f"stabilized: {stabilized_count} | Raw Diffs: {raw_diffs}")
                 #logger.info(f"DEBUG: {symbol} | [TYPE1] 탈락 이유-진입 실패 | 185선 기울기 ({slope_rate:.2f} > 0) and stabilized_count : {stabilized_count} >= 6,  기울기가 0 이하면 ma185_up_count : {ma185_up_count} >= 2, actual_up_count: {actual_up_count}")
             # [B급] 상승 대기 (골드 안착)
             data_dict['grade'] = 'B'
