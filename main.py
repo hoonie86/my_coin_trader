@@ -654,8 +654,58 @@ async def execute_sell(app, symbol, reason, sell_ratio=1.0):
         except:
             precision_qty = quantity
             
-        is_urgent = ("[긴급]" in reason or "🚨" in reason)
-        if is_urgent:
+        is_relay_expired = ("릴레이 만료" in reason)
+        is_urgent = ("[긴급]" in reason or "🚨" in reason) and not is_relay_expired
+
+        if is_relay_expired:
+            # 2-C. 릴레이 만료 전용: 0.1% 수익 보전 기반 5분(1분 대기) 지정가 추격
+            inv = load_inventory()
+            item = inv.get(symbol, {})
+            avg_buy_price = float(item.get('avg_price') or item.get('purchase_price') or 0)
+            if avg_buy_price == 0:
+                current_assets = await get_my_assets()
+                avg_buy_price = current_assets.get(symbol, {}).get('avg_price', 0)
+
+            wait_sec = 60
+            fill_success = False
+
+            for i in range(5):
+                ticker = await asyncio.to_thread(exchange.fetch_ticker, symbol)
+                current_price = float(ticker['last'])
+                current_profit_rate = ((current_price - avg_buy_price) / avg_buy_price * 100) if avg_buy_price > 0 else 0
+
+                target_profit_rate = current_profit_rate - 0.1
+
+                if target_profit_rate < 1.3:
+                    logger.info(f"📉 {symbol} 릴레이 붕괴(예상수익 {target_profit_rate:.2f}% < 1.3%). 추격 취소.")
+                    break
+
+                raw_target_price = avg_buy_price * (1 + target_profit_rate / 100)
+                tick_size = strategy.get_bithumb_tick_size(raw_target_price)
+                final_target_price = (raw_target_price // tick_size) * tick_size
+
+                logger.info(f"⏳ [릴레이추격 {i+1}차] {symbol} | 예상수익: {target_profit_rate:.2f}% | 갱신호가: {final_target_price:,.2f}원")
+                order = await asyncio.to_thread(exchange.create_limit_sell_order, symbol, precision_qty, final_target_price)
+
+                await asyncio.sleep(wait_sec)
+
+                check = await asyncio.to_thread(exchange.fetch_order, order['id'], symbol)
+                if check['status'] == 'closed':
+                    fill_success = True
+                    order_result = check
+                    logger.info(f"DEBUG: 💰 {symbol} 릴레이 추격 체결 | 수량: {precision_qty} | 체결가: {final_target_price}")
+                    break
+                else:
+                    await asyncio.to_thread(exchange.cancel_order, order['id'], symbol, params={'side': 'sell'})
+                    logger.info(f"⏭️ [미체결취소] {symbol} {i+1}차 릴레이 실패. 재계산.")
+
+            if not fill_success:
+                alert_msg = f"❌ [매도취소] {symbol} 릴레이 만료 추격 실패 (1.3% 붕괴 또는 5분 초과).\n감시(WATCH)로 복귀합니다."
+                await app.bot.send_message(config.CHAT_ID, alert_msg)
+                logger.warning(alert_msg)
+                return  # 함수 즉시 종료 (인벤토리 유지, WATCH 복귀)
+
+        elif is_urgent:
             # 2-A. 긴급 상황 시 시장가 즉시 매도 (기존 로직)
             order_result = await asyncio.to_thread(exchange.create_market_sell_order, symbol, precision_qty)
             logger.info(f"DEBUG: 💰 {symbol} 긴급 매도(시장가) 완료: {reason} | 수량: {precision_qty}")
@@ -739,18 +789,21 @@ async def execute_sell(app, symbol, reason, sell_ratio=1.0):
         orderbook = await asyncio.to_thread(exchange.fetch_order_book, symbol)
         curr_bid = float(orderbook['bids'][0][0]) # 시장가 매도는 매수 1호가(bid)에 체결됨
         
+        # 체결 데이터(average) 최우선, 없으면 주문 넣은 지정가(price) 적용
         sell_price = float(order_result.get('average') or order_result.get('price') or 0)
         
-        # 빗썸 체결가 지연 대응 (fetch_order 재조회)
+        # 빗썸 체결가 지연 대응 (fetch_order 1초 대기 후 재조회)
         if sell_price == 0 and order_result.get('id'):
             try:
-                await asyncio.sleep(0.5) 
+                await asyncio.sleep(1.0) # 지연 시간 0.5초 -> 1초로 늘려 확실히 받아옴
                 updated_order = await asyncio.to_thread(exchange.fetch_order, order_result['id'], symbol)
-                sell_price = float(updated_order.get('average') or updated_order.get('price') or curr_bid)
+                sell_price = float(updated_order.get('average') or updated_order.get('price') or 0)
             except:
-                sell_price = curr_bid
+                pass
         
-        if sell_price == 0: sell_price = curr_bid
+        # 끝까지 못 가져왔을 때만 현재 호가를 씀 (지정가는 price가 반드시 있으므로 이 단계로 안 넘어옴)
+        if sell_price == 0: 
+            sell_price = curr_bid
         
         # 6. 최종 수익률 및 로그 기록
         this_profit = ((sell_price - avg_buy_price) / avg_buy_price * 100) if avg_buy_price > 0 else 0
