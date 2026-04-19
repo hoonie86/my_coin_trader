@@ -173,8 +173,8 @@ async def safe_market_buy(symbol, cost, grade="A", buy_type=1):
             )
                         
             order = await asyncio.to_thread(exchange.create_limit_buy_order, symbol, amount, target_p)
-            logger.info(f"⏳ [{i+1}차 낚시] {symbol} | 가격: {target_p:,.2f} | 30초 대기 시작...")
-            await asyncio.sleep(30) # 30초 대기
+            logger.info(f"⏳ [{i+1}차 낚시] {symbol} | 가격: {target_p:,.2f} | 60초 대기 시작...")
+            await asyncio.sleep(60) # 60초 대기
             
             os_status = await asyncio.to_thread(exchange.fetch_order, order['id'], symbol)
             if os_status['status'] == 'closed':
@@ -668,23 +668,34 @@ async def execute_sell(app, symbol, reason, sell_ratio=1.0):
 
             wait_sec = 60
             fill_success = False
+            fail_reason = ""
+            attempt_count = 0
 
-            for i in range(5):
+            while True:
                 ticker = await asyncio.to_thread(exchange.fetch_ticker, symbol)
                 current_price = float(ticker['last'])
                 current_profit_rate = ((current_price - avg_buy_price) / avg_buy_price * 100) if avg_buy_price > 0 else 0
 
-                target_profit_rate = current_profit_rate - 0.1
-
-                if target_profit_rate < 1.3:
-                    logger.info(f"📉 {symbol} 릴레이 붕괴(예상수익 {target_profit_rate:.2f}% < 1.3%). 추격 취소.")
+                if current_profit_rate < 1.3:
+                    fail_reason = f"수익률 마지노선 붕괴 (현재수익: {current_profit_rate:.2f}% < 1.3%)"
+                    logger.info(f"📉 {symbol} 릴레이 추격 중단: {fail_reason}")
                     break
 
-                raw_target_price = avg_buy_price * (1 + target_profit_rate / 100)
-                tick_size = strategy.get_bithumb_tick_size(raw_target_price)
-                final_target_price = (raw_target_price // tick_size) * tick_size
+                tick_size = strategy.get_bithumb_tick_size(current_price)
+                
+                if attempt_count < 3:
+                    raw_target_price = current_price
+                elif attempt_count < 6:
+                    raw_target_price = min(current_price - tick_size, current_price * 0.998)
+                else:
+                    raw_target_price = min(current_price - (tick_size * 2), current_price * 0.997)
 
-                logger.info(f"⏳ [릴레이추격 {i+1}차] {symbol} | 예상수익: {target_profit_rate:.2f}% | 갱신호가: {final_target_price:,.2f}원")
+                final_target_price = (raw_target_price // tick_size) * tick_size
+                if tick_size >= 1:
+                    final_target_price = int(final_target_price)
+
+                attempt_count += 1
+                logger.info(f"⏳ [릴레이추격 {attempt_count}차] {symbol} | 현재가: {current_price:,.0f} | 갱신호가: {final_target_price:,.2f}원")
                 order = await asyncio.to_thread(exchange.create_limit_sell_order, symbol, precision_qty, final_target_price)
 
                 await asyncio.sleep(wait_sec)
@@ -697,10 +708,10 @@ async def execute_sell(app, symbol, reason, sell_ratio=1.0):
                     break
                 else:
                     await asyncio.to_thread(exchange.cancel_order, order['id'], symbol, params={'side': 'sell'})
-                    logger.info(f"⏭️ [미체결취소] {symbol} {i+1}차 릴레이 실패. 재계산.")
+                    logger.info(f"⏭️ [미체결취소] {symbol} {attempt_count}차 릴레이 실패. 재계산.")
 
             if not fill_success:
-                alert_msg = f"❌ [매도취소] {symbol} 릴레이 만료 추격 실패 (1.3% 붕괴 또는 5분 초과).\n감시(WATCH)로 복귀합니다."
+                alert_msg = f"❌ [매도취소] {symbol} 릴레이 추격 실패\n📌 사유: {fail_reason}\n👀 상태: 감시(WATCH) 모드로 복귀합니다."
                 await app.bot.send_message(config.CHAT_ID, alert_msg)
                 logger.warning(alert_msg)
                 return  # 함수 즉시 종료 (인벤토리 유지, WATCH 복귀)

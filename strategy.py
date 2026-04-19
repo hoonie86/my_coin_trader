@@ -476,15 +476,17 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     
     # //======== [2026-04-16 수정: 횡보(0) 3개당 하락 1회 인정 로직 적용] ========//
     def get_wave_setup(df_local, neg_threshold):
-        # //======== [2026-04-18 수정: 데이터부족 시 메시지도 함께 반환] ========//
         if len(df_local) < 25: return False, "데이터부족"
         ma5_slopes = [df_local['ma5'].iloc[i] - df_local['ma5'].iloc[i-1] for i in range(len(df_local)-20, len(df_local))]
         signs = [1 if s > 0 else (-1 if s < 0 else 0) for s in ma5_slopes]
         
         found_plus3_anchor, neg_streak, plus_streak, zero_count = False, 0, 0, 0
+        max_plus_streak = 0  # 3상 미달 시 최대치 기록용
+        
         for s in signs:
             if s == 1:
                 plus_streak += 1
+                max_plus_streak = max(max_plus_streak, plus_streak)
                 if plus_streak >= 3: found_plus3_anchor = True
                 neg_streak, zero_count = 0, 0
             elif s == -1:
@@ -492,17 +494,23 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 if found_plus3_anchor: neg_streak += 1
             elif s == 0:
                 plus_streak = 0
-                # //======== [2026-04-18 수정: 3상 성공 시 횡보 즉시 카운트] ========//
                 if found_plus3_anchor:
                     zero_count += 1
                     if zero_count >= 3:
                         neg_streak += 1
                         zero_count = 0
-                # //====================================================//
         
-        # //======== [2026-04-18 수정: 파동 상태 메시지 동시 반환] ========//
-        status_msg = f"{'3상O' if found_plus3_anchor else '3상X'}_{neg_streak}/{neg_threshold}하"
-        return (found_plus3_anchor and (neg_streak >= neg_threshold)), status_msg
+        is_success = (found_plus3_anchor and (neg_streak >= neg_threshold))
+        
+        # 사용자 요청 반영: 실패 지점만 명확히 표시
+        if is_success:
+            status_msg = "충족"
+        elif not found_plus3_anchor:
+            status_msg = f"3상 미달({max_plus_streak}회)"
+        else:
+            status_msg = f"3하 미달({neg_streak}회)"
+            
+        return is_success, status_msg
         # //====================================================//
 
     # 각 타입별 하락 횟수(4, 3, 5)를 적용한 셋업 상태 확인
@@ -532,27 +540,27 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     ##########################################################################
     # [1단계: TYPE 1, 2 공통 지표 사전 계산]
     # 1. 90선 세기: 양수이거나, 음수일 때 직전보다 완만해져야 True
-    ma90_v = df['ma90'].diff() # 현재 90선의 기울기(속도)
+    ma90_v = df['ma90'].diff().round(3) # 현재 90선의 기울기(속도)
     # 논리: (현재 기울기가 0 이상인가?) OR (음수라면 현재 기울기가 이전보다 크거나 같은가?)
     # 5 -> 3 (True), -5 -> -3 (True), -3 -> -5 (False)
     ma90_intensity_ok = (ma90_v > 0) | (ma90_v > ma90_v.shift(1))
     # 최근 10봉 중 위 조건을 만족하는 횟수가 6번(60%) 이상인지 계산 (기존 로직 주석 처리)
-    actual_up_count_90 = (ma90_v.tail(10) > 0).sum()
+    actual_up_count_90 = (ma90_v.tail(10) >= 0).sum()
     ma90_up_count = ma90_intensity_ok.tail(10).sum() if actual_up_count_90 >= 2 else 0
 
-    ma40_v = df['ma40'].diff()
+    ma40_v = df['ma40'].diff().round(3)
     # 양수 프리패스 OR 음수 구간 내 변곡점(현재 기울기 >= 이전 기울기) 체크
     ma40_intensity_ok = (ma40_v > 0) | (ma40_v > ma40_v.shift(1))
     ma40_up_count = ma40_intensity_ok.tail(10).sum()
     # ////////// [수정: MA185 하락 강도 완화 및 변곡점 60% 로직] //////////
-    ma185_v = df['ma185'].diff()
+    ma185_v = df['ma185'].diff().round(3)
     # 1. 0 초과(상향)이거나 2. 음수 구간에서 직전보다 수치상 커져야(완만해져야) True
     # -3 > -3 (False), -3 > -5 (True)
     ma185_intensity_ok = (ma185_v > 0) | (ma185_v > ma185_v.shift(1))
     # 2. 새로운 안전장치: 최근 10개 중 '실제로 수치가 횡보나 상승(>=0)'한 횟수 계산
-    # actual_up_count = (ma185_v.tail(10) >= -0.0001).sum()
-    # ma185_up_count = ma185_intensity_ok.tail(10).sum() if actual_up_count >= 2 else 0
-    ma185_up_count = ma185_intensity_ok.tail(10).sum()
+    actual_up_count = (ma185_v.tail(10) >= 0).sum()
+    ma185_up_count = ma185_intensity_ok.tail(10).sum() if actual_up_count >= 2 else 0
+    # ma185_up_count = ma185_intensity_ok.tail(10).sum()
     # 2. 5-40선 이격도 및 수렴 여부
     gap_5_40_pct = (ma5_val - ma40_val) / ma40_val * 100 if ma40_val > 0 else 0
     # 7봉의 데이터를 수집하여 6번의 인접 비교 구간을 생성
@@ -980,7 +988,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     # 1. 족보(GC) 횟수 및 구간 변동성
     gc_count_t1 = 0
     diff_40_90_pct = (df['ma40'].iloc[-1] - df['ma90'].iloc[-1]) / df['ma90'].iloc[-1] * 100 if df['ma90'].iloc[-1] > 0 else 999
-    is_40_90_close = diff_40_90_pct >= -1.0
+    is_40_90_close = diff_40_90_pct >= -2.0
     for i in range(1, 150):
         if i+1 < len(df):
             if df['ma40'].iloc[-i-1] < df['ma185'].iloc[-i-1] and df['ma40'].iloc[-i] > df['ma185'].iloc[-i]:
@@ -1152,10 +1160,20 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 data_dict['grade'] = 'B+'
                 return True, "🚀 [TYPE1-B+] 185선 평행/우상향 전환", "B+", data_dict
             else:
-                raw_diffs = [round(v, 6) for v in ma185_v.tail(10).tolist()]
+                raw_diffs_185 = [round(v, 3) for v in ma185_v.tail(10).tolist()]
+                raw_diffs_90 = [round(v, 3) for v in ma90_v.tail(10).tolist()]
 
-                logger.info(f"DEBUG: {symbol} | [TYPE1] 탈락 상세 | 185선 기울기: {slope_rate:.2f} | "
-                            f"stabilized: {stabilized_count} | Raw Diffs: {raw_diffs}")
+                # 90선 상세 상태 로그
+                logger.info(f"DEBUG: {symbol} | [90선] 기울기: {ma90_v.iloc[-1]:.4f} | "
+                            f"ActualUp: {actual_up_count_90} | Imp: {ma90_up_count} | Diffs: {raw_diffs_90}")
+                
+                # 185선 상세 상태 로그
+                logger.info(f"DEBUG: {symbol} | [185선] 기울기: {ma185_v.iloc[-1]:.4f} | "
+                            f"ActualUp: {actual_up_count} | Imp: {ma185_up_count} | Diffs: {raw_diffs_185}")
+                
+                # 기존 TYPE1 탈락 상세 로그 통합
+                logger.info(f"DEBUG: {symbol} | [TYPE1] 탈락 상세 | 185선 기울기: {ma185_v.iloc[-1]:.2f} | "
+                            f"stabilized: {ma185_up_count} | Raw Diffs: {raw_diffs_185}")
                 #logger.info(f"DEBUG: {symbol} | [TYPE1] 탈락 이유-진입 실패 | 185선 기울기 ({slope_rate:.2f} > 0) and stabilized_count : {stabilized_count} >= 6,  기울기가 0 이하면 ma185_up_count : {ma185_up_count} >= 2, actual_up_count: {actual_up_count}")
             # [B급] 상승 대기 (골드 안착)
             data_dict['grade'] = 'B'
@@ -1190,9 +1208,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     if ma90_up_count < 5: reasons_t4.append(f"90선추세하락({ma90_up_count}/10)")
     if not is_volume_quality_ok: reasons_t4.append(f"매집수급미달(양봉부족.(양봉 {bull_count}개))")
     #if not is_dynamic_entry_ok: reasons_t4.append("동적진입(14선)실패")
-    # //======== [2026-04-18 수정: 파동 미달 시 상세 로그 기록] ========//
-    if not is_slide_setup: reasons_t4.append(f"6봉파동미달({wave_msg_t24})")
-    # //=============================================================//
+    if not is_slide_setup: reasons_t4.append(f"6봉 파동 실패({wave_msg_t24})")
     if not is_trend_alive: reasons_t4.append(f"40선이격사망({disparity_40_line:.2f}%)")
     if not is_not_doji_bull: reasons_t4.append("음봉/도지탈락")
     if not is_t4_safe: reasons_t4.append(f"변동성초과({vol_sectional:.1f}%)")
@@ -1343,7 +1359,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             if gap_5_40_pct > 4.0: reasons.append(f"5/40이격과다({gap_5_40_pct:.1f}%)")
             # if not is_t2_rebound: reasons.append(f"수렴실패({t2_fail_reason})")            
             # if not is_dynamic_entry_ok: reasons.append("동적진입(14선)실패")
-            if not is_slide_setup: reasons.append("6봉파동(3상3하)미달")
+            if not is_slide_setup: reasons.append(f"6봉 파동 실패({wave_msg_t24})")
             if not is_trend_alive: reasons.append(f"40선이격사망({disparity_40_line:.2f}%)")
             if not is_not_doji_bull: reasons.append("음봉/도지탈락")
             if not has_t1_history_clean: reasons.append(f"역사오염(GC:{gc_count_150}, DC:{dc_count_after_gc})")
