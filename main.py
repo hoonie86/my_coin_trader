@@ -174,7 +174,7 @@ async def safe_market_buy(symbol, cost, grade="A", buy_type=1):
                         
             order = await asyncio.to_thread(exchange.create_limit_buy_order, symbol, amount, target_p)
             logger.info(f"⏳ [{i+1}차 낚시] {symbol} | 가격: {target_p:,.2f} | 60초 대기 시작...")
-            await asyncio.sleep(60) # 60초 대기
+            await asyncio.sleep(120) # 120초 대기
             
             os_status = await asyncio.to_thread(exchange.fetch_order, order['id'], symbol)
             if os_status['status'] == 'closed':
@@ -1697,7 +1697,7 @@ async def process_report_logic(update, context, query=None):
             
             symbol_wo_quote = symbol.split('/')[0]
             asset_info = assets.get(symbol, {})
-            purchase_price = float(asset_info.get('avg_buy_price', 0)) # 여기서 변수 정의!
+            purchase_price = float(asset_info.get('purchase_price', 0))
             
             # 전략 엔진 호출
             is_sell_signal, sell_reason, is_urgent = await strategy.check_sell_signal(

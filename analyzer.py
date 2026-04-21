@@ -5,8 +5,8 @@ from datetime import datetime
 from config import logger
 
 
-CSV_FILE = "trades/missed_opportunities.csv"
-LOSS_REVIEW_FILE = "trades/loss_review.csv"
+CSV_FILE = "/home/rocky/my_coin_trader/trades/missed_opportunities.csv"
+LOSS_REVIEW_FILE = "/home/rocky/my_coin_trader/trades/loss_review.csv"
 MAX_FILE_SIZE_MB = 50
 
 
