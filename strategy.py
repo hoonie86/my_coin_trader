@@ -508,24 +508,34 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             return False, f"3상{neg_streak}하"
         return True, f"3상{neg_streak}하"
 
-    ###### [수정 시작: 전체 타입 위아래 3% 변동성 및 시장 악화 페널티 적용] ######
+    ###### [수정 시작: 15봉 구간 전체 변동폭 및 음봉 압도 페널티 적용] ######
     recent_15 = df.iloc[-16:-1]
-    has_vol_spike = any(((recent_15['high'] - recent_15['open']) / recent_15['open'] * 100) >= 3.0) or \
-                    any(((recent_15['low'] - recent_15['open']) / recent_15['open'] * 100) <= -3.0)
+    # 1. 구간 내 최고가와 최저가의 차이(%) 계산 (2% 기준)
+    win_min = recent_15['low'].min()
+    win_max = recent_15['high'].max()
+    has_vol_spike = ((win_max - win_min) / win_min * 100) >= 2.0
+
+    # 2. 음봉 압도 감지 (15봉 중 11봉 이상이 음봉일 때)
+    blue_candle_count = (recent_15['close'] < recent_15['open']).sum()
+    blue_penalty = 2 if blue_candle_count >= 11 else 0
+    ###### [수정 끝] ######
     
     is_market_bad, _, _, _, _, _ = load_market_status()
     market_penalty = 2 if is_market_bad else 0
 
+    # TYPE 1: 기본 4 + 변동성(+2) + 음봉압도(+2) + 시장페널티(+2) => 최대 10하락
     t1_base = 6 if has_vol_spike else 4
-    target_neg_t1 = t1_base + market_penalty
+    target_neg_t1 = t1_base + market_penalty + blue_penalty
     is_slide_setup_t1, wave_msg_t1 = get_wave_setup(df.iloc[:-1], target_neg_t1)
 
+    # TYPE 2 & 4: 기본 3 + 변동성(+2) + 음봉압도(+2) + 시장페널티(+2) => 최대 9하락
     t24_base = 5 if has_vol_spike else 3
-    target_neg_t24 = t24_base + market_penalty
+    target_neg_t24 = t24_base + market_penalty + blue_penalty
     is_slide_setup_t24, wave_msg_t24 = get_wave_setup(df.iloc[:-1], target_neg_t24)
 
+    # TYPE 3: 기본 7 + 변동성(+2) + 음봉압도(+2) + 시장페널티(+2) => 최대 13하락
     t3_base = 9 if has_vol_spike else 7
-    target_neg_t3 = t3_base + market_penalty
+    target_neg_t3 = t3_base + market_penalty + blue_penalty
     is_slide_setup_t3, wave_msg_t3 = get_wave_setup(df.iloc[:-1], target_neg_t3)
     
     # TYPE 2, 4 기존 참조 변수 호환성을 위해 기본값 할당
@@ -1036,7 +1046,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             elif not is_bullish_breakout_high: t2_fail_reason = "고공양봉돌파실패"
             elif not is_gap_40_safe: t2_fail_reason = f"14/40이격과다({gap_14_40_pct:.2f}%)"
     ma14_slope_v = ((ma14_val - prev_ma14) / prev_ma14) * 100 if prev_ma14 > 0 else 0
-    is_true_trigger_t2 = (curr_price >= ma14_val * 0.98) and (curr_price <= ma14_val * 1.03) and (ma14_slope_v >= -0.06) and (vol_ratio >= 0.4)
+    is_true_trigger_t2 = (curr_price >= ma14_val * 0.98) and (curr_price <= ma14_val * 1.03) and (ma14_slope_v >= -0.06)
     
     gap_90_185 = abs(ma90_val - ma185_val) / ma185_val * 100 if ma185_val > 0 else 999
     prev_gap_90_185 = abs(prev_ma90 - prev_ma185) / prev_ma185 * 100 if prev_ma185 > 0 else 999
@@ -1193,8 +1203,8 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     if not (gc_count_t1 == 0): reasons_t4.append(f"GC이력({gc_count_t1}회)")
     
     # [수정] 수급 문턱만 3.0으로 낮추기
-    if not is_trend_stable:
-        reasons_t4.append(f"추세지속부족({ma5_above_14_count}/15)")
+    #if not is_trend_stable:
+    #    reasons_t4.append(f"추세지속부족({ma5_above_14_count}/15)")
     #if vol_ratio < 1.5: 
     #    reasons_t4.append(f"수급미달({vol_ratio:.1f}x<1.5x)")
     
