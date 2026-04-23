@@ -183,7 +183,7 @@ def get_updated_emergency_level(symbol, current_level, buy_type, rsi, is_3m_belo
 
     # 1. 트리거 (0 -> 2): 진입 조건 (기존 유지)
     if current_level == 0:
-        if (profit_pct >= 1.5 or has_rsi_spike or soaring_rate >= 1.0 or 
+        if (profit_pct >= 1.3 or has_rsi_spike or soaring_rate >= 1.0 or 
             (buy_type == 3 and not is_type3_stable) or max_profit_pct >= 5.0):
             return 2
     
@@ -476,8 +476,9 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     
     # //======== [2026-04-16 수정: 횡보(0) 3개당 하락 1회 인정 로직 적용] ========//
     def get_wave_setup(df_local, neg_threshold):
-        if len(df_local) < 25: return False, "데이터부족"
-        ma5_slopes = [df_local['ma5'].iloc[i] - df_local['ma5'].iloc[i-1] for i in range(len(df_local)-20, len(df_local))]
+        ###### [수정 시작: 파동 계산 시야 확장 (20봉 -> 50봉)] ######
+        if len(df_local) < 60: return False, "데이터부족"
+        ma5_slopes = [df_local['ma5'].iloc[i] - df_local['ma5'].iloc[i-1] for i in range(len(df_local)-50, len(df_local))]
         signs = [1 if s > 0 else (-1 if s < 0 else 0) for s in ma5_slopes]
         
         found_plus3_anchor, neg_streak, plus_streak, zero_count = False, 0, 0, 0
@@ -523,20 +524,22 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     is_market_bad, _, _, _, _, _ = load_market_status()
     market_penalty = 2 if is_market_bad else 0
 
-    # TYPE 1: 기본 4 + 변동성(+2) + 음봉압도(+2) + 시장페널티(+2) => 최대 10하락
-    t1_base = 6 if has_vol_spike else 4
-    target_neg_t1 = t1_base + market_penalty + blue_penalty
-    is_slide_setup_t1, wave_msg_t1 = get_wave_setup(df.iloc[:-1], target_neg_t1)
+    ###### [최적화 시작: 모든 타입 파동 통합 설정] ######
+    # 기본 3하락 + (변동성 2% 시 +2) + (음봉 11개 시 +2) + (시장악화 시 +2)
+    common_target = (5 if has_vol_spike else 3) + blue_penalty + market_penalty
+    target_neg_t1 = target_neg_t24 = target_neg_t3 = common_target
 
-    # TYPE 2 & 4: 기본 3 + 변동성(+2) + 음봉압도(+2) + 시장페널티(+2) => 최대 9하락
-    t24_base = 5 if has_vol_spike else 3
-    target_neg_t24 = t24_base + market_penalty + blue_penalty
-    is_slide_setup_t24, wave_msg_t24 = get_wave_setup(df.iloc[:-1], target_neg_t24)
+    ma14_slopes = [df['ma14'].iloc[i] - df['ma14'].iloc[i-1] for i in range(len(df)-5, len(df))]
+    is_ma14_falling = any(s < 0 for s in ma14_slopes)
+    is_risky_stock = has_vol_spike or (blue_penalty > 0)
 
-    # TYPE 3: 기본 7 + 변동성(+2) + 음봉압도(+2) + 시장페널티(+2) => 최대 13하락
-    t3_base = 9 if has_vol_spike else 7
-    target_neg_t3 = t3_base + market_penalty + blue_penalty
-    is_slide_setup_t3, wave_msg_t3 = get_wave_setup(df.iloc[:-1], target_neg_t3)
+    if is_risky_stock and is_ma14_falling:
+        is_slide_setup_t1 = is_slide_setup_t24 = is_slide_setup_t3 = False
+        wave_msg_t1 = wave_msg_t24 = wave_msg_t3 = "14선하락차단"
+    else:
+        is_slide_setup_t1, wave_msg_t1 = get_wave_setup(df.iloc[:-1], target_neg_t1)
+        is_slide_setup_t24, wave_msg_t24 = get_wave_setup(df.iloc[:-1], target_neg_t24)
+        is_slide_setup_t3, wave_msg_t3 = get_wave_setup(df.iloc[:-1], target_neg_t3)
     
     # TYPE 2, 4 기존 참조 변수 호환성을 위해 기본값 할당
     is_slide_setup = is_slide_setup_t24
@@ -817,7 +820,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
 
     # 4. 장기 이평 대전제 (Type 2, 4 전용)
     ma185_slope_val = float(curr['ma185']) - float(prev['ma185']) if not pd.isna(curr['ma185']) and not pd.isna(prev['ma185']) else 0
-    is_trend_safe = (float(curr['ma90']) > float(curr['ma185'])) and (ma185_up_count >= 2)
+    is_trend_safe = float(curr['ma90']) > float(curr['ma185'])
     
     is_was_descending = True  # 2일간 지속 하락 여부
     is_now_stabilized = True  # 5시간 전부터 안착 여부
@@ -899,8 +902,8 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         max_gap_long = gaps_long.max()
         curr_gap_pct = (ma185_val - ma40_val) / ma185_val * 100
         
-        # 현재 이격이 장기 최대치의 80% 수준 이상인 '벌어진' 상태인가? (Divergence)
-        is_real_valley = (curr_gap_pct >= max_gap_long * 0.8)
+        # 현재 이격이 장기 최대치의 40% 수준 이상인 '벌어진' 상태인가? (Divergence)
+        is_real_valley = (curr_gap_pct >= max_gap_long * 0.4)
 
         # 3. 185선 하락 둔화 가드 (기울기 개선 확인)
         is_185_flattening = (ma185_v.iloc[-1] > ma185_v.iloc[-5]) if len(ma185_v) >= 5 else False
@@ -1006,7 +1009,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     ma14_v = df['ma14'].diff()
     ma14_intensity_ok = (ma14_v > 0) | (ma14_v > ma14_v.shift(1))
     ma14_up_count = ma14_intensity_ok.tail(6).sum()
-    is_ma14_strong = ma14_up_count >= 3
+    is_ma14_strong = ma14_up_count >= 2
     gap_14_40_pct = ((ma14_val - ma40_val) / ma40_val) * 100 if ma40_val > 0 else 0
     t2_fail_reason = ""
     if gap_14_40_pct <= 0:
@@ -1037,10 +1040,9 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         is_bullish_breakout_high = (curr_price > float(curr['open'])) and (curr_price >= float(prev['close']))
         is_gap_40_safe = gap_14_40_pct <= 3.0 # 40선 대비 이격도 3% 이내 강제
         
-        is_t2_rebound = (slope_improvements >= 2) and has_positive_ma5 and is_185_trend_ok and is_valid_convergence and is_bullish_breakout_high and is_gap_40_safe
+        is_t2_rebound = has_positive_ma5 and is_185_trend_ok and is_valid_convergence and is_bullish_breakout_high and is_gap_40_safe
         if not is_t2_rebound:
-            if slope_improvements < 2: t2_fail_reason = f"5선가속도부족({slope_improvements}/2)"
-            elif not has_positive_ma5: t2_fail_reason = "5선문턱(-0.03)미달"
+            if not has_positive_ma5: t2_fail_reason = "5선문턱(-0.03)미달"
             elif not is_185_trend_ok: t2_fail_reason = "185선대추세하락"
             elif not is_valid_convergence: t2_fail_reason = "수렴/5선발산실패"
             elif not is_bullish_breakout_high: t2_fail_reason = "고공양봉돌파실패"
@@ -1110,8 +1112,8 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             is_slope_strong = (slope_rate > 0) and (stabilized_count >= 6)
             
             # 기준 B: -0.06 ~ 0 사이의 하락 구간이지만, 기울기 개선세가 10봉 중 2봉 이상일 때 (XTER 등 구제)
-            is_slope_dense = (-0.06 <= slope_rate <= 0) and (ma185_up_count >= 2)
-            
+            # is_slope_dense = (-0.06 <= slope_rate <= 0) and (ma185_up_count >= 2)
+            is_slope_dense = (-0.06 <= slope_rate <= 0)   # 185선 up에 대한 조건 개선 필요
             # 둘 중 하나라도 만족하면 '바닥 안착'으로 인정하고 진입 타점 계산 시작
             if is_slope_strong or is_slope_dense:
                 
