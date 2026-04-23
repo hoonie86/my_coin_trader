@@ -509,41 +509,50 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             return False, f"3상{neg_streak}하"
         return True, f"3상{neg_streak}하"
 
-    ###### [수정 시작: 15봉 구간 전체 변동폭 및 음봉 압도 페널티 적용] ######
+    # //======== [2026-04-24 수정: 중복방지 페널티 및 T2 전용 14선 가드] ========//
     recent_15 = df.iloc[-16:-1]
-    # 1. 구간 내 최고가와 최저가의 차이(%) 계산 (2% 기준)
-    win_min = recent_15['low'].min()
-    win_max = recent_15['high'].max()
-    has_vol_spike = ((win_max - win_min) / win_min * 100) >= 2.0
-
-    # 2. 음봉 압도 감지 (15봉 중 11봉 이상이 음봉일 때)
-    blue_candle_count = (recent_15['close'] < recent_15['open']).sum()
-    blue_penalty = 2 if blue_candle_count >= 11 else 0
-    ###### [수정 끝] ######
+    win_min, win_max = recent_15['low'].min(), recent_15['high'].max()
+    vol_gap = (win_max - win_min) / win_min * 100
     
-    is_market_bad, _, _, _, _, _ = load_market_status()
-    market_penalty = 2 if is_market_bad else 0
+    # 1. 단일 캔들 1.5% 존재 여부 (중복X)
+    has_single_beam = any(((recent_15['high'] - recent_15['open']) / recent_15['open'] * 100 >= 1.5) or 
+                          ((recent_15['low'] - recent_15['open']) / recent_15['open'] * 100 <= -1.5))
+    beam_penalty = 2 if has_single_beam else 0
 
-    ###### [최적화 시작: 모든 타입 파동 통합 설정] ######
-    # 기본 3하락 + (변동성 2% 시 +2) + (음봉 11개 시 +2) + (시장악화 시 +2)
-    common_target = (5 if has_vol_spike else 3) + blue_penalty + market_penalty
+    # 2. 구간 변동성 단계별 적용 (5% 초과: 4, 2% 이상: 2)
+    vol_penalty = 4 if vol_gap > 5.0 else (2 if vol_gap >= 2.0 else 0)
+    
+    # 3. 시장 상황 단계별 가감 (0.3% 단위)
+    is_market_bad, market_ref_rate, _, _, _, _ = load_market_status()
+    m_penalty = 0
+    if market_ref_rate <= -0.6: 
+        m_penalty = 4
+    elif market_ref_rate <= -0.3: 
+        m_penalty = 2
+
+    # 4. 음봉 압도
+    blue_penalty = 2 if (recent_15['close'] < recent_15['open']).sum() >= 11 else 0
+
+    # 최종 타겟 합산 (기본 3 + 각 항목별 1회성 페널티)
+    common_target = 3 + beam_penalty + vol_penalty + blue_penalty + m_penalty
     target_neg_t1 = target_neg_t24 = target_neg_t3 = common_target
 
-    ma14_slopes = [df['ma14'].iloc[i] - df['ma14'].iloc[i-1] for i in range(len(df)-5, len(df))]
-    is_ma14_falling = any(s < 0 for s in ma14_slopes)
-    is_risky_stock = has_vol_spike or (blue_penalty > 0)
+    # 파동 계산
+    is_slide_setup_t1, wave_msg_t1 = get_wave_setup(df.iloc[:-1], target_neg_t1)
+    is_slide_setup_t24, wave_msg_t24 = get_wave_setup(df.iloc[:-1], target_neg_t24)
+    is_slide_setup_t3, wave_msg_t3 = get_wave_setup(df.iloc[:-1], target_neg_t3)
 
-    if is_risky_stock and is_ma14_falling:
-        is_slide_setup_t1 = is_slide_setup_t24 = is_slide_setup_t3 = False
-        wave_msg_t1 = wave_msg_t24 = wave_msg_t3 = "14선하락차단"
-    else:
-        is_slide_setup_t1, wave_msg_t1 = get_wave_setup(df.iloc[:-1], target_neg_t1)
-        is_slide_setup_t24, wave_msg_t24 = get_wave_setup(df.iloc[:-1], target_neg_t24)
-        is_slide_setup_t3, wave_msg_t3 = get_wave_setup(df.iloc[:-1], target_neg_t3)
+    # 5. [타입 2 전용] 14선 가드: 최근 4개 봉 데이터로 3개 구간 기울기 확인
+    ma14_vals = df['ma14'].iloc[-4:].values
+    slopes = [ma14_vals[i] - ma14_vals[i-1] for i in range(1, len(ma14_vals))]
     
-    # TYPE 2, 4 기존 참조 변수 호환성을 위해 기본값 할당
+    if any(s < 0 for s in slopes):
+        is_slide_setup_t24 = False
+        wave_msg_t24 = "14선하락차단(T2)"
+
+    # TYPE 2, 4 기존 참조 변수 호환성을 위해 할당
     is_slide_setup = is_slide_setup_t24
-    # //======== [2026-04-13 수정 끝] ========//
+    # //======== [2026-04-24 수정 끝] ========//
 
     disparity_40_line = (curr_price / ma40_val) * 100 if ma40_val > 0 else 0
     is_trend_alive = disparity_40_line >= 99.0 
