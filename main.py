@@ -1196,31 +1196,31 @@ async def sell_monitor_task(app):
                     continue
                 
                 # 비상 모드인 종목은 아래의 '일반 유예(5분)' 로직을 타지 않도록 최종 블록
-                if is_emergency:
-                    continue
-                ###### [수정 끝] ######
+                # if is_emergency:
+                #     continue
 
                 # 2. 매도 유예 관리: [2대 원칙 적용]
-                # if is_sell_signal:
                 if is_sell_signal and status != 'KEEP':
                     if is_urgent:
                         is_sell_final = True
                     elif symbol not in pending_approvals:
-                        # [원칙 1] 이미 명단에 있으면 Pass, 없을 때만 5분 번호표 신규 발급
-                        wait_limit = 5 
-                        pending_approvals[symbol] = {
-                            'status': 'NOTIFIED',
-                            'start_time': datetime.now(),
-                            'entry_profit': this_profit,
-                            'reason': sell_reason,
-                            'wait_limit': wait_limit
-                        }
-                        kb = telegram_ui.get_sell_signal_kb(symbol, wait_limit)
-                        await app.bot.send_message(
-                            config.CHAT_ID,
-                            f"🟡 [{wait_limit}분 유예 시작] {symbol}\n사유: {sell_reason}\n"
-                            f"현재수익률: {this_profit:+.2f}% | 5분 뒤 자동 매도 판단", reply_markup=kb
-                        )
+                        # [가드 추가] 긴급 종목은 5분 일반 유예를 주지 않고 리포트 작성으로 바로 넘김
+                        if not is_emergency: 
+                            # [원칙 1] 이미 명단에 있으면 Pass, 없을 때만 5분 번호표 신규 발급
+                            wait_limit = 5 
+                            pending_approvals[symbol] = {
+                                'status': 'NOTIFIED',
+                                'start_time': datetime.now(),
+                                'entry_profit': this_profit,
+                                'reason': sell_reason,
+                                'wait_limit': wait_limit
+                            }
+                            kb = telegram_ui.get_sell_signal_kb(symbol, wait_limit)
+                            await app.bot.send_message(
+                                config.CHAT_ID,
+                                f"🟡 [{wait_limit}분 유예 시작] {symbol}\n사유: {sell_reason}\n"
+                                f"현재수익률: {this_profit:+.2f}% | 5분 뒤 자동 매도 판단", reply_markup=kb
+                            )
 
                 # 매도 신호 유무 무관, 유예 중인 놈은 상시 감시
                 if symbol in pending_approvals:
