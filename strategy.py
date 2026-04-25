@@ -482,27 +482,33 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         signs = [1 if s > 0 else (-1 if s < 0 else 0) for s in ma5_slopes]
         
         found_plus3_anchor, neg_streak, plus_streak, zero_count = False, 0, 0, 0
-        max_plus = 0
+        plus_fail_count = 0
+        
         for s in signs:
             if s == 1:
                 if found_plus3_anchor and neg_streak > 0:
                     found_plus3_anchor = False
                     plus_streak = 1
+                    plus_fail_count = 0
                 else:
                     plus_streak += 1
-                    max_plus = max(max_plus, plus_streak)
                     if plus_streak >= 3: found_plus3_anchor = True
                 neg_streak, zero_count = 0, 0
-            elif s == -1:
-                plus_streak = 0
-                if found_plus3_anchor: neg_streak += 1
-            elif s == 0:
-                plus_streak = 0
-                if found_plus3_anchor and neg_streak > 0:
-                    zero_count += 1
-                    if zero_count >= 2:
+            elif s <= 0:
+                if not found_plus3_anchor:
+                    plus_fail_count += 1
+                    if plus_fail_count >= 2:
+                        plus_streak = 0
+                        plus_fail_count = 0
+                else:
+                    plus_streak = 0
+                    if s == -1:
                         neg_streak += 1
-                        zero_count = 0
+                    elif s == 0:
+                        zero_count += 1
+                        if zero_count >= 2:
+                            neg_streak += 1
+                            zero_count = 0
         if not found_plus3_anchor:
             return False, "3상미달" # neg_threshold를 상 앞에 붙이던 오류 제거
         if neg_streak < neg_threshold:

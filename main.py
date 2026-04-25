@@ -630,6 +630,13 @@ async def execute_sell(app, symbol, reason, sell_ratio=1.0):
     실제 거래소 매도 주문을 실행하고, 인벤토리 정리 및 거래 로그를 기록한 뒤 알림을 보냅니다.
     """
     try:
+        inv_snapshot = load_inventory()
+        item_snapshot = inv_snapshot.get(symbol, {})
+        safe_avg_buy_price = float(item_snapshot.get('avg_price') or item_snapshot.get('purchase_price') or 0)
+        if safe_avg_buy_price == 0:
+            current_assets = await get_my_assets()
+            safe_avg_buy_price = current_assets.get(symbol, {}).get('avg_price', 0)
+        safe_grade = item_snapshot.get('grade', 'A')
         # 1. 현재 잔고 확인
         balance = await asyncio.to_thread(exchange.fetch_balance)
         base = symbol.split('/')[0]
@@ -659,12 +666,9 @@ async def execute_sell(app, symbol, reason, sell_ratio=1.0):
 
         if is_relay_expired:
             # 2-C. 릴레이 만료 전용: 0.1% 수익 보전 기반 5분(1분 대기) 지정가 추격
-            inv = load_inventory()
-            item = inv.get(symbol, {})
-            avg_buy_price = float(item.get('avg_price') or item.get('purchase_price') or 0)
-            if avg_buy_price == 0:
-                current_assets = await get_my_assets()
-                avg_buy_price = current_assets.get(symbol, {}).get('avg_price', 0)
+            # //======== [2026-04-25 수정: 백업된 평단가 사용 (인벤토리 호출 삭제)] ========//
+            avg_buy_price = safe_avg_buy_price
+            # //========================================================================//
 
             wait_sec = 60
             fill_success = False
@@ -790,12 +794,8 @@ async def execute_sell(app, symbol, reason, sell_ratio=1.0):
         # 4. 수익률 계산을 위한 평단가 확보
         inv = load_inventory()
         item = inv.get(symbol, {})
-        avg_buy_price = float(item.get('avg_price') or item.get('purchase_price') or 0)
+        avg_buy_price = safe_avg_buy_price
         
-        if avg_buy_price == 0:
-            current_assets = await get_my_assets()
-            avg_buy_price = current_assets.get(symbol, {}).get('avg_price', 0)
-
         # 5. 실제 체결가(sell_price) 산출 로직
         orderbook = await asyncio.to_thread(exchange.fetch_order_book, symbol)
         curr_bid = float(orderbook['bids'][0][0]) # 시장가 매도는 매수 1호가(bid)에 체결됨
@@ -819,8 +819,8 @@ async def execute_sell(app, symbol, reason, sell_ratio=1.0):
         # 6. 최종 수익률 및 로그 기록
         this_profit = ((sell_price - avg_buy_price) / avg_buy_price * 100) if avg_buy_price > 0 else 0
         
-        # [누락방지 1] 거래 내역 CSV 저장 (이미 main.py에 있는 save_trade_log 호출)
-        save_trade_log(symbol, item.get('grade', 'A'), avg_buy_price, sell_price, this_profit, reason)
+        # [누락방지 1] 거래 내역 CSV 저장
+        save_trade_log(symbol, safe_grade, avg_buy_price, sell_price, this_profit, reason)
 
         # [누락방지 2] 로컬 인벤토리 파일 정리
         if symbol in inv:
