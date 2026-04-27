@@ -89,13 +89,12 @@ async def update_market_panic_status(current_avg, symbol_count=0):
         if total_avg >= market_ref_rate + threshold:
             is_buy_locked = False
             panic_cleared_time = datetime.now()
-            market_ref_rate = total_avg
-            #prev_day_offset = 0.0
+            market_ref_rate = 0.0
+            prev_day_offset = 0.0
             last_current_avg = current_avg
             save_market_status()
-            logger.info(f"✅ 시장 반등 확인({threshold}%): 매수 잠금 해제 (기준점: {market_ref_rate:.2f}%)")
-            return True, f"✅ 시장 반등 확인({threshold}%): 매수 잠금 해제 (기준점: {market_ref_rate:.2f}%)"
-        
+            logger.info(f"✅ 시장 반등 확인({threshold}%): 매수 잠금 해제 (기준점 초기화)")
+            return True, f"✅ 시장 반등 확인({threshold}%): 매수 잠금 해제 (기준점 초기화)" 
         elif total_avg < market_ref_rate:
             market_ref_rate = total_avg
             save_market_status()
@@ -517,23 +516,23 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         return True, f"3상{neg_streak}하"
 
     # //======== [2026-04-24 수정: 중복방지 페널티 및 T2 전용 14선 가드] ========//
-    recent_15 = df.iloc[-16:-1]
-    win_min, win_max = recent_15['low'].min(), recent_15['high'].max()
+    recent_20 = df.iloc[-21:-1] # 구간 체크
+    recent_10 = df.iloc[-11:-1] # 단일 캔들 급등, 음봉 압도
+    win_min, win_max = recent_20['low'].min(), recent_20['high'].max()
     vol_gap = (win_max - win_min) / win_min * 100
     
     # ###### 수정: or를 |로 변경하고 .any()로 묶음 ######
-    has_single_beam = (((recent_15['high'] - recent_15['open']) / recent_15['open'] * 100 >= 1.5) | 
-                       ((recent_15['low'] - recent_15['open']) / recent_15['open'] * 100 <= -1.5)).any()
+    has_single_beam = (((recent_10['high'] - recent_10['open']) / recent_10['open'] * 100 >= 1.5) | 
+                       ((recent_10['low'] - recent_10['open']) / recent_10['open'] * 100 <= -1.5)).any()
     beam_penalty = 2 if has_single_beam else 0
 
-    # 2. 구간 변동성 단계별 적용 (8% 초과: 4, 4% 이상: 2)
-    vol_penalty = 4 if vol_gap > 8.0 else (2 if vol_gap >= 4.0 else 0)
-    
+    # 2. 구간 변동성 단계별 적용 (7% 초과: 4, 2% 이상: 2)
+    vol_penalty = 6 if vol_gap >= 15.0 else (4 if vol_gap >= 7.0 else (2 if vol_gap >= 2.0 else 0))
+
     # 3. 시장 상황 단계별 가산 (실시간 total_avg 기준)
-    is_m_bad, m_ref, _, p_offset, _, l_avg = load_market_status()
     # 고정된 m_ref 대신 실시간 수치인 (현재평균 + 전일오프셋) 사용
-    current_market_total = l_avg + p_offset 
-    
+    current_market_total = last_current_avg + prev_day_offset
+
     m_penalty = 0
     if current_market_total <= -3.0: 
         m_penalty = 4
@@ -541,11 +540,11 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         m_penalty = 2
 
     # 4. 음봉 압도
-    blue_penalty = 2 if (recent_15['close'] < recent_15['open']).sum() >= 11 else 0
+    blue_penalty = 2 if (recent_10['close'] < recent_10['open']).sum() >= 7 else 0
 
     # 최종 타겟 합산 (기본 3 + 각 항목별 1회성 페널티)
     common_target = 3 + beam_penalty + vol_penalty + blue_penalty + m_penalty
-    logger.info(f"✨ [하락 목표값] {symbol} | 급등 캔들(3%) :{beam_penalty}, 구간 변동폭 (5, 10%):{vol_penalty}, 음봉 압도(11봉 이상):{blue_penalty}, 시장 상황 ({current_market_total:.2f}%):{m_penalty} ")
+    logger.info(f"✨ [하락 목표값] {symbol} | 급등(1.5%):{beam_penalty}, 구간변동({vol_gap:.2f}%):{vol_penalty}, 7음봉이상:{blue_penalty}, 시황({current_market_total:.2f}%):{m_penalty}")
 
     target_neg_t1 = target_neg_t24 = target_neg_t3 = common_target
 
@@ -917,32 +916,35 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         desc_cnt = sum(1 for i in range(1, desc_range) if df['ma185'].iloc[-i] <= df['ma185'].iloc[-i-1])
         strict_descending_t3 = (desc_cnt >= 120)
 
-        # 2. 장기 극대 이격률(Gap %) 확인 (200봉 시야)
-        # 185선 대비 40선이 얼마나 멀어졌는지 측정
-        gaps_long = ((df['ma185'] - df['ma40']) / df['ma185'] * 100).tail(200)
-        max_gap_long = gaps_long.max()
-        curr_gap_pct = (ma185_val - ma40_val) / ma185_val * 100
+        # 2. 장기 극대 이격률(Gap %) 확인 (40선 -> 5선 대체)
+        gaps_long_5 = ((df['ma185'] - df['ma5']) / df['ma185'] * 100).tail(200)
+        max_gap_long_5 = gaps_long_5.max()
+        curr_gap_pct_5 = (ma185_val - ma5_val) / ma185_val * 100
         
-        # 현재 이격이 장기 최대치의 40% 수준 이상인 '벌어진' 상태인가? (Divergence)
-        is_real_valley = (curr_gap_pct >= max_gap_long * 0.4)
+        # 현재 5선 이격이 장기 최대치의 40% 수준 이상인 '벌어진' 상태인가?
+        is_real_valley_5 = (curr_gap_pct_5 >= max_gap_long_5 * 0.4)
 
         # 3. 185선 하락 둔화 가드 (기울기 개선 확인)
         is_185_flattening = (ma185_v.iloc[-1] > ma185_v.iloc[-5]) if len(ma185_v) >= 5 else False
 
-        ###### [TYPE3 수정 시작: 185-40선 수렴 추세 강제 확인] ######
-        # 40선이 185선을 향해 거리를 좁히거나(수렴) 유지하는지 최근 6봉 확인
-        hist_disp_t3 = [abs(df['ma40'].iloc[-i] - df['ma185'].iloc[-i]) / df['ma185'].iloc[-i] if df['ma185'].iloc[-i] > 0 else 999 for i in range(1, 8)]
-        # 과거(i+1) 대비 현재(i) 이격도가 작거나 같아야 함 (<=). 6번 비교 중 5번 이상 만족 요구
-        conv_cnt_t3 = sum(1 for i in range(6) if hist_disp_t3[i] <= hist_disp_t3[i+1])
-        is_t3_converging = (conv_cnt_t3 >= 5) 
+        # 4. 185-5선 V자 변곡점 (먼 3개 발산, 최근 1개 수렴)
+        h_disp5 = [abs(df['ma5'].iloc[-i] - df['ma185'].iloc[-i]) / df['ma185'].iloc[-i] if df['ma185'].iloc[-i] > 0 else 999 for i in range(1, 11)]
+        
+        # [처음 3개 발산] 10봉전(-10) -> 9봉전(-9) -> 8봉전(-8) 방향으로 갈수록 이격 증가
+        is_expanding_early = (h_disp5[9] < h_disp5[8]) and (h_disp5[8] < h_disp5[7])
+        
+        # [마지막 1개 수렴] 2봉전(-2) -> 1봉전(-1) 방향 이격 감소
+        is_shrinking_late = h_disp5[1] > h_disp5[0]
+        
+        is_t3_dynamic_ok = is_expanding_early and is_shrinking_late
         ###### [TYPE3 수정 끝] ######
 
-        # 최종 판정: 장기 하락 + 극대 이격 + 185선 안착 기미가 보일 때
-        if strict_descending_t3 and is_real_valley and is_185_flattening and is_t3_converging:
+        # 최종 판정: 장기 하락 + 5선 극대 이격 + 185선 안착 기미 + 5선 V자 변곡
+        if strict_descending_t3 and is_real_valley_5 and is_185_flattening and is_t3_dynamic_ok:
             if is_high_pos_185:
                 logger.info(f"DEBUG: {symbol} | [TYPE3-제외] 185선 고점 구간")
             else:
-                # 4. 미시 트리거: 3상 7하 파동 + 캔들 클린 + 타점 회복 (40선 후상향 불필요)
+                # 4. 미시 트리거: 3상 7하 파동 + 캔들 클린 + 타점 회복
                 if is_slide_setup_t3 and is_candle_clean and has_recovered_target:
                     # //======== [2026-04-20 수정: TYPE 3 매수 2회 제한 및 타점 일치] ========//
                     if symbol in s_plus_tracker:
@@ -967,27 +969,20 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 else:
                     # //========= [수정: 타입 1 및 타입 3 파동 탈락 로그 통합] =========//
                     reasons = []
-                    
-                    # 타입 1 로그 추가 (누락되었던 부분)
-                    if not is_slide_setup_t1:
-                        reasons.append(f"파동미달(T1:{wave_msg_t1})")
-                    
-                    # 타입 3 로그 (기존 유지 및 가독성 개선)
-                    if not is_slide_setup_t3:
-                        reasons.append(f"파동미달(T3:{wave_msg_t3})")
-                        
+                    if not is_slide_setup_t1: reasons.append(f"파동미달(T1:{wave_msg_t1})")
+                    if not is_slide_setup_t3: reasons.append(f"파동미달(T3:{wave_msg_t3})")
                     if not is_candle_clean: reasons.append("캔들불량")
-                    if not has_recovered_target: reasons.append("타점미회복")
+                    if not has_recovered_target: reasons.append(f"매수타점미달(현재가:{curr_price} <= 기준가:{dynamic_base})")
                     
                     if reasons:
-                        logger.info(f"DEBUG: {symbol} | [TYPE1, TYPE3 분석] 파동대기 | 사유:{'/'.join(reasons)} | 이격:{curr_gap_pct:.2f}%")
+                        logger.info(f"DEBUG: {symbol} | [TYPE1, TYPE3 분석] 파동대기 | 사유:{'/'.join(reasons)} | 이격:{curr_gap_pct_5:.2f}%")
         else:
             fail_parts = []
             if not is_inverse_align: fail_parts.append("역배열미달")
             if not was_oversold_start: fail_parts.append("과매도이력없음")
             if not strict_descending_t3: fail_parts.append(f"185하락부족({desc_cnt}/200)")
-            if not is_real_valley: fail_parts.append(f"이격부족(현재:{curr_gap_pct:.1f}/기준:{max_gap_long*0.8:.1f})")
-            if not is_t3_converging: fail_parts.append(f"수렴미달(40/185:{conv_cnt_t3}/6)")
+            if not is_real_valley_5: fail_parts.append(f"5선이격부족(현재:{curr_gap_pct_5:.1f}/기준:{max_gap_long_5*0.4:.1f})")
+            if not is_t3_dynamic_ok: fail_parts.append(f"185/5선_V자변곡실패(과거:{h_disp5[9]:.4f}<{h_disp5[8]:.4f}<{h_disp5[7]:.4f},최근:{h_disp5[1]:.4f}>{h_disp5[0]:.4f})")
             
             if fail_parts:
                 logger.info(f"DEBUG: {symbol} | [TYPE3] 전제탈락 | 사유:{'/'.join(fail_parts)}")
@@ -1080,10 +1075,9 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         is_bullish_breakout_high = (curr_price > float(curr['open'])) and (curr_price >= float(prev['close']))
         is_gap_40_safe = gap_14_40_pct <= 3.0 # 40선 대비 이격도 3% 이내 강제
         
-        is_t2_rebound = has_positive_ma5 and is_185_trend_ok and is_valid_convergence and is_bullish_breakout_high and is_gap_40_safe
+        is_t2_rebound = is_185_trend_ok and is_valid_convergence and is_bullish_breakout_high and is_gap_40_safe
         if not is_t2_rebound:
-            if not has_positive_ma5: t2_fail_reason = "5선문턱(-0.03)미달"
-            elif not is_185_trend_ok: t2_fail_reason = "185선대추세하락"
+            if not is_185_trend_ok: t2_fail_reason = "185선대추세하락"
             elif not is_valid_convergence: t2_fail_reason = "수렴/5선발산실패"
             elif not is_bullish_breakout_high: t2_fail_reason = "고공양봉돌파실패"
             elif not is_gap_40_safe: t2_fail_reason = f"14/40이격과다({gap_14_40_pct:.2f}%)"
@@ -1176,7 +1170,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                             s_plus_tracker[symbol] = {'index': len(df), 'close': curr_price, 'high': float(curr['high'])}
                             return True, f"💎 [TYPE1-S+] {target_neg_t1}회하락 후 첫 타점 탈환", "S+", data_dict
                     else:
-                        logger.info(f"DEBUG: {symbol} | [TYPE1-S/S+] 격돌 실패2 | 파동상태: {wave_msg_t1} | is_candle_clean: {is_candle_clean} | has_recovered_target: {has_recovered_target}")
+                        logger.info(f"DEBUG: {symbol} | [TYPE1-S/S+] 격돌 실패2 | 파동상태: {wave_msg_t1} | is_candle_clean: {is_candle_clean} | 매수타점미달(현재가:{curr_price} <= 기준가:{dynamic_base})")
                 # //========================================================================//
                 else:
                     logger.info(f"DEBUG: {symbol} | [TYPE1-S/S+] 격돌 실패1 | 골크 : {disparity_gold} <= 0.005 | 5/40수렴: {is_converging_5_40} | 5/40 gap pct: -1.0 <= {gap_5_40_pct:.2f}% <= 1.0 | 90선 상승: {ma90_up_count} >= 4")
@@ -1237,7 +1231,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     if ma90_up_count < 5: reasons_t4.append(f"90선추세하락({ma90_up_count}/10)")
     if not is_volume_quality_ok: reasons_t4.append(f"매집수급미달(양봉부족.(양봉 {bull_count}개))")
     #if not is_dynamic_entry_ok: reasons_t4.append("동적진입(14선)실패")
-    if not is_slide_setup_t24: reasons_t4.append(f"파동미달({wave_msg_t24})")
+    #if not is_slide_setup_t24: reasons_t4.append(f"파동미달({wave_msg_t24})")
     if not is_trend_alive: reasons_t4.append(f"40선이격사망({disparity_40_line:.2f}%)")
     if not is_not_doji_bull: reasons_t4.append("음봉/도지탈락")
     if not is_t4_safe: reasons_t4.append(f"변동성초과({vol_sectional:.1f}%)")
@@ -1281,7 +1275,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 grade = "S+"
                 data_dict['grade'] = grade
                 s_plus_tracker[symbol] = {'index': len(df), 'close': curr_price, 'high': float(curr['high'])}
-                return True, f"💎 [TYPE4-S+] 3회하락 후 첫 타점 탈환", grade, data_dict
+                return True, f"💎 [TYPE4-S+] {target_neg_t24}회하락 후 첫 타점 탈환", grade, data_dict
                 
         reasons_t4.append("회복트리거부족(또는 윗꼬리과다)")
         logger.info(f"DEBUG: {symbol} | [TYPE4] 탈락 이유: {', '.join(reasons_t4)}")

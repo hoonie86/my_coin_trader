@@ -173,7 +173,7 @@ async def safe_market_buy(symbol, cost, grade="A", buy_type=1):
             )
                         
             order = await asyncio.to_thread(exchange.create_limit_buy_order, symbol, amount, target_p)
-            logger.info(f"⏳ [{i+1}차 낚시] {symbol} | 가격: {target_p:,.2f} | 60초 대기 시작...")
+            logger.info(f"⏳ [{i+1}차 낚시] {symbol} | 가격: {target_p:,.2f} | 120초 대기 시작...")
             await asyncio.sleep(120) # 120초 대기
             
             os_status = await asyncio.to_thread(exchange.fetch_order, order['id'], symbol)
@@ -424,11 +424,15 @@ async def buy_scan_task(app):
                         )
                         strategy.panic_msg_sent = False
 
-                # 시장 현황 보고 (사용자 확인용)
                 lock_status = "🚨 [LOCK]" if strategy.is_buy_locked else "✅ [NORMAL]"
-                print(f"\n📊 [시장 현황] {lock_status} | 현재평균: {current_market_avg:+.2f}% | 기준점: {strategy.market_ref_rate:+.2f}%")
+                real_total_avg = current_market_avg + strategy.prev_day_offset
+                    
+                print(f"\n📊 [시장 현황] {lock_status} | 순수시황: {current_market_avg:+.2f}% (내부적용: {real_total_avg:+.2f}%) | 바닥기준: {strategy.market_ref_rate:+.2f}%")
                 if strategy.is_buy_locked:
-                    print(f"   💡 해제까지: {current_market_avg:+.2f}% -> {strategy.market_ref_rate + 2.0:+.2f}% 필요")
+                    ref = strategy.market_ref_rate
+                    th = 2.0 if ref <= -5.0 else (1.5 if ref <= -3.0 else 1.0)
+                    target_rate = ref + th
+                    print(f"   💡 해제조건: 내부적용수치({real_total_avg:+.2f}%)가 목표치({target_rate:+.2f}%)를 넘어야 풀립니다.")
             if strategy.is_buy_locked:
                 print(f"🚫 [시장잠금] Panic Filter 상태입니다. 스캔을 생략하고 5분 뒤 시장을 재확인합니다.")
                 await asyncio.sleep(300)
