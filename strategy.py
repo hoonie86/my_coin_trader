@@ -522,12 +522,12 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     vol_gap = (win_max - win_min) / win_min * 100
     
     # ###### 수정: or를 |로 변경하고 .any()로 묶음 ######
-    has_single_beam = (((recent_10['high'] - recent_10['open']) / recent_10['open'] * 100 >= 1.5) | 
-                       ((recent_10['low'] - recent_10['open']) / recent_10['open'] * 100 <= -1.5)).any()
+    has_single_beam = (((recent_10['high'] - recent_10['low']) / recent_10['low'] * 100 >= 1.5) | 
+                       ((recent_10['low'] - recent_10['high']) / recent_10['high'] * 100 <= -1.5)).any()
     beam_penalty = 2 if has_single_beam else 0
 
     # 2. 구간 변동성 단계별 적용 (7% 초과: 4, 2% 이상: 2)
-    vol_penalty = 6 if vol_gap >= 15.0 else (4 if vol_gap >= 7.0 else (2 if vol_gap >= 2.0 else 0))
+    vol_penalty = 6 if vol_gap >= 15.0 else (4 if vol_gap >= 8.0 else (2 if vol_gap >= 4.0 else (1 if vol_gap >= 2.0 else 0)))
 
     # 3. 시장 상황 단계별 가산 (실시간 total_avg 기준)
     # 고정된 m_ref 대신 실시간 수치인 (현재평균 + 전일오프셋) 사용
@@ -566,7 +566,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     # //======== [2026-04-24 수정 끝] ========//
 
     disparity_40_line = (curr_price / ma40_val) * 100 if ma40_val > 0 else 0
-    is_trend_alive = disparity_40_line >= 99.0 
+    is_trend_alive = disparity_40_line >= 98.0 
 
     is_not_doji_bull = (curr_price > float(curr['open']))
     p_open, p_close = float(prev['open']), float(prev['close'])
@@ -585,8 +585,8 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     # 5 -> 3 (True), -5 -> -3 (True), -3 -> -5 (False)
     ma90_intensity_ok = (ma90_v > 0) | (ma90_v > ma90_v.shift(1))
     # 최근 10봉 중 위 조건을 만족하는 횟수가 6번(60%) 이상인지 계산 (기존 로직 주석 처리)
-    actual_up_count_90 = (ma90_v.tail(10) > 0).sum()
-    ma90_up_count = ma90_intensity_ok.tail(10).sum() if actual_up_count_90 >= 2 else 0
+    actual_up_count_90 = (ma90_v.tail(10) >= 0).sum()
+    ma90_up_count = ma90_intensity_ok.tail(10).sum() if actual_up_count_90 >= 3 else 0
 
     ma40_v = df['ma40'].diff()
     # 양수 프리패스 OR 음수 구간 내 변곡점(현재 기울기 >= 이전 기울기) 체크
@@ -930,13 +930,13 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         # 4. 185-5선 V자 변곡점 (먼 3개 발산, 최근 1개 수렴)
         h_disp5 = [abs(df['ma5'].iloc[-i] - df['ma185'].iloc[-i]) / df['ma185'].iloc[-i] if df['ma185'].iloc[-i] > 0 else 999 for i in range(1, 11)]
         
-        # [처음 3개 발산] 10봉전(-10) -> 9봉전(-9) -> 8봉전(-8) 방향으로 갈수록 이격 증가
-        is_expanding_early = (h_disp5[9] < h_disp5[8]) and (h_disp5[8] < h_disp5[7])
+        # [처음 3개 발산] 9봉전(-9) -> 8봉전(-8) -> 7봉전(-7) 방향으로 갈수록 이격 증가
+        is_expanding_early = (h_disp5[8] < h_disp5[7]) and (h_disp5[7] < h_disp5[6])
         
         # [마지막 1개 수렴] 2봉전(-2) -> 1봉전(-1) 방향 이격 감소
-        is_shrinking_late = h_disp5[1] > h_disp5[0]
+        # is_shrinking_late = h_disp5[1] >= h_disp5[0]
         
-        is_t3_dynamic_ok = is_expanding_early and is_shrinking_late
+        is_t3_dynamic_ok = is_expanding_early #and is_shrinking_late
         ###### [TYPE3 수정 끝] ######
 
         # 최종 판정: 장기 하락 + 5선 극대 이격 + 185선 안착 기미 + 5선 V자 변곡
@@ -949,21 +949,28 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                     # //======== [2026-04-20 수정: TYPE 3 매수 2회 제한 및 타점 일치] ========//
                     if symbol in s_plus_tracker:
                         tracker = s_plus_tracker[symbol]
-                        if not tracker.get('triggered_s', False):
-                            target_p = tracker.get('target', tracker.get('close', 0))
-                            if curr_price > target_p:
-                                tracker['triggered_s'] = True
-                                set_time = tracker.get('set_time', '??:??:??')
-                                data_dict['grade'] = 'S'
-                                return True, f"⭐ [TYPE3-S] {set_time} 바닥탈환 돌파", "S", data_dict
+                        # //======== [2026-04-30 수정: 인덱스 가드 추가 및 다음 봉부터 돌파 인정] ========//
+                        if len(df) > tracker.get('index', 0):
+                            if not tracker.get('triggered_s', False):
+                                target_p = tracker.get('close', tracker.get('target', 0))
+                                if curr_price > target_p:
+                                    tracker['triggered_s'] = True
+                                    tracker['index'] = len(df)
+                                    set_time = tracker.get('set_time', '??:??:??')
+                                    data_dict['grade'] = 'S'
+                                    return True, f"⭐ [TYPE3-S] {set_time} 바닥탈환 돌파", "S", data_dict
+                        # //==============================================================================//
                     else:
                         data_dict['grade'] = 'S+'
+                        # //======== [2026-04-30 수정: S+ 기록 시 현재 인덱스와 실시간 가격 정확히 박제] ========//
                         s_plus_tracker[symbol] = {
                             'index': len(df), 
+                            'close': curr_price,
                             'target': dynamic_base, 
                             'triggered_s': False,
                             'set_time': datetime.now().strftime('%H:%M:%S')
                         }
+                        # //======================================================================================//
                         return True, f"💎 [TYPE3-S+] {target_neg_t3}회하락 후 극대이격 반등", "S+", data_dict
                     # //====================================================================//
                 else:
@@ -982,7 +989,8 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             if not was_oversold_start: fail_parts.append("과매도이력없음")
             if not strict_descending_t3: fail_parts.append(f"185하락부족({desc_cnt}/200)")
             if not is_real_valley_5: fail_parts.append(f"5선이격부족(현재:{curr_gap_pct_5:.1f}/기준:{max_gap_long_5*0.4:.1f})")
-            if not is_t3_dynamic_ok: fail_parts.append(f"185/5선_V자변곡실패(과거:{h_disp5[9]:.4f}<{h_disp5[8]:.4f}<{h_disp5[7]:.4f},최근:{h_disp5[1]:.4f}>{h_disp5[0]:.4f})")
+            # if not is_t3_dynamic_ok: fail_parts.append(f"185/5선_V자변곡실패(과거:{h_disp5[8]:.4f}<{h_disp5[7]:.4f}<{h_disp5[6]:.4f},최근:{h_disp5[1]:.4f}>{h_disp5[0]:.4f})")
+            if not is_t3_dynamic_ok: fail_parts.append(f"185/5선_V자변곡실패(과거:{h_disp5[8]:.4f}<{h_disp5[7]:.4f}<{h_disp5[6]:.4f})")
             
             if fail_parts:
                 logger.info(f"DEBUG: {symbol} | [TYPE3] 전제탈락 | 사유:{'/'.join(fail_parts)}")
@@ -1056,7 +1064,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             # 봇이 계산한 실제 숫자를 로그에 찍어서 차트와 비교합니다.
             logger.debug(f"🔍 [양봉판정로그] {symbol} | 현재가:{curr_price} | 시가:{curr['open']} | MA14:{ma14_val:.2f} | 결과:FAIL")
         is_t2_rebound = (-3.0 <= gap_14_40_pct <= 0) and (ma14_up_count >= 1) and has_positive_ma14 and is_bullish_breakout and is_valid_convergence
-        
+        is_t4_rebound = (-3.0 <= gap_14_40_pct <= 0) and (ma14_up_count >= 1) and is_bullish_breakout and is_valid_convergence
         if not is_t2_rebound:
             if not (-3.0 <= gap_14_40_pct <= 0): t2_fail_reason = f"이격범위이탈({gap_14_40_pct:.2f}%)"
             elif ma14_up_count < 1: t2_fail_reason = f"14선상승부족({ma14_up_count}/1)"
@@ -1074,8 +1082,8 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         # //======== [수정 사항: 14선이 40선 위에 있을 때 고점 추격 매수 방지 로직 보강] ========//
         is_bullish_breakout_high = (curr_price > float(curr['open'])) and (curr_price >= float(prev['close']))
         is_gap_40_safe = gap_14_40_pct <= 3.0 # 40선 대비 이격도 3% 이내 강제
-        
         is_t2_rebound = is_185_trend_ok and is_valid_convergence and is_bullish_breakout_high and is_gap_40_safe
+        is_t4_rebound = is_t2_rebound
         if not is_t2_rebound:
             if not is_185_trend_ok: t2_fail_reason = "185선대추세하락"
             elif not is_valid_convergence: t2_fail_reason = "수렴/5선발산실패"
@@ -1161,13 +1169,20 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 if disparity_gold <= 0.015 and conv_cnt_90 >= 5 and is_converging_5_40 and (-1.0 <= gap_5_40_pct <= 1.0) and (ma90_up_count >= 4):
                     if is_slide_setup_t1 and is_candle_clean and has_recovered_target:
                         if symbol in s_plus_tracker:
-                            target_p = s_plus_tracker[symbol]['close']
-                            if curr_price > target_p:
-                                data_dict['grade'] = 'S'
-                                return True, f"⭐ [TYPE1-S] S+ 종가({target_p}) 돌파", "S", data_dict
+                            tracker = s_plus_tracker[symbol]
+                            # //======== [2026-04-30 수정: TYPE 1 인덱스 가드] ========//
+                            if len(df) > tracker.get('index', 0):
+                                target_p = tracker.get('close', 0)
+                                if curr_price > target_p:
+                                    data_dict['grade'] = 'S'
+                                    tracker['index'] = len(df)
+                                    return True, f"⭐ [TYPE1-S] S+ 종가({target_p}) 돌파", "S", data_dict
+                            # //========================================================//
                         else:
                             data_dict['grade'] = 'S+'
+                            # //======== [2026-04-30 수정: TYPE 1 실시간 가격 박제] ========//
                             s_plus_tracker[symbol] = {'index': len(df), 'close': curr_price, 'high': float(curr['high'])}
+                            # //========================================================//
                             return True, f"💎 [TYPE1-S+] {target_neg_t1}회하락 후 첫 타점 탈환", "S+", data_dict
                     else:
                         logger.info(f"DEBUG: {symbol} | [TYPE1-S/S+] 격돌 실패2 | 파동상태: {wave_msg_t1} | is_candle_clean: {is_candle_clean} | 매수타점미달(현재가:{curr_price} <= 기준가:{dynamic_base})")
@@ -1228,7 +1243,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
 
     reasons_t4 = []
     if not is_trend_safe: reasons_t4.append("장기이평역배열또는하락(T4)")
-    if ma90_up_count < 5: reasons_t4.append(f"90선추세하락({ma90_up_count}/10)")
+    if ma90_up_count < 5: reasons_t4.append(f"90선추세하락(5미만:{ma90_up_count})")
     if not is_volume_quality_ok: reasons_t4.append(f"매집수급미달(양봉부족.(양봉 {bull_count}개))")
     #if not is_dynamic_entry_ok: reasons_t4.append("동적진입(14선)실패")
     #if not is_slide_setup_t24: reasons_t4.append(f"파동미달({wave_msg_t24})")
@@ -1247,7 +1262,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     
     # [핵심] 기존 엔진은 그대로 사용! (단, REI를 위해 has_down_touch만 선택적 제거)
     ###### [수정/추가] 격돌 로직 이식 및 대추세(185선) 급락 가드 결합 ######
-    if not is_t2_rebound: reasons_t4.append(f"격돌/수렴실패({t2_fail_reason})")
+    if not is_t4_rebound: reasons_t4.append(f"격돌/수렴실패({t2_fail_reason})")
     if slope_rate < -0.01: reasons_t4.append(f"185선급락({slope_rate:.4f})")
     
     # REI 같은 강한 종목을 위해 TYPE 4에서만 '터치' 조건 주석 처리하거나 완화
@@ -1266,15 +1281,22 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     if not reasons_t4:
         if is_slide_setup_t24 and is_candle_clean and has_recovered_target:
             if symbol in s_plus_tracker:
-                target_p = s_plus_tracker[symbol]['close']
-                if curr_price > target_p:
-                    grade = "S"
-                    data_dict['grade'] = grade
-                    return True, f"⭐ [TYPE4-S] S+ 종가({target_p}) 돌파", grade, data_dict
+                tracker = s_plus_tracker[symbol]
+                # //======== [2026-04-30 수정: TYPE 4 인덱스 가드] ========//
+                if len(df) > tracker.get('index', 0):
+                    target_p = tracker.get('close', 0)
+                    if curr_price > target_p:
+                        grade = "S"
+                        data_dict['grade'] = grade
+                        tracker['index'] = len(df)
+                        return True, f"⭐ [TYPE4-S] S+ 종가({target_p}) 돌파", grade, data_dict
+                # //========================================================//
             else:
                 grade = "S+"
                 data_dict['grade'] = grade
+                # //======== [2026-04-30 수정: TYPE 4 실시간 가격 박제] ========//
                 s_plus_tracker[symbol] = {'index': len(df), 'close': curr_price, 'high': float(curr['high'])}
+                # //========================================================//
                 return True, f"💎 [TYPE4-S+] {target_neg_t24}회하락 후 첫 타점 탈환", grade, data_dict
                 
         reasons_t4.append("회복트리거부족(또는 윗꼬리과다)")
@@ -1334,15 +1356,22 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 # //======== [2026-04-16 수정: TYPE 2 공통 타점 적용] ========//
                 if is_slide_setup_t24 and is_candle_clean and has_recovered_target:
                     if symbol in s_plus_tracker:
-                        target_p = s_plus_tracker[symbol]['close']
-                        if curr_price > target_p:
-                            grade = "S"
-                            data_dict['grade'] = grade
-                            return True, f"⭐ [TYPE2-S] S+ 종가({target_p}) 돌파", grade, data_dict
+                        tracker = s_plus_tracker[symbol]
+                        # //======== [2026-04-30 수정: TYPE 2 인덱스 가드] ========//
+                        if len(df) > tracker.get('index', 0):
+                            target_p = tracker.get('close', 0)
+                            if curr_price > target_p:
+                                grade = "S"
+                                data_dict['grade'] = grade
+                                tracker['index'] = len(df)
+                                return True, f"⭐ [TYPE2-S] S+ 종가({target_p}) 돌파", grade, data_dict
+                        # //========================================================//
                     else:
                         grade = "S+"
                         data_dict['grade'] = grade
+                        # //======== [2026-04-30 수정: TYPE 2 실시간 가격 박제] ========//
                         s_plus_tracker[symbol] = {'index': len(df), 'close': curr_price, 'high': float(curr['high'])}
+                        # //========================================================//
                         return True, f"💎 [TYPE2-S+] 3회하락 후 첫 타점 탈환", grade, data_dict
                         
                 logger.info(f"DEBUG: {symbol} | [TYPE2] 탈락 이유: 회복트리거부족(또는 윗꼬리과다)")
@@ -1365,7 +1394,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             if not is_trend_alive: reasons.append(f"40선이격사망({disparity_40_line:.2f}%)")
             if not is_not_doji_bull: reasons.append("음봉/도지탈락")
             if not has_t1_history_clean: reasons.append(f"역사오염(GC:{gc_count_150}, DC:{dc_count_after_gc})")
-            if ma90_up_count < 5: reasons.append(f"90선추세({ma90_up_count})")
+            if ma90_up_count < 5: reasons.append(f"90선추세(5미만:{ma90_up_count})")
             if not is_185_landing_stable: reasons.append(f"185선불안정")
             if is_death_conv: reasons.append("중장기죽음의수렴")
             if not is_trend_safe: reasons.append("장기이평역배열또는하락(T2)")
@@ -1495,6 +1524,10 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
 
     # [2단계] 패닉 대응: 상승 시 보류, 횡보/하락 시 유예 매도 (Emergency=False)
     if is_buy_locked:
+        # //======== [2026-04-30 수정: 패닉 발생 시 타입 1, 3 전용 2시간(4봉) 보호막] ========//
+        panic_shield_bars = 4 if buy_type in [1, 3] else 0
+        if buy_type in [1, 3] and symbol_inventory_age < panic_shield_bars:
+            return False, f"🛡️ [T{buy_type}-패닉유예] 2시간 보호 ({symbol_inventory_age}봉)", False
         if curr_p > float(prev['close']):
             # 상승 중이면 패닉이라도 수익을 위해 일단 홀딩 (유예)
             return False, "🚀 [패닉유예] 상승 흐름 유지 중 (매도 보류)", False
