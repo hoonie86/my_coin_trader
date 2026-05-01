@@ -182,8 +182,7 @@ def get_updated_emergency_level(symbol, current_level, buy_type, rsi, is_3m_belo
 
     # 1. 트리거 (0 -> 2): 진입 조건 (기존 유지)
     if current_level == 0:
-        if (profit_pct >= 1.3 or has_rsi_spike or soaring_rate >= 1.0 or 
-            (buy_type == 3 and not is_type3_stable) or max_profit_pct >= 5.0):
+        if (profit_pct >= 1.3 or has_rsi_spike or soaring_rate >= 1.0 or max_profit_pct >= 5.0):
             return 2
     
     # 2. 하향 (Level 2 -> 1): 타입별로 분기된 변수에 따라 전환
@@ -195,12 +194,9 @@ def get_updated_emergency_level(symbol, current_level, buy_type, rsi, is_3m_belo
     # ////////// [수정] 섹션 3을 섹션 2(if == 2) 블록 밖으로 독립시킴 //////////
     # 3. 해제 (Level 1 -> 0): 주석 처리하여 긴급 모드 해제 방지
     if current_level == 1:
-        # if buy_type == 3:
-        #     if ma40_slope > 0 and is_converging and (not is_3m_below_ma40):
-        #         return 0
-        # elif rsi < 50:
-        #     return 0
-        pass
+        if rsi < 55:
+            logger.info(f"✅ {symbol} 지표 안정화: 일반 모드(L0) 전환")
+            return 0
     # ////////////////////////////////////////////////////////////////////
                 
     # [중요] 반드시 모든 if 블록 밖에서 현재 레벨을 최종 반환해야 NoneType 에러가 나지 않습니다.
