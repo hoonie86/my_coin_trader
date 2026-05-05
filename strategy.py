@@ -193,9 +193,9 @@ def get_updated_emergency_level(symbol, current_level, buy_type, rsi, is_3m_belo
                     
     # ////////// [수정] 섹션 3을 섹션 2(if == 2) 블록 밖으로 독립시킴 //////////
     # 3. 해제 (Level 1 -> 0): 주석 처리하여 긴급 모드 해제 방지
-    if current_level == 1:
-        if rsi < 55:
-            logger.info(f"✅ {symbol} 지표 안정화: 일반 모드(L0) 전환")
+    if current_level >= 1:
+        if rsi < 55 or profit_pct < 0.5:
+            logger.info(f"✅ {symbol} 지표/수익 안정화: 일반 모드(L0) 전환")
             return 0
     # ////////////////////////////////////////////////////////////////////
                 
@@ -512,15 +512,24 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         return True, f"3상{neg_streak}하"
 
     # //======== [2026-04-24 수정: 중복방지 페널티 및 T2 전용 14선 가드] ========//
-    recent_20 = df.iloc[-21:-1] # 구간 체크
+    recent_25 = df.iloc[-26:-1] # 구간 체크
     recent_10 = df.iloc[-11:-1] # 단일 캔들 급등, 음봉 압도
-    win_min, win_max = recent_20['low'].min(), recent_20['high'].max()
+    win_min, win_max = recent_25['low'].min(), recent_25['high'].max()
     vol_gap = (win_max - win_min) / win_min * 100
     
-    # ###### 수정: or를 |로 변경하고 .any()로 묶음 ######
-    has_single_beam = (((recent_10['high'] - recent_10['low']) / recent_10['low'] * 100 >= 1.5) | 
-                       ((recent_10['low'] - recent_10['high']) / recent_10['high'] * 100 <= -1.5)).any()
-    beam_penalty = 2 if has_single_beam else 0
+    # 1. 최근 10봉 이내의 각 봉별 최대 변동폭(%) 계산 후 그중 최댓값 추출
+    max_beam_pct = ((recent_10['high'] - recent_10['low']) / recent_10['low'] * 100).max()
+
+    # 2. 변동폭 구간에 따른 차등 페널티 부여
+    if max_beam_pct >= 3.0:
+        beam_penalty = 2
+    elif max_beam_pct >= 1.2:
+        beam_penalty = 1
+    else:
+        beam_penalty = 0
+
+    # (선택 사항) 로그 확인용
+    logger.debug(f"🔍 [Beam Check] Max Range: {max_beam_pct:.2f}% | Penalty: {beam_penalty}")
 
     # 2. 구간 변동성 단계별 적용 (7% 초과: 4, 2% 이상: 2)
     vol_penalty = 6 if vol_gap >= 15.0 else (4 if vol_gap >= 8.0 else (2 if vol_gap >= 4.0 else (1 if vol_gap >= 2.0 else 0)))
@@ -536,11 +545,12 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         m_penalty = 2
 
     # 4. 음봉 압도
-    blue_penalty = 2 if (recent_10['close'] < recent_10['open']).sum() >= 7 else 0
+    blue_density = (recent_10['close'] < recent_10['open']).sum()
+    blue_penalty = 2 if blue_density >= 9 else (1 if blue_density >= 7 else 0)
 
     # 최종 타겟 합산 (기본 3 + 각 항목별 1회성 페널티)
     common_target = 3 + beam_penalty + vol_penalty + blue_penalty + m_penalty
-    logger.info(f"✨ [하락 목표값] {symbol} | 급등(1.5%):{beam_penalty}, 구간변동({vol_gap:.2f}%):{vol_penalty}, 7음봉이상:{blue_penalty}, 시황({current_market_total:.2f}%):{m_penalty}")
+    logger.info(f"✨ [하락 목표값] {symbol} | 급등({max_beam_pct:.2f}%):{beam_penalty}, 구간변동({vol_gap:.2f}%):{vol_penalty}, 7음봉이상:{blue_penalty}, 시황({current_market_total:.2f}%):{m_penalty}")
 
     target_neg_t1 = target_neg_t24 = target_neg_t3 = common_target
 
@@ -878,7 +888,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     improve_cnt = sum(1 for i in range(6) if ma185_slopes[i] > ma185_slopes[i+1])
 
     if diff_185 < -1.2:
-        if improve_cnt >= 4:
+        if improve_cnt >= 3:
             logger.info(f"✨ [추세개선통과] {symbol} | 현재diff:{diff_185:.2f} < -1.2 이나 30분봉 6개 중 {improve_cnt}회 개선 확인")
         else:
             reason = f"185일선 급락(diff:{diff_185:.2f} < -1.2, 개선:{improve_cnt}/6)"
@@ -923,20 +933,20 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         # 3. 185선 하락 둔화 가드 (기울기 개선 확인)
         is_185_flattening = (ma185_v.iloc[-1] > ma185_v.iloc[-5]) if len(ma185_v) >= 5 else False
 
-        # 4. 185-5선 V자 변곡점 (먼 3개 발산, 최근 1개 수렴)
-        h_disp5 = [abs(df['ma5'].iloc[-i] - df['ma185'].iloc[-i]) / df['ma185'].iloc[-i] if df['ma185'].iloc[-i] > 0 else 999 for i in range(1, 11)]
+        # # 4. 185-5선 V자 변곡점 (먼 3개 발산, 최근 1개 수렴)
+        # h_disp5 = [abs(df['ma5'].iloc[-i] - df['ma185'].iloc[-i]) / df['ma185'].iloc[-i] if df['ma185'].iloc[-i] > 0 else 999 for i in range(1, 11)]
         
-        # [처음 3개 발산] 9봉전(-9) -> 8봉전(-8) -> 7봉전(-7) 방향으로 갈수록 이격 증가
-        is_expanding_early = (h_disp5[8] < h_disp5[7]) and (h_disp5[7] < h_disp5[6])
+        # # [처음 3개 발산] 9봉전(-9) -> 8봉전(-8) -> 7봉전(-7) 방향으로 갈수록 이격 증가
+        # is_expanding_early = (h_disp5[8] < h_disp5[7]) and (h_disp5[7] < h_disp5[6])
         
-        # [마지막 1개 수렴] 2봉전(-2) -> 1봉전(-1) 방향 이격 감소
-        # is_shrinking_late = h_disp5[1] >= h_disp5[0]
+        # # [마지막 1개 수렴] 2봉전(-2) -> 1봉전(-1) 방향 이격 감소
+        # # is_shrinking_late = h_disp5[1] >= h_disp5[0]
         
-        is_t3_dynamic_ok = is_expanding_early #and is_shrinking_late
+        # is_t3_dynamic_ok = is_expanding_early #and is_shrinking_late
         ###### [TYPE3 수정 끝] ######
 
         # 최종 판정: 장기 하락 + 5선 극대 이격 + 185선 안착 기미 + 5선 V자 변곡
-        if strict_descending_t3 and is_real_valley_5 and is_185_flattening and is_t3_dynamic_ok:
+        if strict_descending_t3 and is_real_valley_5 and is_185_flattening:
             if is_high_pos_185:
                 logger.info(f"DEBUG: {symbol} | [TYPE3-제외] 185선 고점 구간")
             else:
@@ -986,7 +996,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             if not strict_descending_t3: fail_parts.append(f"185하락부족({desc_cnt}/200)")
             if not is_real_valley_5: fail_parts.append(f"5선이격부족(현재:{curr_gap_pct_5:.1f}/기준:{max_gap_long_5*0.4:.1f})")
             # if not is_t3_dynamic_ok: fail_parts.append(f"185/5선_V자변곡실패(과거:{h_disp5[8]:.4f}<{h_disp5[7]:.4f}<{h_disp5[6]:.4f},최근:{h_disp5[1]:.4f}>{h_disp5[0]:.4f})")
-            if not is_t3_dynamic_ok: fail_parts.append(f"185/5선_V자변곡실패(과거:{h_disp5[8]:.4f}<{h_disp5[7]:.4f}<{h_disp5[6]:.4f})")
+            # if not is_t3_dynamic_ok: fail_parts.append(f"185/5선_V자변곡실패(과거:{h_disp5[8]:.4f}<{h_disp5[7]:.4f}<{h_disp5[6]:.4f})")
             
             if fail_parts:
                 logger.info(f"DEBUG: {symbol} | [TYPE3] 전제탈락 | 사유:{'/'.join(fail_parts)}")
@@ -1454,7 +1464,10 @@ def check_3_2_negative_candles(target_df):
 # ---------------------------------------------------------
 # [복구 및 추가] 매도 감시 메인 함수 (ERROR 방지 핵심)
 # ---------------------------------------------------------
-async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, grade='A', symbol_inventory_age=99, status=None, realtime_p=None, buy_type=1):
+async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, grade='A', symbol_inventory_age=99, status=None, realtime_p=None, buy_type=1, avg_price=0):
+    if avg_price > 0:
+        purchase_price = avg_price
+
     if status == 'KEEP':
         return False, "🛡️ [수동유예] 사용자 명령으로 봇 매도 중단 중", False
     global emergency_mode
@@ -1512,7 +1525,7 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
 
     # 6. 본절방어 기준점(틱 사이즈 반영) 계산
     one_tick_pct = (get_bithumb_tick_size(purchase_price) / purchase_price * 100) if purchase_price > 0 else 0
-    profit_threshold = max(0.7, 3 * one_tick_pct)
+    profit_threshold = max(1.0, 4 * one_tick_pct)
     
     # [1단계] 최우선 생존: 패닉 여부 상관없이 -3% 도달 시 즉시 탈출 (Emergency=True)
     if profit_rate_pct <= -3.0:
@@ -1571,9 +1584,9 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
         return False, f"진입 초기 유예({current_age}봉)", False
 
         # 1. 본절 방어 (수정된 동적 기준 적용)
-    if profit_threshold <= max_profit_rate_pct < 1.5 and purchase_price * 0.999 <= curr_p <= purchase_price * 1.001:
+    if profit_threshold <= max_profit_rate_pct < 2.0 and purchase_price * 0.999 <= curr_p <= purchase_price * 1.001:
         cooldown_dict[symbol] = datetime.now() + timedelta(hours=6)
-        return True, f"🛡️ [S-TS-0.7] 본절방어(즉시)", True
+        return True, f"🛡️ [S-TS-1.0] 본절방어(즉시) (낙폭 {profit_threshold:,.1f}% 초과)", True 
 
     ma40_val = curr['ma40']
     ma185_val = curr['ma185'] if not pd.isna(curr['ma185']) else 0
@@ -1714,20 +1727,20 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
             #     if curr_p <= purchase_price * 1.005:
             #         return True, f"🛡️ [S-TS-0.5] 본절방어", False
 
-            # 2. 익절 구간 A (1.5% ~ 3.0% 미만): 고점 대비 0.7% 하락 시 매도
-            if 1.5 <= max_profit_rate_pct < 3.0:
-                if drop_from_peak > profit_threshold:
-                    return True, f"💰 [S-TS-1.5] 익절 A (낙폭 {profit_threshold:,.1f}% 초과)", True
+            # 2. 익절 구간 A (2.0% ~ 3.5% 미만): 고점 대비 0.71.20.7% 하락 시 매도
+            if 2.0 <= max_profit_rate_pct < 3.5:
+                if drop_from_peak > profit_threshold * 1.2:
+                    return True, f"💰 [S-TS-2.0] 익절 A (낙폭 {profit_threshold*1.2:,.1f}% 초과)", True
 
-            # 3. 익절 구간 B (2.0% ~ 3.5% 미만): 고점 대비 1.0% 하락 시 매도
-            elif 3.0 <= max_profit_rate_pct < 4.5:
-                if drop_from_peak > 1.0:
-                    return True, f"💰 [S-TS-3.0] 익절 B (낙폭 1.0% 초과)", True
+            # 3. 익절 구간 B (3.5% ~ 5.0% 미만): 고점 대비 1.5% 하락 시 매도
+            elif 3.5 <= max_profit_rate_pct < 5.0:
+                if drop_from_peak > profit_threshold * 1.5:
+                    return True, f"💰 [S-TS-3.5] 익절 B (낙폭 {profit_threshold*1.5:,.1f}% 초과)", True
 
-            # 4. 익절 구간 C (4.5% 이상): 고점 대비 1.5% 하락 시 즉시 매도
-            elif max_profit_rate_pct >= 4.5:
-                if drop_from_peak > 1.5:
-                    return True, f"🚀 [S-TS-4.5] 익절 C (낙폭 1.5% 초과)", True
+            # 4. 익절 구간 C (5.0% 이상): 고점 대비 1.8% 하락 시 즉시 매도
+            elif max_profit_rate_pct >= 5.0:
+                if drop_from_peak > profit_threshold * 1.8:
+                    return True, f"🚀 [S-TS-5.0] 익절 C (낙폭 {profit_threshold*1.8:,.1f}% 초과)", True
 
             # ---------------------------------------------------------
             # [정비 2] 40 지지선 및 S+급 보호 (상향->평행->상향 로직)

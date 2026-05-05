@@ -920,7 +920,8 @@ async def emergency_monitor_task(app):
                 # 비상 루프는 유예(age=99) 없이 즉시 판단
                 is_sell, reason, is_urgent = await strategy.check_sell_signal(
                     exchange, df, symbol, inv_item.get('avg_price', 0), 
-                    inv_item.get('max_price', curr_p), 'S', 99, 'AUTO', curr_p, inv_item.get('buy_type', 1)
+                    inv_item.get('max_price', curr_p), 'S', 99, 'AUTO', curr_p, inv_item.get('buy_type', 1),
+                    avg_price=inv_item.get('avg_price', 0)
                 )
 
                 if is_sell:
@@ -1133,7 +1134,8 @@ async def sell_monitor_task(app):
                     symbol_inventory_age=this_elapsed_bars,
                     status=status, 
                     realtime_p=realtime_price, 
-                    buy_type=buy_type
+                    buy_type=buy_type,
+                    avg_price=this_avg_p
                 )
                 
                 # 리턴값 분해 (is_sell, reason, [urgent])
@@ -1714,7 +1716,8 @@ async def process_report_logic(update, context, query=None):
                 symbol_inventory_age=this_elapsed_bars,
                 status=status,
                 realtime_p=this_curr_p,
-                buy_type=this_buy_type
+                buy_type=this_buy_type,
+                avg_price=this_avg_p
             )
             # [추가: 3번 타입 방어 로직 - 정기 리포트와 동일하게 맞춤] #####
             
