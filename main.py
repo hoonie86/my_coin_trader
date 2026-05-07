@@ -98,6 +98,17 @@ def save_inventory(symbol, avg_price, quantity, grade="A", buy_type=1, purchase_
             existing_data = inv.get(symbol, {})
             current_max = existing_data.get('max_price', float(avg_price)) # 고점 기록이 없으면 평단가로 초기화
     
+            # // ========== [누적 합산 및 가중 평균 계산 로직 시작] ========== //
+            old_qty = float(existing_data.get('total_quantity', 0))
+            old_avg = float(existing_data.get('avg_price', 0))
+            
+            if old_qty > 0 and old_avg > 0:
+                new_total_qty = old_qty + float(quantity)
+                new_avg_price = ((old_qty * old_avg) + (float(quantity) * float(avg_price))) / new_total_qty
+            else:
+                new_total_qty = float(quantity)
+                new_avg_price = float(avg_price)
+    
             inv[symbol] = {
                 **existing_data,                    # 기존의 profit_deadline, max_profit_seen 등 유지
                 "avg_price": float(avg_price),      
@@ -173,34 +184,51 @@ async def safe_market_buy(symbol, cost, grade="A", buy_type=1):
             )
                         
             order = await asyncio.to_thread(exchange.create_limit_buy_order, symbol, amount, target_p)
-            logger.info(f"⏳ [{i+1}차 낚시] {symbol} | 가격: {target_p:,.2f} | 120초 대기 시작...")
-            await asyncio.sleep(120) # 120초 대기
+            wait_attempts = 0
+            max_extensions = 2 
+            last_filled = 0.0
             
-            os_status = await asyncio.to_thread(exchange.fetch_order, order['id'], symbol)
-            if os_status['status'] == 'closed':
-                save_inventory(symbol, target_p, amount, grade, buy_type)
-                return True, f"{i+1}차 지정가 체결 완료"
-            
-            ###### [수정 시작] 취소 시 에러 방지 및 찰나의 체결 확인 로직 (알람 누락 해결) ######
-            # 미체결 시 취소 로직 (Race Condition 방지)
+            while wait_attempts <= max_extensions:
+                logger.info(f"⏳ [{i+1}차 낚시 - {wait_attempts+1}단계] {symbol} | 가격: {target_p:,.2f} | 120초 대기...")
+                await asyncio.sleep(120)
+                
+                os_status = await asyncio.to_thread(exchange.fetch_order, order['id'], symbol)
+                current_filled = float(os_status.get('filled', 0))
+                
+                if os_status['status'] == 'closed':
+                    save_inventory(symbol, target_p, amount, grade, buy_type)
+                    return True, f"{i+1}차 지정가 체결 완료"
+                
+                if current_filled > last_filled:
+                    wait_attempts += 1
+                    last_filled = current_filled
+                    logger.info(f"💉 [입질감지] {symbol} 부분 체결 중 ({current_filled}/{amount}) - 대기 시간 {wait_attempts}회차 연장")
+                else:
+                    break
+
             try:
                 await asyncio.to_thread(exchange.cancel_order, order['id'], symbol, params={'side': 'buy'})
             except Exception as cancel_e:
-                logger.warning(f"⚠️ 주문 취소 실패 (찰나의 순간 체결완료 가능성): {cancel_e}")
+                logger.warning(f"⚠️ 주문 취소 실패 (찰나의 체결완료 가능성): {cancel_e}")
             
-            # 취소 시도 후 최종 상태 재확인 (여기서 알람 누락이 발생했음)
             try:
                 final_status = await asyncio.to_thread(exchange.fetch_order, order['id'], symbol)
-                if final_status['filled'] > 0:
-                    save_inventory(symbol, target_p, final_status['filled'], grade, buy_type)
-                    return True, "부분 체결 혹은 찰나의 전체 체결 완료"
+                final_filled = float(final_status.get('filled', 0))
             except:
-                # 재조회 실패 시 기존 os_status 의존
-                if os_status['filled'] > 0:
-                    save_inventory(symbol, target_p, os_status['filled'], grade, buy_type)
-                    return True, "부분 체결 완료"
-            
-            logger.info(f"🚫 {i+1}차 입질 없음, 가격 미세 상향 시도")
+                final_filled = current_filled
+
+            if final_filled > 0:
+                save_inventory(symbol, target_p, final_filled, grade, buy_type)
+                safe_cost -= (final_filled * target_p)
+                logger.info(f"⚠️ {i+1}차 부분 체결 종료: {final_filled}개 확보 / 남은 예산: {safe_cost:,.0f}원")
+                
+                if safe_cost < 5000:
+                    return True, "부분 체결을 통해 목표 금액 대부분 확보 완료"
+                
+                logger.info(f"🚫 남은 {safe_cost:,.0f}원 재시도를 위해 가격 상향")
+                continue
+            else:
+                logger.info(f"🚫 {i+1}차 입질 없음, 가격 미세 상향 시도")
 
         return False, "중간가까지 대기했으나 미체결(포기)"
     except Exception as e:
@@ -210,7 +238,6 @@ async def safe_market_buy(symbol, cost, grade="A", buy_type=1):
 
 async def get_my_assets():
     """[수익률 해결] inventory.json(로컬)을 API보다 우선 참조하여 -100% 원천 차단"""
-    # 변수 미정의 오류 방지를 위해 최상단 선언
     inv, assets, my_assets = {}, {}, {}
     try:
         # 빗썸 Private API 필수 규격 적용
@@ -260,21 +287,39 @@ async def get_my_assets():
                 if symbol in inv:
                     del inv[symbol]
                     is_inv_changed = True  # 파일 물리 저장 트리거 작동
-                continue  # 아래 평단가 계산 및 my_assets 추가 로직을 완전히 스킵
-            # 1단계: 거래소 API 평단가 먼저 시도 (추가매수 반영 및 최신 데이터 우선)
+                continue
+
+            # // ========== [추가 매수 자동 감지 및 보호 로직 시작] ========== //
+            local_item = inv.get(symbol) or {}
+            local_qty = float(local_item.get('total_quantity', 0))
+            
+            # 거래소 수량이 로컬보다 1% 이상 많다면 사용자가 수기로 샀다고 판단
+            is_manual_bought = (total > local_qty * 1.01) and (local_qty > 0)
+            
+            # 1단계: 거래소 API 평단가 먼저 시도
             coin_info = raw_info.get(coin, {})
             try:
                 avg_p = float(
                     coin_info.get('avg_buy_price') or
                     coin_info.get('avg_buy_price_all') or
-                    coin_info.get('average_price') or
-                    0
+                    coin_info.get('average_price') or 0
                 )
+                
+                # 수기 매수가 감지되었거나 평단가가 0인 경우 거래소 데이터로 강제 동기화
+                if is_manual_bought or (local_item and float(local_item.get('avg_price', 0)) == 0):
+                    if avg_p > 0:
+                        logger.info(f"🔄 [자동동기화] {symbol} 수기 매수 감지 -> 평단가 {avg_p:,.0f}원으로 갱신")
+                        local_item['avg_price'] = avg_p
+                        local_item['purchase_price'] = avg_p
+                        local_item['total_quantity'] = total
+                        local_item['last_update'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        inv[symbol] = local_item
+                        is_inv_changed = True
             except:
                 avg_p = 0
+            # // ========== [추가 매수 자동 감지 및 보호 로직 끝] ========== //
 
             # 2단계: 거래소 데이터가 없거나 0일 때만 로컬 인벤토리(inventory.json) 참조
-            local_item = inv.get(symbol) or inv.get(coin) or {}
             if avg_p == 0:
                 local_avg = float(local_item.get('purchase_price') or local_item.get('avg_price') or local_item.get('avg_buy_price') or 0)
                 
@@ -284,13 +329,6 @@ async def get_my_assets():
                     if buy_time_str:
                         buy_time = datetime.strptime(buy_time_str, '%Y-%m-%d %H:%M:%S')
                         age_minutes = (datetime.now() - buy_time).total_seconds() / 60
-                        
-                        # # [5번] 10분 초과 시 시간을 현재로 리셋하여 보정 엔진 강제 활성화
-                        # if age_minutes > 10:
-                        #     local_item['purchase_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                        #     age_minutes = 0
-                        #     inv[symbol] = local_item
-                        #     is_inv_changed = True
                             
                         # 10분 이내인데 1% 이상 괴리가 나면 '기록 오류'로 간주하여 방어
                         if age_minutes < 10:
@@ -312,7 +350,6 @@ async def get_my_assets():
             # [교정 3순위] 그래도 0이면 -100% 방지를 위해 '마지막 거래가' 참조
             if avg_p == 0:
                 try:
-                    # xcoin_last_... 필드나 틱커 데이터 활용
                     avg_p = float(raw_info.get(f'xcoin_last_{coin.lower()}', 0))
                 except:
                     avg_p = 0
@@ -320,10 +357,9 @@ async def get_my_assets():
             assets[symbol] = {
                 'avg_price': avg_p,
                 'total': total,
-                # 수정: purchase_time으로 키 명칭 통일
                 'purchase_time': local_item.get('purchase_time') or local_item.get('buy_time') or datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'grade': local_item.get('grade', 'B'),    # 등급 추가
-                'buy_type': local_item.get('buy_type', 1) # 타입 추가
+                'grade': local_item.get('grade', 'B'),    
+                'buy_type': local_item.get('buy_type', 1) 
             }
         if is_inv_changed:
             try:
@@ -334,7 +370,7 @@ async def get_my_assets():
         return assets
     except Exception as e:
         logger.error(f"❌ Asset Fetch Error 상세 : {e}")
-        return {} # 에러 시 빈 딕셔너리 반환하여 루프 중단 방지
+        return {}
 
 
 async def get_buy_cost():
@@ -960,7 +996,7 @@ async def emergency_monitor_task(app):
             await asyncio.sleep(1)
 
 async def sell_monitor_task(app):
-    """[최종 복구] 기존 유예/취소/0순위 로직 완전 유지 + 수익률 & 야간 모드 보정"""
+    """[최종 복구] 기존 유예/취소/0순위 로직 완전 유지 + 수익률 & 야간 모드 보정 + 급매도 방어"""
     global last_report_time, sell_mute_status, pending_approvals, profit_alerts, emergency_mode
     while True:
         try:
@@ -988,13 +1024,13 @@ async def sell_monitor_task(app):
                     continue
 
                 # 인벤토리 데이터 미리 로드 (평단가 보충 및 등급 확인용)
-                # 인벤토리 데이터 미리 로드
                 inv_item = inv_data.get(symbol) or inv_data.get(symbol.split('/')[0]) or {}
                 
                 # [데이터 출처 추적]
                 p_inv = inv_item.get('price') or inv_item.get('purchase_price') or inv_item.get('avg_price')
                 p_exch = data.get('avg_price')
                 buy_type=inv_item.get('buy_type', 1)
+                
                 # 1순위: 우리 인벤토리 기록, 2순위: 거래소 데이터
                 this_avg_p = float(p_inv or p_exch or 0)
                 this_qty = float(data.get('total') or inv_item.get('total_quantity') or 0)
@@ -1008,16 +1044,23 @@ async def sell_monitor_task(app):
                 # [분석용 로그] 사자마자 팔리는 원인을 잡기 위해 무조건 출력
                 print(f"🔍 [MONITOR] {symbol} | 현재가: {curr_p_val:,.0f} | 평단가: {this_avg_p:,.0f} (기록:{p_inv_val:.2f} / 거래소:{p_exch_val:.2f})")
 
+                # // ========== [수정/갱신 직후 급매도 방지 로직 시작] ========== //
+                last_upd_str = inv_item.get('last_update')
+                is_protected = False
+                if last_upd_str:
+                    last_upd_dt = datetime.strptime(last_upd_str, '%Y-%m-%d %H:%M:%S')
+                    # 평단가 변경 후 60초가 지나지 않았다면 보호
+                    if (datetime.now() - last_upd_dt).total_seconds() < 60:
+                        is_protected = True
+
                 if this_avg_p <= 0:
-                    # ======== [수정: 강제 0% 보정 제거 및 감시 스킵] ========
                     logger.warning(f"⚠️ [WARN] {symbol} 평단가 조회 실패 -> 0% 수익률 오류 방지를 위해 감시 스킵")
                     continue
+                # // ========== [수정/갱신 직후 급매도 방지 로직 끝] ========== //
 
                 # 수익률 계산 (보정된 평단가 사용)
                 this_profit = ((this_curr_p - this_avg_p) / this_avg_p * 100) if this_avg_p > 0 else 0
                 ######### [수정: 루프 주기 단축 결정] #########
-                # 종목들을 훑다가 한 놈이라도 급등(10%↑) 중이면 
-                # 이 루프가 끝난 뒤 잠드는 시간을 30초로 줄입니다.
                 # 인벤토리에서 기존 고점 가져오기 (없으면 현재가로 시작)
                 current_max_p = float(inv_item.get('max_price', this_curr_p))
                 
@@ -1033,7 +1076,7 @@ async def sell_monitor_task(app):
                     except Exception as e:
                         logger.error(f"Max Price Save Error: {e}")
                 if this_profit >= 10.0 or emergency_mode.get(symbol, False):
-                    current_loop_sleep = 10      # 긴급 모드는 5초마다 조회
+                    current_loop_sleep = 10      # 긴급 모드는 10초마다 조회
 
                 this_profit_krw = (this_curr_p - this_avg_p) * this_qty
 
@@ -1070,34 +1113,13 @@ async def sell_monitor_task(app):
                             f"현재가: {this_curr_p:,.0f}원",
                             reply_markup=kb
                         )
-                #if emergency_mode.get(symbol, 0) >= 1:
-                #    report_line = f"🚨 [{this_grade} | 긴급] {symbol.split('/')[0]:<6} | {this_curr_p:,.0f}원 | {this_profit:+.2f}%({this_profit_krw:+,.0f}원) | 비상 대기 중"
-                #    report_lines.append({
-                #        'text': report_line,
-                #        'profit': this_profit,
-                #        'button': InlineKeyboardButton(f"🔍 {symbol.split('/')[0]}", callback_data=f"manage_asset:{symbol}")
-                #    })
-                #    continue
 
-                # 2단계: 차트 데이터 및 익절 엔진 (기존 로직 보존)
+                # 2단계: 차트 데이터 및 익절 엔진
                 ohlcv = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '30m', limit=100)
                 df = pd.DataFrame(ohlcv, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
                 ma40_line = df['close'].rolling(40).mean().iloc[-1]
 
                 tp_executed = False
-                # # [기존 익절 로직 보존]
-                # if this_profit >= 13.0:
-                #     balance = await asyncio.to_thread(exchange.fetch_balance)
-                #     base = symbol.split('/')[0]
-                #     free_qty = float(balance['free'].get(base, 0))
-                #     sell_qty = min(this_qty, free_qty)
-                #     if sell_qty <= 0:
-                #         logger.info(f"매도 건너뜀(잔고 부족): {symbol}")
-                #     else:
-                #         await asyncio.to_thread(exchange.create_market_sell_order, symbol, sell_qty)
-                #         await app.bot.send_message(config.CHAT_ID, f"🎯 [목표익절] {symbol} 13% 전량 매도")
-                #         tp_executed = True
-                # elif this_profit >= 8.0 and this_curr_p < ma40_line:
                 if this_profit >= 8.0 and this_curr_p < ma40_line:    
                     balance = await asyncio.to_thread(exchange.fetch_balance)
                     base = symbol.split('/')[0]
@@ -1143,9 +1165,6 @@ async def sell_monitor_task(app):
                 sell_reason = res[1]
                 is_urgent = res[2] if len(res) > 2 else False
 
-                ###### [수정 시작] 긴급 1분 / 일반 5분 유예 적용 및 중복 선언 제거 ######
-                # 0순위 급등/절대익절 판정
-                # is_sell_final = (status == 'KEEP' and is_sell_signal and "0순위" in sell_reason)
                 is_sell_final = False
                 is_relay_updated = False 
                 is_emergency = emergency_mode.get(symbol, 0) >= 1
@@ -1155,9 +1174,8 @@ async def sell_monitor_task(app):
                 is_buy_now, buy_reason_now, _, _ = await strategy.check_buy_signal(exchange, df, symbol, w_list)
                 is_t2_signal_alive = (is_buy_now and "TYPE2" in buy_reason_now)
                 
-                # 1. 수익 릴레이 (매도 유예 중이면 간섭 완전 차단)
+                # 1. 수익 릴레이
                 if symbol not in pending_approvals:
-                    # 긴급 종목이거나 (일반 종목 중 비긴급+매도신호없음) 일 때 릴레이 작동
                     can_relay = (this_profit >= 1.3) and (is_emergency or (not is_urgent and not is_sell_signal))
                     
                     if can_relay:
@@ -1182,7 +1200,6 @@ async def sell_monitor_task(app):
                     is_sell_final = True
                     prefix = "🚨 [긴급익절]" if is_emergency else "⏰ [일반익절]"
                     sell_reason = f"{prefix} 수익 경신 멈춤({relay_min}분 정체)으로 릴레이 만료"
-                    #sell_reason = f"⏰ [익절] 수익 경신 멈춤({relay_min}분 정체)으로 릴레이 만료"
                     del inv_item['profit_deadline']
                     inv_data[symbol] = inv_item
                     is_relay_updated = True
@@ -1197,22 +1214,19 @@ async def sell_monitor_task(app):
 
                 # 릴레이 만료 시 즉각 매도 집행 및 루프 스킵
                 if is_sell_final and status != 'KEEP':
+                    if is_protected:
+                        logger.info(f"🛡️ [보호작동] {symbol} 평단가 갱신 직후 수익 릴레이 매도 시그널 무시 (60초 보호 중)")
+                        continue
                     await execute_sell(app, symbol, sell_reason)
                     if symbol in pending_approvals: del pending_approvals[symbol]
                     continue
                 
-                # 비상 모드인 종목은 아래의 '일반 유예(5분)' 로직을 타지 않도록 최종 블록
-                # if is_emergency:
-                #     continue
-
-                # 2. 매도 유예 관리: [2대 원칙 적용]
+                # 2. 매도 유예 관리
                 if is_sell_signal and status != 'KEEP':
                     if is_urgent:
                         is_sell_final = True
                     elif symbol not in pending_approvals:
-                        # [가드 추가] 긴급 종목은 5분 일반 유예를 주지 않고 리포트 작성으로 바로 넘김
                         if not is_emergency: 
-                            # [원칙 1] 이미 명단에 있으면 Pass, 없을 때만 5분 번호표 신규 발급
                             wait_limit = 5 
                             pending_approvals[symbol] = {
                                 'status': 'NOTIFIED',
@@ -1228,23 +1242,19 @@ async def sell_monitor_task(app):
                                 f"현재수익률: {this_profit:+.2f}% | 5분 뒤 자동 매도 판단", reply_markup=kb
                             )
 
-                # 매도 신호 유무 무관, 유예 중인 놈은 상시 감시
                 if symbol in pending_approvals:
                     wait_data = pending_approvals[symbol]
                     elapsed_min = (datetime.now() - wait_data['start_time']).total_seconds() / 60
                     current_limit = wait_data.get('wait_limit', 10)
                     
                     if elapsed_min >= current_limit:
-                        # [원칙 2] 10분 정각 만료 시점에만 성적 검사
                         if this_profit > wait_data.get('entry_profit', 0):
-                            # 개선 시: 보류하고 10분 추가 연장
                             wait_data['start_time'] = datetime.now()
                             wait_data['entry_profit'] = this_profit
                             pending_approvals[symbol] = wait_data
                             await app.bot.send_message(config.CHAT_ID, f"✅ [유예 연장] {symbol} 반등 성공({this_profit:+.2f}%)으로 10분 추가")
                             is_sell_final = False
                         else:
-                            # 하락 또는 동일 시: 봐주지 않고 즉시 매도
                             is_sell_final = True
                             sell_reason = f"🚨 [유예만료] 반등 실패 및 매도 집행 ({this_profit:+.2f}%)"
 
@@ -1262,7 +1272,6 @@ async def sell_monitor_task(app):
                     )
                     mode_icon = " 🤖" if status == 'AUTO' else ""
 
-                # 직관적인 아이콘 우선순위 (초정밀 > 하락유예 > 수익유예 > 일반)
                 if is_emergency:
                     mode_str, report_color = "긴급", "🚨"
                 elif is_sell_pending:
@@ -1279,45 +1288,45 @@ async def sell_monitor_task(app):
                     'button': InlineKeyboardButton(f"🔍 {symbol.split('/')[0]}", callback_data=f"manage_asset:{symbol}")
                 })
 
-                # 4. 최종 매도 집행 (불필요한 중복 알림 코드 제거 완료)
+                # 4. 최종 매도 집행
                 if is_sell_final and status != 'KEEP':
+                    # // ========== [최종 급매도 방어] ========== //
+                    if is_protected:
+                        logger.info(f"🛡️ [보호작동] {symbol} 평단가 갱신 직후 매도 시그널 무시 (60초 보호 중)")
+                        continue
+                        
                     await execute_sell(app, symbol, sell_reason)
                     if symbol in pending_approvals: del pending_approvals[symbol]
                     continue
                 elif not is_sell_signal:
-                    pass # 신호가 해제되어도 사용자의 [원칙 2]에 따라 만료 시점까지 대기함
+                    pass 
+
             # 정기 리포트 발송 (기존 로직 유지)
             if (datetime.now() - last_report_time).total_seconds() >= config.REPORT_INTERVAL:
                 if report_lines:
-                    ##### [수정/추가] 1. 상세 목록 수익률 내림차순 정렬 #####
                     report_lines.sort(key=lambda x: x['profit'], reverse=True)
                     
-                    # 텍스트와 버튼 리스트 재구성
                     final_text_lines = [item['text'] for item in report_lines]
                     sorted_buttons = [item['button'] for item in report_lines]
 
-                    ##### [수정/추가] 2. 요약란 집계 순서 변경: 초 > 파 > 노 > 빨 #####
                     summary = (
                         f"🟢:{sum(1 for l in final_text_lines if '🟢' in l)} | "
                         f"🔵:{sum(1 for l in final_text_lines if '🔵' in l)} | "
                         f"🟡:{sum(1 for l in final_text_lines if '🟡' in l)} | "
                         f"🔴:{sum(1 for l in final_text_lines if '🔴' in l)}"
                     )
-                    # 🚨 아이콘이 있는 경우에만 우측에 별도 추가 표기
                     urgent_count = sum(1 for l in final_text_lines if '🚨' in l)
                     if urgent_count > 0:
                         summary += f" | 🚨:{urgent_count}"
-                    # 1. 수동 AUTO 상태 판정 (config 참조)
+                        
                     is_manual_auto = (getattr(config, 'buy_mute_mode', 'MANUAL') == 'AUTO')
                     
-                    # 2. 태그 결정
                     mode_tag = ""
                     if is_night:
                         mode_tag = " (야간 AUTO)"
                     elif is_manual_auto:
                         mode_tag = " (AUTO)"
 
-                    # 3. 메시지 조립
                     msg_text = (
                         f"📊 [정기 리포트] ({now_str}){mode_tag}\n"
                         f"{summary}\n"
@@ -1333,11 +1342,11 @@ async def sell_monitor_task(app):
                     await app.bot.send_message(config.CHAT_ID, msg_text, reply_markup=InlineKeyboardMarkup(final_rows))
                 last_report_time = datetime.now()
 
-            await asyncio.sleep(current_loop_sleep)  # [변경] 매도 감시 주기 current_loop_sleep
+            await asyncio.sleep(current_loop_sleep)  
         except Exception as e:
             import traceback
             logger.error(f"Sell Monitor Error: {e}\n{traceback.format_exc()}")
-            await asyncio.sleep(60)  # [변경] 에러 발생 시에도 1분 대기
+            await asyncio.sleep(60)
 
 # main.py 상단 적당한 위치
 def save_trade_log(symbol, grade, buy_p, sell_p, profit, reason):
