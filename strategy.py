@@ -471,24 +471,29 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     
     # //======== [2026-04-16 수정: 횡보(0) 3개당 하락 1회 인정 로직 적용] ========//
     def get_wave_setup(df_local, neg_threshold):
-        ###### [수정 시작: 파동 계산 시야 확장 (20봉 -> 50봉)] ######
         if len(df_local) < 60: return False, "데이터부족"
         ma5_slopes = [df_local['ma5'].iloc[i] - df_local['ma5'].iloc[i-1] for i in range(len(df_local)-50, len(df_local))]
         signs = [1 if s > 0 else (-1 if s < 0 else 0) for s in ma5_slopes]
         
-        found_plus3_anchor, neg_streak, plus_streak, zero_count = False, 0, 0, 0
-        plus_fail_count = 0
+        closes = df_local['close'].values[-50:]
+        opens = df_local['open'].values[-50:]
+        ma5_vals = df_local['ma5'].values[-50:]
         
-        for s in signs:
+        found_plus3_anchor, neg_streak, plus_streak, zero_count = False, 0, 0, 0
+        plus_fail_count, bullish_above_ma5_count = 0, 0
+        
+        for i, s in enumerate(signs):
             if s == 1:
                 if found_plus3_anchor and neg_streak > 0:
                     found_plus3_anchor = False
                     plus_streak = 1
                     plus_fail_count = 0
+                    bullish_above_ma5_count = 0
                 else:
                     plus_streak += 1
                     if plus_streak >= 3: found_plus3_anchor = True
                 neg_streak, zero_count = 0, 0
+                bullish_above_ma5_count = 0
             elif s <= 0:
                 if not found_plus3_anchor:
                     plus_fail_count += 1
@@ -504,21 +509,30 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                         if zero_count >= 2:
                             neg_streak += 1
                             zero_count = 0
+                    
+                    if closes[i] > opens[i] and closes[i] > ma5_vals[i]:
+                        bullish_above_ma5_count += 1
+
+        if found_plus3_anchor and neg_streak > 0:
+            if bullish_above_ma5_count >= 3:
+                neg_streak = max(0, neg_streak - 2)
+            elif bullish_above_ma5_count >= 1:
+                neg_streak = max(0, neg_streak - 1)
+
         if not found_plus3_anchor:
-            return False, "3상미달" # neg_threshold를 상 앞에 붙이던 오류 제거
+            return False, "3상미달" 
         if neg_streak < neg_threshold:
-        # 현재 하락 횟수와 목표 횟수를 명확히 표기
             return False, f"3상{neg_streak}하(목표:{neg_threshold}하)"
         return True, f"3상{neg_streak}하"
 
     # //======== [2026-04-24 수정: 중복방지 페널티 및 T2 전용 14선 가드] ========//
-    recent_25 = df.iloc[-26:-1] # 구간 체크
-    recent_10 = df.iloc[-11:-1] # 단일 캔들 급등, 음봉 압도
+    recent_25 = df.iloc[-26:-1] # 단일 캔들 급등, 구간 체크
+    recent_10 = df.iloc[-11:-1] # 음봉 압도
     win_min, win_max = recent_25['low'].min(), recent_25['high'].max()
     vol_gap = (win_max - win_min) / win_min * 100
     
-    # 1. 최근 10봉 이내의 각 봉별 최대 변동폭(%) 계산 후 그중 최댓값 추출
-    max_beam_pct = ((recent_10['high'] - recent_10['low']) / recent_10['low'] * 100).max()
+    # 1. 최근 25봉 이내의 각 봉별 최대 변동폭(%) 계산 후 그중 최댓값 추출
+    max_beam_pct = ((recent_25['high'] - recent_25['low']) / recent_25['low'] * 100).max()
 
     # 2. 변동폭 구간에 따른 차등 페널티 부여
     if max_beam_pct >= 3.0:
@@ -574,7 +588,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     disparity_40_line = (curr_price / ma40_val) * 100 if ma40_val > 0 else 0
     is_trend_alive = disparity_40_line >= 98.0 
 
-    is_not_doji_bull = (curr_price > float(curr['open']))
+    is_not_doji_bull = (curr_price >= float(curr['open']))
     p_open, p_close = float(prev['open']), float(prev['close'])
     c_open, c_high = float(curr['open']), float(curr['high'])
 
@@ -844,9 +858,17 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     # 2. 현재 봉(마지막 인덱스)은 반드시 14선 위(+)여야 함
     is_dynamic_entry_ok = last_4_status.is_monotonic_increasing and last_4_status.iloc[-1]
 
+    gap_90_185 = abs(ma90_val - ma185_val) / ma185_val * 100 if ma185_val > 0 else 999
+    prev_gap_90_185 = abs(prev_ma90 - prev_ma185) / prev_ma185 * 100 if prev_ma185 > 0 else 999
+
     # 4. 장기 이평 대전제 (Type 2, 4 전용)
     ma185_slope_val = float(curr['ma185']) - float(prev['ma185']) if not pd.isna(curr['ma185']) and not pd.isna(prev['ma185']) else 0
-    is_trend_safe = float(curr['ma90']) > float(curr['ma185'])
+    if ma90_val < ma185_val:
+        # 역배열: 90선-185선 이격이 수렴 중(<=)이고, 최소한 40선은 185선 위에 있어야 함
+        is_trend_safe = (gap_90_185 <= prev_gap_90_185) and (ma40_val > ma185_val)
+    else:
+        # 정배열: 90선-185선 이격이 발산 중(>=)이고, 최소한 40선은 185선 위에 있어야 함
+        is_trend_safe = (gap_90_185 >= prev_gap_90_185) and (ma40_val > ma185_val)
     
     is_was_descending = True  # 2일간 지속 하락 여부
     is_now_stabilized = True  # 5시간 전부터 안착 여부
@@ -977,7 +999,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                             'set_time': datetime.now().strftime('%H:%M:%S')
                         }
                         # //======================================================================================//
-                        return True, f"💎 [TYPE3-S+] {target_neg_t3}회하락 후 극대이격 반등", "S+", data_dict
+                        return True, f"💎 [TYPE3-S+] {target_neg_t3}회 하락 후 극대이격 반등", "S+", data_dict
                     # //====================================================================//
                 else:
                     # //========= [수정: 타입 1 및 타입 3 파동 탈락 로그 통합] =========//
@@ -1097,9 +1119,6 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             elif not is_gap_40_safe: t2_fail_reason = f"14/40이격과다({gap_14_40_pct:.2f}%)"
     ma14_slope_v = ((ma14_val - prev_ma14) / prev_ma14) * 100 if prev_ma14 > 0 else 0
     is_true_trigger_t2 = (curr_price >= ma14_val * 0.98) and (curr_price <= ma14_val * 1.03) and (ma14_slope_v >= -0.06)
-    
-    gap_90_185 = abs(ma90_val - ma185_val) / ma185_val * 100 if ma185_val > 0 else 999
-    prev_gap_90_185 = abs(prev_ma90 - prev_ma185) / prev_ma185 * 100 if prev_ma185 > 0 else 999
     is_death_conv = False
     if ma90_val < ma185_val:
         # 90선이 아래일 때: 거리가 벌어지는(발산) '나쁜 상황' + 1.5% 이내면 차단
@@ -1228,35 +1247,47 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     # // [수정: TYPE 4 로직 독립화 - 기존 엔진 활용 버전] //
     is_t4_safe = (vol_sectional <= dynamic_vol_limit)
     
-    # --- [통행증 업그레이드] ---
-    # 기존: ma40_val > ma185_val (정배열만)
-    # 수정: 정배열이거나, 혹은 역배열이라도 사용자님이 말한 '4대 수렴 기준' 만족 시 통과
-    is_t4_base_alignment = (ma40_val > ma185_val)
-    disparity_185_40 = abs(ma40_val - ma185_val) / ma185_val if ma185_val > 0 else 0
-    
-    is_t4_hybrid_alignment = (
-        (not is_t4_base_alignment) and 
-        (disparity_185_40 <= 0.015) and        # [기준1: 1.5% 이격]
-        (ma40_up_count >= 5) and                 # [기준2,3: 기울기 개선]
-        (ma40_slope_common >= -0.02) and           # [기준4: 기울기 마지노선]
-        ###### [추가] 타입4 독립 방어: 185일선 품질 공통 변수 강제 결합 ######
-        (ma185_up_count >= 5) and
-        (ma185_intensity_ok.iloc[-1]) and
+    is_trend_quality_ok = (
+        (ma40_up_count >= 5) and 
+        (ma40_slope_common >= -0.02) and 
+        (ma185_up_count >= 5) and 
+        (ma185_intensity_ok.iloc[-1]) and 
         (slope_rate >= -0.01)
     )
-    is_t4_alignment = is_t4_base_alignment or is_t4_hybrid_alignment
-    # ---------------------------
+
+    gap_90_185_curr = abs(ma90_val - ma185_val)
+    gap_90_185_prev = abs(prev_ma90 - prev_ma185)
+    
+    if ma90_val < ma185_val:
+        is_alignment_flow_ok = (gap_90_185_curr <= gap_90_185_prev)
+    else:
+        is_alignment_flow_ok = (gap_90_185_curr >= gap_90_185_prev)
+
+    is_t24_alignment = is_trend_quality_ok and is_alignment_flow_ok and (ma40_val > ma185_val)
 
     reasons_t4 = []
     if not is_trend_safe: reasons_t4.append("장기이평역배열또는하락(T4)")
     if ma90_up_count < 5: reasons_t4.append(f"90선추세하락(5미만:{ma90_up_count})")
     if not is_volume_quality_ok: reasons_t4.append(f"매집수급미달(양봉부족.(양봉 {bull_count}개))")
-    #if not is_dynamic_entry_ok: reasons_t4.append("동적진입(14선)실패")
-    #if not is_slide_setup_t24: reasons_t4.append(f"파동미달({wave_msg_t24})")
+    if not is_slide_setup_t24: reasons_t4.append(f"파동미달({wave_msg_t24})")
     if not is_trend_alive: reasons_t4.append(f"40선이격사망({disparity_40_line:.2f}%)")
     if not is_not_doji_bull: reasons_t4.append("음봉/도지탈락")
     if not is_t4_safe: reasons_t4.append(f"변동성초과({vol_sectional:.1f}%)")
-    if not is_t4_alignment: reasons_t4.append(f"배열/수렴미달")
+    if not is_t24_alignment:
+        if not (ma40_val > ma185_val):
+            reasons_t4.append("배열대전제탈락(40선<185선)")
+        elif not is_alignment_flow_ok:
+            flow_msg = "수렴실패" if ma90_val < ma185_val else "발산실패"
+            reasons_t4.append(f"90선흐름미달({flow_msg}, 이전:{gap_90_185_prev:.2f}%->현재:{gap_90_185_curr:.2f}%)")
+        elif not is_trend_quality_ok:
+            q_fail = []
+            if ma40_up_count < 5: q_fail.append(f"40선상승({ma40_up_count}/5)")
+            if ma40_slope_common < -0.02: q_fail.append(f"40기울기({ma40_slope_common:.3f})")
+            if ma185_up_count < 5: q_fail.append(f"185상승({ma185_up_count}/5)")
+            if not ma185_intensity_ok.iloc[-1]: q_fail.append("185선강도")
+            if slope_rate < -0.01: q_fail.append(f"185기울기({slope_rate:.3f})")
+            reasons_t4.append(f"추세품질미달({','.join(q_fail)})")
+    # //========================================================================//
     if gap_5_40_pct > 4.0: reasons_t4.append(f"5/40이격과다({gap_5_40_pct:.1f}%)")
     if not (gc_count_t1 == 0): reasons_t4.append(f"GC이력({gc_count_t1}회)")
     
@@ -1347,13 +1378,8 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         vol_sectional = ((df['high'].tail(64).max() - df['low'].tail(64).min()) / df['low'].tail(64).min()) * 100
         is_type2_safe = (vol_sectional <= dynamic_vol_limit) and is_fresh
 
-        # [C] 최종 판정 및 요청하신 키워드 로그 반영
-        # ======== [2026-04-11 수정: 기본(질서) 필수화 및 터치(has_down_touch) 옵션화] ========
-        is_foundation_ok = (ma185_val < ma90_val < ma40_val)
-
-        # 1. 기존의 빡빡한 AND 체인에서 'has_down_touch'만 제거하고, 필수 기본인 'is_foundation_ok'를 넣습니다.
-        if is_foundation_ok and is_type2_safe and is_trend_stable and has_t1_history_clean and (ma90_up_count >= 5) and (ma185_up_count >= 5) and is_185_landing_stable and not is_death_conv and is_trend_safe and is_volume_quality_ok and is_slide_setup and is_trend_alive and is_not_doji_bull:
-        # //======================================================================================//
+        if is_t24_alignment and is_type2_safe and is_trend_stable and has_t1_history_clean and (ma90_up_count >= 5) and (ma185_up_count >= 5) and is_185_landing_stable and not is_death_conv and is_trend_safe and is_volume_quality_ok and is_slide_setup and is_trend_alive and is_not_doji_bull:
+        # //================================================================//
             gc_idx = valid_gc_idx
             d_cnt = sum(1 for k in range(gc_idx-96, gc_idx-10) if df['ma185'].iloc[k] <= df['ma185'].iloc[k-1]) if gc_idx != -1 else 0
             height_pct = (curr_price - ma185_val) / ma185_val * 100
@@ -1378,7 +1404,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                         # //======== [2026-04-30 수정: TYPE 2 실시간 가격 박제] ========//
                         s_plus_tracker[symbol] = {'index': len(df), 'close': curr_price, 'high': float(curr['high'])}
                         # //========================================================//
-                        return True, f"💎 [TYPE2-S+] 3회하락 후 첫 타점 탈환", grade, data_dict
+                        return True, f"💎 [TYPE2-S+] {target_neg_t24}회하락 후 첫 타점 탈환", grade, data_dict
                         
                 logger.info(f"DEBUG: {symbol} | [TYPE2] 탈락 이유: 회복트리거부족(또는 윗꼬리과다)")
                 # //========================================================================//
@@ -1392,7 +1418,20 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 reasons.append(f"안전가드({', '.join(safe_detail)})")
             
             # 3. 기본 질서가 무너졌을 때의 탈락 사유를 명확히 추가합니다.
-            if not is_foundation_ok: reasons.append("대추세질서(185<90<40)미달") 
+            if not is_t24_alignment:
+                if not (ma40_val > ma185_val):
+                    reasons.append("배열대전제탈락(40선<185선, T2)")
+                elif not is_alignment_flow_ok:
+                    flow_msg = "수렴실패" if ma90_val < ma185_val else "발산실패"
+                    reasons.append(f"90선흐름미달({flow_msg}, {gap_90_185_prev:.2f}%->{gap_90_185_curr:.2f}%)")
+                elif not is_trend_quality_ok:
+                    q_fail = []
+                    if ma40_up_count < 5: q_fail.append(f"40선상승({ma40_up_count})")
+                    if ma40_slope_common < -0.02: q_fail.append(f"40기울기({ma40_slope_common:.3f})")
+                    if ma185_up_count < 5: q_fail.append(f"185상승({ma185_up_count})")
+                    if not ma185_intensity_ok.iloc[-1]: q_fail.append("185강도")
+                    if slope_rate < -0.01: q_fail.append(f"185기울기({slope_rate:.3f})")
+                    reasons.append(f"추세품질미달({','.join(q_fail)}, T2)")
             if gap_5_40_pct > 4.0: reasons.append(f"5/40이격과다({gap_5_40_pct:.1f}%)")
             # if not is_t2_rebound: reasons.append(f"수렴실패({t2_fail_reason})")            
             # if not is_dynamic_entry_ok: reasons.append("동적진입(14선)실패")
@@ -1584,9 +1623,9 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
         return False, f"진입 초기 유예({current_age}봉)", False
 
         # 1. 본절 방어 (수정된 동적 기준 적용)
-    if profit_threshold <= max_profit_rate_pct < 2.0 and purchase_price * 0.999 <= curr_p <= purchase_price * 1.001:
+    if profit_threshold <= max_profit_rate_pct < 2.0 and purchase_price * 1.000 <= curr_p <= purchase_price * 1.002:
         cooldown_dict[symbol] = datetime.now() + timedelta(hours=6)
-        return True, f"🛡️ [S-TS-1.0] 본절방어(즉시) (낙폭 {profit_threshold:,.1f}% 초과)", True 
+        return True, f"🛡️ [S-TS-1.0] 본절방어(즉시) (최대 수익률 {max_profit_rate_pct:.2f}%, 낙폭 {profit_threshold:,.1f}% 초과)", True 
 
     ma40_val = curr['ma40']
     ma185_val = curr['ma185'] if not pd.isna(curr['ma185']) else 0
@@ -1730,17 +1769,17 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
             # 2. 익절 구간 A (2.0% ~ 3.5% 미만): 고점 대비 0.71.20.7% 하락 시 매도
             if 2.0 <= max_profit_rate_pct < 3.5:
                 if drop_from_peak > profit_threshold * 1.2:
-                    return True, f"💰 [S-TS-2.0] 익절 A (낙폭 {profit_threshold*1.2:,.1f}% 초과)", True
+                    return True, f"💰 [S-TS-2.0] 익절 A (최대 수익률 {max_profit_rate_pct:.2f}%, 낙폭 {profit_threshold*1.2:,.1f}% 초과)", True
 
             # 3. 익절 구간 B (3.5% ~ 5.0% 미만): 고점 대비 1.5% 하락 시 매도
             elif 3.5 <= max_profit_rate_pct < 5.0:
                 if drop_from_peak > profit_threshold * 1.5:
-                    return True, f"💰 [S-TS-3.5] 익절 B (낙폭 {profit_threshold*1.5:,.1f}% 초과)", True
+                    return True, f"💰 [S-TS-3.5] 익절 B (최대 수익률 {max_profit_rate_pct:.2f}%, 낙폭 {profit_threshold*1.5:,.1f}% 초과)", True
 
             # 4. 익절 구간 C (5.0% 이상): 고점 대비 1.8% 하락 시 즉시 매도
             elif max_profit_rate_pct >= 5.0:
                 if drop_from_peak > profit_threshold * 1.8:
-                    return True, f"🚀 [S-TS-5.0] 익절 C (낙폭 {profit_threshold*1.8:,.1f}% 초과)", True
+                    return True, f"🚀 [S-TS-5.0] 익절 C (최대 수익률 {max_profit_rate_pct:.2f}%, 낙폭 {profit_threshold*1.8:,.1f}% 초과)", True
 
             # ---------------------------------------------------------
             # [정비 2] 40 지지선 및 S+급 보호 (상향->평행->상향 로직)
@@ -1762,7 +1801,9 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
             # 40선 지지선 매도 판정
             if curr_p < support_price and drop_from_peak >= 1.5:
                 # 상승 초입 눌림목(지지선의 98%)은 유예해줌
-                if not (is_early_stage and curr_p >= support_price * 0.98):
+                if buy_type == 3 and profit_rate_pct > -1.5:
+                    pass
+                elif not (is_early_stage and curr_p >= support_price * 0.98):
                     return True, f"📉 40선 지지선({support_price:,.2f}) 이탈", False
     """
     # ---------------------------------------------------------
