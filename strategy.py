@@ -597,6 +597,30 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
 
     upper_shadow_pct = (c_high - curr_price) / curr_price * 100 if curr_price > 0 else 0
     is_candle_clean = (curr_price >= c_open) and (upper_shadow_pct < 1.0)
+    is_strong_rebound = (curr_price > ma5_val) and has_recovered_target and (curr_price >= c_open)
+        
+    if is_strong_rebound:
+        if not is_slide_setup_t1:
+            is_bonus_ok, bonus_msg = get_wave_setup(df.iloc[:-1], target_neg_t1 - 1)
+            if is_bonus_ok:
+                is_slide_setup_t1 = True
+                wave_msg_t1 = f"✨ [타점개선] 현재봉 강력반등으로 파동 1회 감면 적용 ({bonus_msg})"
+                logger.info(f"🎯 {symbol} | 돌파 타점 감지(T1): 파동 1회 감면 매수 집행")
+
+        if not is_slide_setup_t24:
+            is_bonus_ok, bonus_msg = get_wave_setup(df.iloc[:-1], target_neg_t24 - 1)
+            if is_bonus_ok:
+                is_slide_setup_t24 = True
+                is_slide_setup = True # T2/T4 하위 호환성 변수 동시 갱신
+                wave_msg_t24 = f"✨ [타점개선] 현재봉 강력반등으로 파동 1회 감면 적용 ({bonus_msg})"
+                logger.info(f"🎯 {symbol} | 돌파 타점 감지(T24): 파동 1회 감면 매수 집행")
+
+        if not is_slide_setup_t3:
+            is_bonus_ok, bonus_msg = get_wave_setup(df.iloc[:-1], target_neg_t3 - 1)
+            if is_bonus_ok:
+                is_slide_setup_t3 = True
+                wave_msg_t3 = f"✨ [타점개선] 현재봉 강력반등으로 파동 1회 감면 적용 ({bonus_msg})"
+                logger.info(f"🎯 {symbol} | 돌파 타점 감지(T3): 파동 1회 감면 매수 집행")
     ##########################################################################
     # [1단계: TYPE 1, 2 공통 지표 사전 계산]
     # 1. 90선 세기: 양수이거나, 음수일 때 직전보다 완만해져야 True
