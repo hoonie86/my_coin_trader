@@ -562,11 +562,28 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     blue_density = (recent_10['close'] < recent_10['open']).sum()
     blue_penalty = 2 if blue_density >= 9 else (1 if blue_density >= 7 else 0)
 
-    # 최종 타겟 합산 (기본 3 + 각 항목별 1회성 페널티)
+    # 1차 타겟 합산 (기본 3 + 각 항목별 1회성 페널티)
     common_target = 3 + beam_penalty + vol_penalty + blue_penalty + m_penalty
-    logger.info(f"✨ [하락 목표값] {symbol} | 급등({max_beam_pct:.2f}%):{beam_penalty}, 구간변동({vol_gap:.2f}%):{vol_penalty}, 7음봉이상:{blue_penalty}, 시황({current_market_total:.2f}%):{m_penalty}")
 
-    target_neg_t1 = target_neg_t24 = target_neg_t3 = common_target
+    # //======== [2026-05-09 수정: 양봉 고점 5선 터치 보너스 로직 (동적 구간 적용)] ========//
+    # common_target 크기만큼만 조회하여 보너스 계산
+    recent_bonus_df = df.tail(int(common_target))
+    bonus_candles = recent_bonus_df[(recent_bonus_df['close'] > recent_bonus_df['open']) & (recent_bonus_df['high'] >= recent_bonus_df['ma5'])]
+    bonus_count = len(bonus_candles)
+    
+    wave_bonus = 0
+    if bonus_count >= 3:
+        wave_bonus = 2
+    elif bonus_count >= 1:
+        wave_bonus = 1
+
+    # 최종 타겟 확정 (최소 1회 보장)
+    final_target = max(1, common_target - wave_bonus)
+    
+    logger.info(f"✨ [하락 목표값] {symbol} | 급등:{beam_penalty}, 구간변동:{vol_penalty}, 시황:{m_penalty} | 기준목표:{common_target} -> 5선터치(-{wave_bonus}) -> 최종:{final_target}회")
+    # //========================================================//
+
+    target_neg_t1 = target_neg_t24 = target_neg_t3 = final_target
 
     # 파동 계산
     is_slide_setup_t1, wave_msg_t1 = get_wave_setup(df.iloc[:-1], target_neg_t1)
@@ -588,7 +605,6 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     disparity_40_line = (curr_price / ma40_val) * 100 if ma40_val > 0 else 0
     is_trend_alive = disparity_40_line >= 98.0 
 
-    is_not_doji_bull = (curr_price >= float(curr['open']))
     p_open, p_close = float(prev['open']), float(prev['close'])
     c_open, c_high = float(curr['open']), float(curr['high'])
 
@@ -596,31 +612,8 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     has_recovered_target = (curr_price > dynamic_base)
 
     upper_shadow_pct = (c_high - curr_price) / curr_price * 100 if curr_price > 0 else 0
-    is_candle_clean = (curr_price >= c_open) and (upper_shadow_pct < 1.0)
-    is_strong_rebound = (curr_price > ma5_val) and has_recovered_target and (curr_price >= c_open)
-        
-    if is_strong_rebound:
-        if not is_slide_setup_t1:
-            is_bonus_ok, bonus_msg = get_wave_setup(df.iloc[:-1], target_neg_t1 - 1)
-            if is_bonus_ok:
-                is_slide_setup_t1 = True
-                wave_msg_t1 = f"✨ [타점개선] 현재봉 강력반등으로 파동 1회 감면 적용 ({bonus_msg})"
-                logger.info(f"🎯 {symbol} | 돌파 타점 감지(T1): 파동 1회 감면 매수 집행")
+    is_candle_clean = (upper_shadow_pct < 1.0)
 
-        if not is_slide_setup_t24:
-            is_bonus_ok, bonus_msg = get_wave_setup(df.iloc[:-1], target_neg_t24 - 1)
-            if is_bonus_ok:
-                is_slide_setup_t24 = True
-                is_slide_setup = True # T2/T4 하위 호환성 변수 동시 갱신
-                wave_msg_t24 = f"✨ [타점개선] 현재봉 강력반등으로 파동 1회 감면 적용 ({bonus_msg})"
-                logger.info(f"🎯 {symbol} | 돌파 타점 감지(T24): 파동 1회 감면 매수 집행")
-
-        if not is_slide_setup_t3:
-            is_bonus_ok, bonus_msg = get_wave_setup(df.iloc[:-1], target_neg_t3 - 1)
-            if is_bonus_ok:
-                is_slide_setup_t3 = True
-                wave_msg_t3 = f"✨ [타점개선] 현재봉 강력반등으로 파동 1회 감면 적용 ({bonus_msg})"
-                logger.info(f"🎯 {symbol} | 돌파 타점 감지(T3): 파동 1회 감면 매수 집행")
     ##########################################################################
     # [1단계: TYPE 1, 2 공통 지표 사전 계산]
     # 1. 90선 세기: 양수이거나, 음수일 때 직전보다 완만해져야 True
@@ -891,8 +884,9 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         # 역배열: 90선-185선 이격이 수렴 중(<=)이고, 최소한 40선은 185선 위에 있어야 함
         is_trend_safe = (gap_90_185 <= prev_gap_90_185) and (ma40_val > ma185_val)
     else:
-        # 정배열: 90선-185선 이격이 발산 중(>=)이고, 최소한 40선은 185선 위에 있어야 함
-        is_trend_safe = (gap_90_185 >= prev_gap_90_185) and (ma40_val > ma185_val)
+        ma90_slope_v = df['ma90'].iloc[-1] - df['ma90'].iloc[-2] if len(df) >= 2 else 0
+        ma185_slope_v = df['ma185'].iloc[-1] - df['ma185'].iloc[-2] if len(df) >= 2 else 0
+        is_trend_safe = ((gap_90_185 >= prev_gap_90_185) or (ma90_slope_v > 0 and ma185_slope_v > 0)) and (ma40_val > ma185_val)
     
     is_was_descending = True  # 2일간 지속 하락 여부
     is_now_stabilized = True  # 5시간 전부터 안착 여부
@@ -1141,8 +1135,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             elif not is_valid_convergence: t2_fail_reason = "수렴/5선발산실패"
             elif not is_bullish_breakout_high: t2_fail_reason = "고공양봉돌파실패"
             elif not is_gap_40_safe: t2_fail_reason = f"14/40이격과다({gap_14_40_pct:.2f}%)"
-    ma14_slope_v = ((ma14_val - prev_ma14) / prev_ma14) * 100 if prev_ma14 > 0 else 0
-    is_true_trigger_t2 = (curr_price >= ma14_val * 0.98) and (curr_price <= ma14_val * 1.03) and (ma14_slope_v >= -0.06)
+            
     is_death_conv = False
     if ma90_val < ma185_val:
         # 90선이 아래일 때: 거리가 벌어지는(발산) '나쁜 상황' + 1.5% 이내면 차단
@@ -1295,14 +1288,16 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     if not is_volume_quality_ok: reasons_t4.append(f"매집수급미달(양봉부족.(양봉 {bull_count}개))")
     if not is_slide_setup_t24: reasons_t4.append(f"파동미달({wave_msg_t24})")
     if not is_trend_alive: reasons_t4.append(f"40선이격사망({disparity_40_line:.2f}%)")
-    if not is_not_doji_bull: reasons_t4.append("음봉/도지탈락")
+    
+    # //======== [2026-05-09 수정: TYPE 4 진입조건 및 로그 직관화] ========//
+    if not has_recovered_target: reasons_t4.append("타점미탈환")
     if not is_t4_safe: reasons_t4.append(f"변동성초과({vol_sectional:.1f}%)")
     if not is_t24_alignment:
         if not (ma40_val > ma185_val):
             reasons_t4.append("배열대전제탈락(40선<185선)")
         elif not is_alignment_flow_ok:
             flow_msg = "수렴실패" if ma90_val < ma185_val else "발산실패"
-            reasons_t4.append(f"90선흐름미달({flow_msg}, 이전:{gap_90_185_prev:.2f}%->현재:{gap_90_185_curr:.2f}%)")
+            reasons_t4.append(f"[가드] 장기 추세 수렴 중({flow_msg}, 이전:{gap_90_185_prev:.2f}%->현재:{gap_90_185_curr:.2f}%)")
         elif not is_trend_quality_ok:
             q_fail = []
             if ma40_up_count < 5: q_fail.append(f"40선상승({ma40_up_count}/5)")
@@ -1311,32 +1306,17 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
             if not ma185_intensity_ok.iloc[-1]: q_fail.append("185선강도")
             if slope_rate < -0.01: q_fail.append(f"185기울기({slope_rate:.3f})")
             reasons_t4.append(f"추세품질미달({','.join(q_fail)})")
-    # //========================================================================//
+            
     if gap_5_40_pct > 4.0: reasons_t4.append(f"5/40이격과다({gap_5_40_pct:.1f}%)")
     if not (gc_count_t1 == 0): reasons_t4.append(f"GC이력({gc_count_t1}회)")
     
-    # [수정] 수급 문턱만 3.0으로 낮추기
-    #if not is_trend_stable:
-    #    reasons_t4.append(f"추세지속부족({ma5_above_14_count}/15)")
-    #if vol_ratio < 1.5: 
-    #    reasons_t4.append(f"수급미달({vol_ratio:.1f}x<1.5x)")
-    
-    # [핵심] 기존 엔진은 그대로 사용! (단, REI를 위해 has_down_touch만 선택적 제거)
-    ###### [수정/추가] 격돌 로직 이식 및 대추세(185선) 급락 가드 결합 ######
-    if not is_t4_rebound: reasons_t4.append(f"격돌/수렴실패({t2_fail_reason})")
+    # 격돌 로직 이식 및 대추세(185선) 급락 가드 결합
+    if not is_t4_rebound: reasons_t4.append(f"[가드] 타점 돌파 실패({t2_fail_reason})")
     if slope_rate < -0.01: reasons_t4.append(f"185선급락({slope_rate:.4f})")
     
-    # REI 같은 강한 종목을 위해 TYPE 4에서만 '터치' 조건 주석 처리하거나 완화
-    # if not has_down_touch: reasons_t4.append("40선터치없음") 
-    
-    if not is_true_trigger_t2: reasons_t4.append("찐트리거미달")
-
-    # [가드] 사용자님이 강조하신 양봉 및 윗꼬리 가드
-    is_bullish = curr_price > float(curr['open'])
     upper_shadow_pct = (float(curr['high']) - curr_price) / curr_price * 100 if curr_price > 0 else 0
-    
-    if not is_bullish: reasons_t4.append("음봉탈락")
-    if upper_shadow_pct > 2.0: reasons_t4.append(f"윗꼬리과다({upper_shadow_pct:.1f}%)")
+    if upper_shadow_pct > 1.0: reasons_t4.append(f"윗꼬리과다({upper_shadow_pct:.1f}%)")
+    # //========================================================================================//
 
     # //======== [2026-04-16 수정: TYPE 4 공통 타점 적용] ========//
     if not reasons_t4:
@@ -1402,7 +1382,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         vol_sectional = ((df['high'].tail(64).max() - df['low'].tail(64).min()) / df['low'].tail(64).min()) * 100
         is_type2_safe = (vol_sectional <= dynamic_vol_limit) and is_fresh
 
-        if is_t24_alignment and is_type2_safe and is_trend_stable and has_t1_history_clean and (ma90_up_count >= 5) and (ma185_up_count >= 5) and is_185_landing_stable and not is_death_conv and is_trend_safe and is_volume_quality_ok and is_slide_setup and is_trend_alive and is_not_doji_bull:
+        if is_t24_alignment and is_type2_safe and is_trend_stable and has_t1_history_clean and (ma90_up_count >= 5) and (ma185_up_count >= 5) and is_185_landing_stable and not is_death_conv and is_trend_safe and is_volume_quality_ok and is_slide_setup and is_trend_alive and has_recovered_target:
         # //================================================================//
             gc_idx = valid_gc_idx
             d_cnt = sum(1 for k in range(gc_idx-96, gc_idx-10) if df['ma185'].iloc[k] <= df['ma185'].iloc[k-1]) if gc_idx != -1 else 0
@@ -1447,7 +1427,9 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                     reasons.append("배열대전제탈락(40선<185선, T2)")
                 elif not is_alignment_flow_ok:
                     flow_msg = "수렴실패" if ma90_val < ma185_val else "발산실패"
-                    reasons.append(f"90선흐름미달({flow_msg}, {gap_90_185_prev:.2f}%->{gap_90_185_curr:.2f}%)")
+                    # //======== [2026-05-09 수정: T2 수렴실패 로그 직관화] ========//
+                    reasons.append(f"[가드] 장기 추세 수렴 중({flow_msg}, {gap_90_185_prev:.2f}%->{gap_90_185_curr:.2f}%)")
+                    # //========================================================================//
                 elif not is_trend_quality_ok:
                     q_fail = []
                     if ma40_up_count < 5: q_fail.append(f"40선상승({ma40_up_count})")
@@ -1457,11 +1439,11 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                     if slope_rate < -0.01: q_fail.append(f"185기울기({slope_rate:.3f})")
                     reasons.append(f"추세품질미달({','.join(q_fail)}, T2)")
             if gap_5_40_pct > 4.0: reasons.append(f"5/40이격과다({gap_5_40_pct:.1f}%)")
-            # if not is_t2_rebound: reasons.append(f"수렴실패({t2_fail_reason})")            
-            # if not is_dynamic_entry_ok: reasons.append("동적진입(14선)실패")
             if not is_slide_setup_t24: reasons.append(f"파동미달({wave_msg_t24})")
             if not is_trend_alive: reasons.append(f"40선이격사망({disparity_40_line:.2f}%)")
-            if not is_not_doji_bull: reasons.append("음봉/도지탈락")
+            # //======== [2026-05-09 수정: T2 타점미탈환 탈락 사유 명시] ========//
+            if not has_recovered_target: reasons.append("타점미탈환")
+            # //========================================================================//
             if not has_t1_history_clean: reasons.append(f"역사오염(GC:{gc_count_150}, DC:{dc_count_after_gc})")
             if ma90_up_count < 5: reasons.append(f"90선추세(5미만:{ma90_up_count})")
             if not is_185_landing_stable: reasons.append(f"185선불안정")
