@@ -465,12 +465,10 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     disparity_gold = abs(ma40_val - ma185_val) / ma185_val if ma185_val > 0 else 999
     prev_dis_gold = abs(prev_ma40 - prev_ma185) / prev_ma185 if prev_ma185 > 0 else 999
     slope_rate = ((ma185_val - prev_ma185) / prev_ma185) * 100 if prev_ma185 > 0 else 0
-    
-    slope_rate = ((ma185_val - prev_ma185) / prev_ma185) * 100 if prev_ma185 > 0 else 0
     ma5_slope = ((ma5_val - prev_ma5) / prev_ma5) * 100 if prev_ma5 > 0 else 0
     
     # //======== [2026-04-16 수정: 횡보(0) 3개당 하락 1회 인정 로직 적용] ========//
-    def get_wave_setup(df_local, neg_threshold):
+    def get_wave_setup(df_local, up_target, down_target, net_score):
         if len(df_local) < 60: return False, "데이터부족"
         ma5_slopes = [df_local['ma5'].iloc[i] - df_local['ma5'].iloc[i-1] for i in range(len(df_local)-50, len(df_local))]
         signs = [1 if s > 0 else (-1 if s < 0 else 0) for s in ma5_slopes]
@@ -479,51 +477,58 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         opens = df_local['open'].values[-50:]
         ma5_vals = df_local['ma5'].values[-50:]
         
-        found_plus3_anchor, neg_streak, plus_streak, zero_count = False, 0, 0, 0
+        found_up_anchor = (up_target == 0) # 목표 상승이 0이면 시작부터 앵커 확보
+        neg_streak, plus_streak, zero_count = 0, 0, 0
         plus_fail_count, bullish_above_ma5_count = 0, 0
         
         for i, s in enumerate(signs):
             if s == 1:
-                if found_plus3_anchor and neg_streak > 0:
-                    found_plus3_anchor = False
+                if found_up_anchor and neg_streak > 0:
+                    found_up_anchor = (up_target == 0)
                     plus_streak = 1
                     plus_fail_count = 0
                     bullish_above_ma5_count = 0
                 else:
                     plus_streak += 1
-                    if plus_streak >= 3: found_plus3_anchor = True
+                    if plus_streak >= up_target: found_up_anchor = True
                 neg_streak, zero_count = 0, 0
                 bullish_above_ma5_count = 0
             elif s <= 0:
-                if not found_plus3_anchor:
+                if not found_up_anchor:
                     plus_fail_count += 1
                     if plus_fail_count >= 2:
                         plus_streak = 0
                         plus_fail_count = 0
+                    if s == 0 and net_score <= -2: # 침체기 횡보 1회 = 상승 1회 인정
+                        plus_streak += 1
+                        if plus_streak >= up_target: found_up_anchor = True
                 else:
                     plus_streak = 0
                     if s == -1:
                         neg_streak += 1
                     elif s == 0:
-                        zero_count += 1
-                        if zero_count >= 2:
+                        if net_score >= 2: # 호황기 횡보 1회 = 하락 1회 즉시 인정
                             neg_streak += 1
-                            zero_count = 0
+                        else:
+                            zero_count += 1
+                            if zero_count >= 2:
+                                neg_streak += 1
+                                zero_count = 0
                     
                     if closes[i] > opens[i] and closes[i] > ma5_vals[i]:
                         bullish_above_ma5_count += 1
 
-        if found_plus3_anchor and neg_streak > 0:
+        if found_up_anchor and neg_streak > 0:
             if bullish_above_ma5_count >= 3:
                 neg_streak = max(0, neg_streak - 2)
             elif bullish_above_ma5_count >= 1:
                 neg_streak = max(0, neg_streak - 1)
 
-        if not found_plus3_anchor:
-            return False, "3상미달" 
-        if neg_streak < neg_threshold:
-            return False, f"3상{neg_streak}하(목표:{neg_threshold}하)"
-        return True, f"3상{neg_streak}하"
+        if not found_up_anchor:
+            return False, f"상승미달(목표:{up_target}상)" 
+        if neg_streak < down_target:
+            return False, f"{up_target}상{neg_streak}하(목표:{down_target}하)"
+        return True, f"{up_target}상{neg_streak}하"
 
     # //======== [2026-04-24 수정: 중복방지 페널티 및 T2 전용 14선 가드] ========//
     recent_25 = df.iloc[-26:-1] # 단일 캔들 급등, 구간 체크
@@ -552,43 +557,49 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     # 고정된 m_ref 대신 실시간 수치인 (현재평균 + 전일오프셋) 사용
     current_market_total = last_current_avg + prev_day_offset
 
-    m_penalty = 0
-    if current_market_total <= -3.0: 
-        m_penalty = 4
-    elif current_market_total <= -1.5: 
-        m_penalty = 2
+    # //======== [2026-05-10 수정: 통합 순수 점수(Net Score) 및 상하 파동 맞교환] ========//
+    # 1. 시장 지수 점수
+    market_score = 0
+    if current_market_total >= 4.5: market_score = 3
+    elif current_market_total >= 3.0: market_score = 2
+    elif current_market_total >= 1.5: market_score = 1
+    elif current_market_total <= -3.0: market_score = -4
+    elif current_market_total <= -1.5: market_score = -2
 
-    # 4. 음봉 압도
+    # 2. 캔들 밀집도 점수 (최근 10봉 기준)
     blue_density = (recent_10['close'] < recent_10['open']).sum()
-    blue_penalty = 2 if blue_density >= 9 else (1 if blue_density >= 7 else 0)
+    red_density = (recent_10['close'] > recent_10['open']).sum()
+    density_score = (2 if red_density >= 8 else (1 if red_density >= 6 else 0)) - (2 if blue_density >= 8 else (1 if blue_density >= 6 else 0))
 
-    # 1차 타겟 합산 (기본 3 + 각 항목별 1회성 페널티)
-    common_target = 3 + beam_penalty + vol_penalty + blue_penalty + m_penalty
-
-    # //======== [2026-05-09 수정: 양봉 고점 5선 터치 보너스 로직 (동적 구간 적용)] ========//
-    # common_target 크기만큼만 조회하여 보너스 계산
-    recent_bonus_df = df.tail(int(common_target))
-    bonus_candles = recent_bonus_df[(recent_bonus_df['close'] > recent_bonus_df['open']) & (recent_bonus_df['high'] >= recent_bonus_df['ma5'])]
-    bonus_count = len(bonus_candles)
+    # 3. 5선 터치 대칭 점수 (양봉 돌파 vs 음봉 이탈)
+    base_lookback = int(3 + beam_penalty + vol_penalty)
+    recent_bonus_df = df.iloc[-base_lookback-1:-1]
     
-    wave_bonus = 0
-    if bonus_count >= 3:
-        wave_bonus = 2
-    elif bonus_count >= 1:
-        wave_bonus = 1
+    red_touch = len(recent_bonus_df[(recent_bonus_df['close'] > recent_bonus_df['open']) & (recent_bonus_df['high'] >= recent_bonus_df['ma5'])])
+    blue_touch = len(recent_bonus_df[(recent_bonus_df['close'] < recent_bonus_df['open']) & (recent_bonus_df['low'] <= recent_bonus_df['ma5'])])
+    touch_score = (2 if red_touch >= 3 else (1 if red_touch >= 1 else 0)) - (2 if blue_touch >= 3 else (1 if blue_touch >= 1 else 0))
 
-    # 최종 타겟 확정 (최소 1회 보장)
-    final_target = max(1, common_target - wave_bonus)
+    # 4. 최종 순수 점수 합산 및 동적 스케일 결정
+    net_score = market_score + density_score + touch_score - (beam_penalty + vol_penalty)
     
-    logger.info(f"✨ [하락 목표값] {symbol} | 급등:{beam_penalty}, 구간변동:{vol_penalty}, 시황:{m_penalty} | 기준목표:{common_target} -> 5선터치(-{wave_bonus}) -> 최종:{final_target}회")
-    # //========================================================//
+    up_target, down_target = 3, 3 # 기준 파동
+    if net_score > 0:
+        down_target = max(0, 3 - net_score)
+        if down_target == 0: up_target = 3 + (net_score - 3)
+    elif net_score < 0:
+        up_target = max(0, 3 + net_score)
+        if up_target == 0: down_target = 3 + abs(net_score + 3)
 
-    target_neg_t1 = target_neg_t24 = target_neg_t3 = final_target
+    logger.info(f"✨ [파동엔진] {symbol} | NetScore:{net_score} (시황:{market_score}, 캔들:{density_score}, 5선터치(양{red_touch}/음{blue_touch}):{touch_score}, 페널티:{-beam_penalty-vol_penalty}) | 최종목표: {up_target}상 {down_target}하")
+
+    target_up_t1 = target_up_t24 = target_up_t3 = up_target
+    target_down_t1 = target_down_t24 = target_down_t3 = down_target
 
     # 파동 계산
-    is_slide_setup_t1, wave_msg_t1 = get_wave_setup(df.iloc[:-1], target_neg_t1)
-    is_slide_setup_t24, wave_msg_t24 = get_wave_setup(df.iloc[:-1], target_neg_t24)
-    is_slide_setup_t3, wave_msg_t3 = get_wave_setup(df.iloc[:-1], target_neg_t3)
+    is_slide_setup_t1, wave_msg_t1 = get_wave_setup(df.iloc[:-1], target_up_t1, target_down_t1, net_score)
+    is_slide_setup_t24, wave_msg_t24 = get_wave_setup(df.iloc[:-1], target_up_t24, target_down_t24, net_score)
+    is_slide_setup_t3, wave_msg_t3 = get_wave_setup(df.iloc[:-1], target_up_t3, target_down_t3, net_score)
+    # //========================================================================================//
 
     # 5. [타입 2 전용] 14선 가드: 최근 4개 봉 데이터로 3개 구간 기울기 확인
     ma14_vals = df['ma14'].iloc[-4:].values
@@ -1017,7 +1028,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                             'set_time': datetime.now().strftime('%H:%M:%S')
                         }
                         # //======================================================================================//
-                        return True, f"💎 [TYPE3-S+] {target_neg_t3}회 하락 후 극대이격 반등", "S+", data_dict
+                        return True, f"💎 [TYPE3-S+] {target_up_t3}상 {target_down_t3}하 후 극대이격 반등", "S+", data_dict
                     # //====================================================================//
                 else:
                     # //========= [수정: 타입 1 및 타입 3 파동 탈락 로그 통합] =========//
@@ -1225,7 +1236,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                             # //======== [2026-04-30 수정: TYPE 1 실시간 가격 박제] ========//
                             s_plus_tracker[symbol] = {'index': len(df), 'close': curr_price, 'high': float(curr['high'])}
                             # //========================================================//
-                            return True, f"💎 [TYPE1-S+] {target_neg_t1}회하락 후 첫 타점 탈환", "S+", data_dict
+                            return True, f"💎 [TYPE1-S+] {target_up_t1}상 {target_down_t1}하 후 첫 타점 탈환", "S+", data_dict
                     else:
                         logger.info(f"DEBUG: {symbol} | [TYPE1-S/S+] 격돌 실패2 | 파동상태: {wave_msg_t1} | is_candle_clean: {is_candle_clean} | 매수타점미달(현재가:{curr_price} <= 기준가:{dynamic_base})")
                 # //========================================================================//
@@ -1338,7 +1349,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                 # //======== [2026-04-30 수정: TYPE 4 실시간 가격 박제] ========//
                 s_plus_tracker[symbol] = {'index': len(df), 'close': curr_price, 'high': float(curr['high'])}
                 # //========================================================//
-                return True, f"💎 [TYPE4-S+] {target_neg_t24}회하락 후 첫 타점 탈환", grade, data_dict
+                return True, f"💎 [TYPE4-S+] {target_up_t24}상 {target_down_t24}하 후 첫 타점 탈환", grade, data_dict
                 
         reasons_t4.append("회복트리거부족(또는 윗꼬리과다)")
         logger.info(f"DEBUG: {symbol} | [TYPE4] 탈락 이유: {', '.join(reasons_t4)}")
@@ -1408,7 +1419,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                         # //======== [2026-04-30 수정: TYPE 2 실시간 가격 박제] ========//
                         s_plus_tracker[symbol] = {'index': len(df), 'close': curr_price, 'high': float(curr['high'])}
                         # //========================================================//
-                        return True, f"💎 [TYPE2-S+] {target_neg_t24}회하락 후 첫 타점 탈환", grade, data_dict
+                        return True, f"💎 [TYPE2-S+] {target_up_t24}상 {target_down_t24}하 후 첫 타점 탈환", grade, data_dict
                         
                 logger.info(f"DEBUG: {symbol} | [TYPE2] 탈락 이유: 회복트리거부족(또는 윗꼬리과다)")
                 # //========================================================================//
@@ -1535,11 +1546,10 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
     temp_p_pct = ((curr_p - purchase_price) / purchase_price * 100) if purchase_price > 0 else 0
     prev_p = last_profit_dict.get(symbol, temp_p_pct)
 
-    if old_lvl == 0 and (temp_p_pct - prev_p) >= 1.5:
+    if (temp_p_pct - prev_p) >= 1.5:
         if temp_p_pct >= 1.0: # 1% 수익 마지노선 가드
             last_profit_dict[symbol] = temp_p_pct
-            # 현재가 지정가 매도 및 재시도를 유도하는 메시지 반환
-            return True, f"⚡ [번개익절] 1.5% 스파이크 감지. 현재가({curr_p}) 지정가 매도 시도 (수익 {temp_p_pct:.2f}%)", True
+            return True, f"⚡ [번개익절] L{old_lvl}상태에서 1.5% 폭등 감지. 지정가 매도 시도 (수익 {temp_p_pct:.2f}%)", True
 
     last_profit_dict[symbol] = temp_p_pct
     # //========================================================================//
