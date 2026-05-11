@@ -517,6 +517,12 @@ async def buy_scan_task(app):
 
                 df = pd.DataFrame(ohlcv, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
                 is_buy, reason, grade, data_dict = await strategy.check_buy_signal(exchange, df, symbol, w_list)
+                if not is_buy: # 단타 신호가 없을 때 일봉 스윙 체크
+                    ohlcv_1d = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '1d', limit=100)
+                    if len(ohlcv_1d) >= 50:
+                        df_1d = pd.DataFrame(ohlcv_1d, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
+                        # buy_type='RISE1'을 명시적으로 전달해야 함
+                        is_buy, reason, grade, data_dict = await strategy.check_buy_signal(exchange, df_1d, symbol, w_list, buy_type='RISE1')
                 extracted_type = "1"
                 if "TYPE1" in reason: extracted_type = "1"
                 elif "TYPE2" in reason: extracted_type = "2"
@@ -539,7 +545,11 @@ async def buy_scan_task(app):
                     notified_symbols[symbol] = datetime.now()
                     balance = await asyncio.to_thread(exchange.fetch_balance)
                     free_krw = float(balance['free'].get('KRW', 0))
-                    buy_cost = await get_buy_cost()
+                    # buy_cost = await get_buy_cost()
+                    if "RISE1" in reason:
+                        buy_cost = 200000  # 스윙 (RISE1)
+                    else:
+                        buy_cost = 400000  # 단타 (TYPE 1~4)
                     # # TYPE 4일 경우에만 예산을 2/4로 축소 (신규 로직 검증용)
                     # if extracted_type == "4":
                     #     buy_cost = int(buy_cost / 2)
@@ -1268,7 +1278,7 @@ async def sell_monitor_task(app):
                 else:
                     report_color, status_text = strategy.get_report_visuals(
                         this_profit, is_sell_signal, this_curr_p, ma40_line,
-                        sell_reason, symbol, pending_approvals
+                        sell_reason, symbol, pending_approvals, buy_type=this_buy_type
                     )
                     mode_icon = " 🤖" if status == 'AUTO' else ""
 
@@ -1766,7 +1776,7 @@ async def process_report_logic(update, context, query=None):
 
                 report_color, status_text = strategy.get_report_visuals(
                     this_profit, is_sell_signal, this_curr_p, ma40_line,
-                    sell_reason, symbol, temp_approvals
+                    sell_reason, symbol, pending_approvals, buy_type=this_buy_type
                 )
                 
                 # ==============================================================================

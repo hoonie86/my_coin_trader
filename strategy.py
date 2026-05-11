@@ -203,7 +203,7 @@ def get_updated_emergency_level(symbol, current_level, buy_type, rsi, is_3m_belo
     return current_level
 
 # [사용자 원본 버전 1]
-def check_buy_signal_v1(df, symbol, warning_list):
+async def check_buy_signal_v1(exchange, df, symbol, warning_list, buy_type='1'):
     try:
         curr = df.iloc[-1]
         prev = df.iloc[-2]
@@ -375,7 +375,7 @@ def _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_
 
 # [사용자 원본 버전 2 - 메인 사용 중인 로직]
 # [확장] 하락장 대응 + 정배열 전환 + 급등 추적 모두 반영. 기존 로직 삭제 없이 주석/분기로 보강.
-async def check_buy_signal(exchange, df, symbol, warning_list):
+async def check_buy_signal(exchange, df, symbol, warning_list, buy_type='1'):
     """
     매수 신호 판단 함수 (4개 값 리턴)
     
@@ -477,17 +477,15 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
         opens = df_local['open'].values[-50:]
         ma5_vals = df_local['ma5'].values[-50:]
         
-        found_up_anchor = (up_target == 0) # 목표 상승이 0이면 시작부터 앵커 확보
+        found_up_anchor = False # 최소 1상이 보장되므로 초기 앵커는 무조건 False
         neg_streak, plus_streak, zero_count = 0, 0, 0
         plus_fail_count, bullish_above_ma5_count = 0, 0
         
         for i, s in enumerate(signs):
             if s == 1:
                 if found_up_anchor and neg_streak > 0:
-                    found_up_anchor = (up_target == 0)
+                    found_up_anchor = False
                     plus_streak = 1
-                    plus_fail_count = 0
-                    bullish_above_ma5_count = 0
                 else:
                     plus_streak += 1
                     if plus_streak >= up_target: found_up_anchor = True
@@ -499,7 +497,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                     if plus_fail_count >= 2:
                         plus_streak = 0
                         plus_fail_count = 0
-                    if s == 0 and net_score <= -2: # 침체기 횡보 1회 = 상승 1회 인정
+                    if s == 0 and net_score <= -4: 
                         plus_streak += 1
                         if plus_streak >= up_target: found_up_anchor = True
                 else:
@@ -507,7 +505,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
                     if s == -1:
                         neg_streak += 1
                     elif s == 0:
-                        if net_score >= 2: # 호황기 횡보 1회 = 하락 1회 즉시 인정
+                        if net_score >= 3: 
                             neg_streak += 1
                         else:
                             zero_count += 1
@@ -582,13 +580,20 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     # 4. 최종 순수 점수 합산 및 동적 스케일 결정
     net_score = market_score + density_score + touch_score - (beam_penalty + vol_penalty)
     
-    up_target, down_target = 3, 3 # 기준 파동
-    if net_score > 0:
-        down_target = max(0, 3 - net_score)
-        if down_target == 0: up_target = 3 + (net_score - 3)
-    elif net_score < 0:
-        up_target = max(0, 3 + net_score)
-        if up_target == 0: down_target = 3 + abs(net_score + 3)
+    # //======== [2026-05-11 최종 확정: 시장 점수별 파동 목표 설정] ========//
+    up_target, down_target = 3, 3 # 기본 파동 (정석)
+
+    if net_score >= 3: # [초호황] 시장 수익률 약 +2.0% 이상
+        up_target = 3 + (net_score - 2) # 상승 확인 강화
+        down_target = 0                 # 하락 목표 제거 (즉시 진입)
+    elif net_score > 0: # [호황]
+        down_target = max(1, 3 - net_score)
+    elif net_score <= -4: # [초침체] 시장 수익률 -3.0% 이하 (사용자 지정 점수)
+        up_target = 1  # 하락장에서 상승 기준 최대로 완화
+        down_target = 3 + abs(net_score + 2) # 하락 목표 대폭 강화
+    elif net_score < 0: # [침체]
+        up_target = max(1, 3 + net_score)
+    # //========================================================================//
 
     logger.info(f"✨ [파동엔진] {symbol} | NetScore:{net_score} (시황:{market_score}, 캔들:{density_score}, 5선터치(양{red_touch}/음{blue_touch}):{touch_score}, 페널티:{-beam_penalty-vol_penalty}) | 최종목표: {up_target}상 {down_target}하")
 
@@ -620,7 +625,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     c_open, c_high = float(curr['open']), float(curr['high'])
 
     dynamic_base = p_close if p_open > p_close else p_open
-    has_recovered_target = (curr_price > dynamic_base)
+    has_recovered_target = (dynamic_base < curr_price <= dynamic_base * 1.005)
 
     upper_shadow_pct = (c_high - curr_price) / curr_price * 100 if curr_price > 0 else 0
     is_candle_clean = (upper_shadow_pct < 1.0)
@@ -939,7 +944,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     improve_cnt = sum(1 for i in range(6) if ma185_slopes[i] > ma185_slopes[i+1])
 
     if diff_185 < -1.2:
-        if improve_cnt >= 3:
+        if improve_cnt >= 2:
             logger.info(f"✨ [추세개선통과] {symbol} | 현재diff:{diff_185:.2f} < -1.2 이나 30분봉 6개 중 {improve_cnt}회 개선 확인")
         else:
             reason = f"185일선 급락(diff:{diff_185:.2f} < -1.2, 개선:{improve_cnt}/6)"
@@ -1326,6 +1331,29 @@ async def check_buy_signal(exchange, df, symbol, warning_list):
     if slope_rate < -0.01: reasons_t4.append(f"185선급락({slope_rate:.4f})")
     
     upper_shadow_pct = (float(curr['high']) - curr_price) / curr_price * 100 if curr_price > 0 else 0
+    
+    # //======== [2026-05-11 최종 확정: RISE1 일봉 스윙 매수 엔진 - 독립 블록] ========//
+    if str(buy_type) == 'RISE1':
+        # 1. 185선 밥그릇 체크 (최근 50봉 중 60% 이상 하락 이력 확인)
+        desc_cnt_185 = (df['ma185'].diff().tail(50) < 0).sum()
+        is_rice_bowl = desc_cnt_185 >= 30 
+
+        # 2. 40/90선 추세적 수렴 (50봉 전부터 5단위로 11개 포인트, 10단계 수렴 확인)
+        g_list = [abs(df['ma40'].iloc[-1-i] - df['ma90'].iloc[-1-i]) / df['ma90'].iloc[-1-i] * 100 for i in range(0, 51, 5)]
+        is_converging = (g_list[0] <= 5.0) and all(g_list[i] < g_list[i+1] for i in range(10))
+
+        # 3. 세력 흔적 체크 (당일 포함 최근 3일 내 '양봉'의 고가가 90선을 터치)
+        r3 = df.tail(3)
+        has_bull_touch_90 = ((r3['close'] > r3['open']) & (r3['high'] >= r3['ma90'])).any()
+
+        # 4. 최종 진입 판정 (현재 양봉일 때)
+        if is_rice_bowl and is_converging and has_bull_touch_90 and curr_price > float(curr['open']):
+            data_dict['grade'] = 'S'
+            return True, f"🚀 [RISE1] 밥그릇(하락:{desc_cnt_185}) + 10단계수렴 + 양봉90선터치", "S", data_dict
+            
+        # [핵심] RISE1 타입일 경우 여기서 함수를 종료하여 아래의 단타(TYPE 4) 로직 실행을 원천 차단
+        return False, "RISE1 조건 미달", "F", data_dict
+    # //============================================================================//
     if upper_shadow_pct > 1.0: reasons_t4.append(f"윗꼬리과다({upper_shadow_pct:.1f}%)")
     # //========================================================================================//
 
@@ -1767,13 +1795,29 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
     elif new_lvl == 0:   # 일반 모드(Level 0)인 경우에만 30분봉 로직 수행
         logger.info(f"DEBUG: {symbol} | 일반 매도 모드 (5분 유예 감시)")
         current_type = str(buy_type)
+        drop_from_peak = ((high_price - curr_p) / high_price * 100) if high_price > 0 else 0
 
-        if current_type in ['1', '2', '3']:
+        # //======== [2026-05-11 최종 확정: RISE1 계단식 익절 및 -5% 절대손절] ========//
+        if current_type == 'RISE1':
+            if profit_rate_pct <= -5.0:
+                return True, f"🚨 [RISE1-절대손절] 진입가 대비 -5% 도달", True
+
+            if max_profit_rate_pct >= 20.0:
+                if drop_from_peak >= 5.0: return True, f"✅ [RISE1-익절] 20% 돌파 후 5% 하락", True
+            elif max_profit_rate_pct >= 15.0:
+                if drop_from_peak >= 4.0: return True, f"✅ [RISE1-익절] 15% 돌파 후 4% 하락", True
+            elif max_profit_rate_pct >= 10.0:
+                if drop_from_peak >= 3.0: return True, f"✅ [RISE1-익절] 10% 돌파 후 3% 하락", True
+            elif max_profit_rate_pct >= 5.0:
+                if drop_from_peak >= 2.0: return True, f"✅ [RISE1-익절] 5% 돌파 후 2% 하락", True
+            
+            # [중요] RISE1은 여기서 모든 감시를 끝내고 아래 단타 로직으로 내려가지 않아야 함
+            return False, "🚀 RISE1 추세 홀딩 중", False
+        # //==========================================================================//    
+
+        if current_type in ['1', '2', '3', '4']:
         ####### [추가] TYPE3 예외 처리: 30분봉 지표(90선/지지선) 로직 진입 차단 #######
             logger.info(f"DEBUG: {symbol} | TYPE: {buy_type} | 매도 조건 탐지 시작")
-
-            drop_from_peak = ((high_price - curr_p) / high_price * 100) if high_price > 0 else 0
-
             ########## [수정 시작] 최고 수익률을 기준으로 감시 구간을 고정하여 급락 시 이탈 방지 ##########
             max_profit_rate_pct = ((high_price - purchase_price) / purchase_price * 100) if purchase_price > 0 else 0
 
@@ -1896,13 +1940,13 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
     return False, "안전", False
 
 
-def get_report_visuals(this_profit, is_sell_signal, this_curr_p, ma40_val, sell_reason, symbol, pending_approvals):
+def get_report_visuals(this_profit, is_sell_signal, this_curr_p, ma40_val, sell_reason, symbol, pending_approvals, buy_type='1'):
     from datetime import datetime
     lvl = emergency_mode.get(symbol, 0)
-    
+    type_tag = "[스윙]" if str(buy_type) == 'RISE1' else "[단타]"
     if lvl >= 1:
         # 레벨 1(Caution)이나 2(Emergency)일 때는 무조건 사이렌 아이콘 반환
-        return "🚨", f"🔥 긴급감시(L{lvl})"
+        return "🚨", f"{type_tag} 🔥 긴급감시(L{lvl})"
     wait_data = pending_approvals.get(symbol)
     
     # [추가] 상세 사유에서 중복 종목명(예: DBR/KRW) 제거
@@ -1922,7 +1966,7 @@ def get_report_visuals(this_profit, is_sell_signal, this_curr_p, ma40_val, sell_
 
     # [2] 매도 신호 발생 (빨강 - 위험 신호)
     if is_sell_signal:
-        return "🔴", f"⚠️ 매도신호({clean_reason})"
+        return "🔴", f"{type_tag} ⚠️ 매도신호({sell_reason.split('(')[0].strip()})"
 
     # [3] 40선 하단 (노랑 - 주의 단계)
     if this_curr_p < ma40_val:
@@ -1931,4 +1975,4 @@ def get_report_visuals(this_profit, is_sell_signal, this_curr_p, ma40_val, sell_
         return "🟡", f"⚠️ 40선 하단"
 
     # [4] 차트 양호 (초록 - 홀딩/안전 신호)
-    return "🟢", f"✅ 차트양호(홀딩)"
+    return "🟢", f"{type_tag} ✅ 차트양호(홀딩)"
