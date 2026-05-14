@@ -55,37 +55,36 @@ def is_in_cooldown(symbol):
             return True
     return False
     
-# ###### 수정 시작: 시장 락 누적 합산 및 리턴 신호 복구 ######
+# //======== [수정: 시장 락 판별 및 0.3% 알림 로직 통합] ========//
 async def update_market_panic_status(current_avg, symbol_count=0):
     global market_ref_rate, is_buy_locked, panic_cleared_time, prev_day_offset, last_date, last_current_avg
-
-    #if symbol_count < 10:
-    #    return False, None
 
     current_date_str = datetime.now().strftime('%Y-%m-%d')
     
     if current_date_str != last_date:
-        prev_day_offset += last_current_avg
+        if is_buy_locked:
+            prev_day_offset += last_current_avg
+        else:
+            prev_day_offset = 0.0
         last_date = current_date_str
     
     last_current_avg = current_avg
     total_avg = current_avg + prev_day_offset
     
+    # 1. 패닉 진입
     if not is_buy_locked and total_avg <= -3.0:
         is_buy_locked = True
         market_ref_rate = total_avg
+        setattr(update_market_panic_status, 'last_alert_rate', total_avg) # 알람 기준점 초기화
         save_market_status()
         logger.info(f"🚨 [시장잠금] 패닉 감지 (기준점: {market_ref_rate:.2f}%)")
         return True, f"🚨 [시장잠금] 패닉 상태 감지\n기준점: {market_ref_rate:.2f}%\n현재 모든 매수가 중단됩니다."
 
+    # 2. 패닉 상태 중 관리
     elif is_buy_locked:
-        if market_ref_rate <= -5.0:
-            threshold = 2.0
-        elif market_ref_rate <= -3.0:
-            threshold = 1.5
-        else:
-            threshold = 1.0
+        threshold = 2.0 if market_ref_rate <= -5.0 else (1.5 if market_ref_rate <= -3.0 else 1.0)
 
+        # 해제
         if total_avg >= market_ref_rate + threshold:
             is_buy_locked = False
             panic_cleared_time = datetime.now()
@@ -93,25 +92,26 @@ async def update_market_panic_status(current_avg, symbol_count=0):
             prev_day_offset = 0.0
             last_current_avg = current_avg
             save_market_status()
-            logger.info(f"✅ 시장 반등 확인({threshold}%): 매수 잠금 해제 (기준점 초기화)")
+            logger.info(f"✅ 시장 반등 확인({threshold}%): 매수 잠금 해제")
             return True, f"✅ 시장 반등 확인({threshold}%): 매수 잠금 해제 (기준점 초기화)" 
+        
+        # 바닥 갱신
         elif total_avg < market_ref_rate:
             market_ref_rate = total_avg
+            setattr(update_market_panic_status, 'last_alert_rate', total_avg) # 알람 기준점 하향 동기화
             save_market_status()
             logger.info(f"📉 시장 바닥 갱신: 기준점 하향 조정 ({market_ref_rate:.2f}%)")
             return True, f"📉 시장 바닥 갱신: 기준점 하향 조정 ({market_ref_rate:.2f}%)"
-
-    else:
-        if total_avg <= market_ref_rate - 2.0:
-            is_buy_locked = True
-            market_ref_rate = total_avg
-            save_market_status()
-            logger.info(f"🚨 [재잠금] 데드캣 방지 필터 작동 (기준점: {market_ref_rate:.2f}%)")
-            return True, f"🚨 [재잠금] 데드캣 방지 필터 작동\n기준점: {market_ref_rate:.2f}%"
+            
+        # 바닥 탈출 중 (0.3% 알림)
+        else:
+            last_alert = getattr(update_market_panic_status, 'last_alert_rate', market_ref_rate)
+            if total_avg >= last_alert + 0.3:
+                setattr(update_market_panic_status, 'last_alert_rate', total_avg)
+                return True, f"📈 [시장회복] 바닥 대비 상승 중\n현재 지수: {total_avg:.2f}% (바닥: {market_ref_rate:.2f}% / 목표: {market_ref_rate + threshold:.2f}%)"
 
     save_market_status()
     return False, None
-# ###### 수정 끝 ######
 
 def get_bithumb_tick_size(price, direction=None):
     # [1] 기본 틱 사이즈 결정 (분석용 이격/기울기 계산의 기준점)
@@ -428,7 +428,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list, buy_type='1'):
     # 기본 data_dict 초기화 (조건 탈락 여부와 관계없이 끝까지 계산해 빈칸 채움)
     data_dict = {}
     reasons = []
-    if len(df) < 285:
+    if len(df) < 185:
         return False, "데이터부족", "", data_dict
 
     # [기존 유지] 40/185일선 + RSI
@@ -1330,31 +1330,68 @@ async def check_buy_signal(exchange, df, symbol, warning_list, buy_type='1'):
     if not is_t4_rebound: reasons_t4.append(f"[가드] 타점 돌파 실패({t2_fail_reason})")
     if slope_rate < -0.01: reasons_t4.append(f"185선급락({slope_rate:.4f})")
     
-    upper_shadow_pct = (float(curr['high']) - curr_price) / curr_price * 100 if curr_price > 0 else 0
-    
-    # //======== [2026-05-11 최종 확정: RISE1 일봉 스윙 매수 엔진 - 독립 블록] ========//
+    upper_shadow_pct = (float(curr['high']) - curr_price) / curr_price * 100 if curr_price > 0 else 0      
+    # //========================================================================================//
+    if upper_shadow_pct > 1.0: reasons_t4.append(f"윗꼬리과다({upper_shadow_pct:.1f}%)")
+    # //========================================================================================//
+
+    # //======== [2026-05-14 최종수정: 완전 잉태형 S+ 및 RISE 독립 분기] ========//
     if str(buy_type) == 'RISE1':
-        # 1. 185선 밥그릇 체크 (최근 50봉 중 60% 이상 하락 이력 확인)
         desc_cnt_185 = (df['ma185'].diff().tail(50) < 0).sum()
         is_rice_bowl = desc_cnt_185 >= 30 
 
-        # 2. 40/90선 추세적 수렴 (50봉 전부터 5단위로 11개 포인트, 10단계 수렴 확인)
         g_list = [abs(df['ma40'].iloc[-1-i] - df['ma90'].iloc[-1-i]) / df['ma90'].iloc[-1-i] * 100 for i in range(0, 51, 5)]
-        is_converging = (g_list[0] <= 5.0) and all(g_list[i] < g_list[i+1] for i in range(10))
+        conv_score = sum(1 for i in range(10) if g_list[i] < g_list[i+1])
+        is_converging = (g_list[0] <= 5.0) and (conv_score >= 8)
 
-        # 3. 세력 흔적 체크 (당일 포함 최근 3일 내 '양봉'의 고가가 90선을 터치)
-        r3 = df.tail(3)
-        has_bull_touch_90 = ((r3['close'] > r3['open']) & (r3['high'] >= r3['ma90'])).any()
-
-        # 4. 최종 진입 판정 (현재 양봉일 때)
-        if is_rice_bowl and is_converging and has_bull_touch_90 and curr_price > float(curr['open']):
-            data_dict['grade'] = 'S'
-            return True, f"🚀 [RISE1] 밥그릇(하락:{desc_cnt_185}) + 10단계수렴 + 양봉90선터치", "S", data_dict
+        d1_to_d6 = df.iloc[-7:-1] if len(df) >= 8 else pd.DataFrame()
+        
+        if is_rice_bowl and is_converging and not d1_to_d6.empty:
+            data_dict['bowl_count'] = int(desc_cnt_185)
+            data_dict['conv_score'] = int(conv_score)
             
-        # [핵심] RISE1 타입일 경우 여기서 함수를 종료하여 아래의 단타(TYPE 4) 로직 실행을 원천 차단
-        return False, "RISE1 조건 미달", "F", data_dict
-    # //============================================================================//
-    if upper_shadow_pct > 1.0: reasons_t4.append(f"윗꼬리과다({upper_shadow_pct:.1f}%)")
+            # --- [RISE1 검사: 90선 상향 터치 (음봉/양봉 무관)] ---
+            rise1_touch = (d1_to_d6['high'] >= d1_to_d6['ma90']).any()
+            
+            if rise1_touch:
+                is_compressed_success = True
+                last_bull_open, last_bull_close = 0, 0
+                
+                for i in range(len(df)-7, len(df)-1):
+                    c_o, c_c = df['open'].iloc[i], df['close'].iloc[i]
+                    if c_c > c_o: 
+                        last_bull_open, last_bull_close = c_o, c_c
+                    elif c_c < c_o:
+                        c_max, c_min = max(c_o, c_c), min(c_o, c_c)
+                        # 완전 잉태형 검증: 음봉 몸통이 양봉 몸통을 벗어나면 탈락
+                        if last_bull_close == 0 or c_max > last_bull_close or c_min < last_bull_open:
+                            is_compressed_success = False
+                            break
+                
+                if is_compressed_success:
+                    data_dict['grade'] = 'S+'
+                    return True, f"💎 [RISE1-S+] 밥그릇+수렴({conv_score}) + 90선터치 + 완전잉태형", "S+", data_dict
+                else:
+                    data_dict['grade'] = 'S'
+                    return True, f"🚀 [RISE1-S] 밥그릇+수렴({conv_score}) + 90선터치", "S", data_dict
+
+            # --- [RISE2 검사: RISE1 터치 실패 시 바로 실행 (누락 방지)] ---
+            is_40_above = df['ma40'].iloc[-1] > df['ma90'].iloc[-1]
+            target_line = df['ma40'] if is_40_above else df['ma90']
+            
+            # 배열에 따라 40선 또는 90선 상향 터치 확인
+            rise2_touch = (d1_to_d6['high'] >= target_line.iloc[-7:-1]).any()
+            
+            if rise2_touch:
+                target_name = "40선" if is_40_above else "90선"
+                data_dict['grade'] = 'S'
+                return True, f"⭐ [RISE2] 밥그릇+수렴({conv_score}) + 동적지지({target_name}) 터치", "S", data_dict
+
+        f_reasons = []
+        if not is_rice_bowl: f_reasons.append(f"밥그릇({desc_cnt_185}/30)")
+        if not is_converging: f_reasons.append(f"수렴({conv_score}/8)")
+        f_reasons.append("터치조건미달")
+        return False, f"RISE 미달({', '.join(f_reasons)})", "F", data_dict
     # //========================================================================================//
 
     # //======== [2026-04-16 수정: TYPE 4 공통 타점 적용] ========//

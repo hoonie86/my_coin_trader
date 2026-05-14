@@ -2,6 +2,8 @@ import asyncio
 import pandas as pd
 import sys
 import json
+import pandas as pd
+from openpyxl import load_workbook
 import os
 import shutil
 from datetime import datetime, timedelta
@@ -35,6 +37,7 @@ sell_mute_status = {}  # [기능 19] 'AUTO' | 'WATCH'
 buy_individual_status = {}  # 종목별 매수 개별 상태
 pending_approvals = {}  # [기능 17] 무응답 자동 대응용
 highest_rates = {}  # [기능 16] 수익 상승 보고용
+last_rise_run_hour = -1
 last_report_time = datetime.now() - timedelta(days=1)
 sell_cooldown = {}
 notified_symbols = {}
@@ -126,6 +129,51 @@ def save_inventory(symbol, avg_price, quantity, grade="A", buy_type=1, purchase_
         except Exception as e:
             logger.error(f"Inventory Save Error: {e}")
 
+def update_rise_excel(data_dict):
+    file_path = "/home/rocky/my_coin_trader/trades/rise_strategy_tracking_v1.xlsx"
+    sheet_name = "Rise_Tracking_Data"
+    
+    try:
+        # //======== [2026-05-14 수정: 엑셀 데이터 항목 확장 및 최고가 추적] ========//
+        if not os.path.exists(file_path):
+            headers = [
+                "Scan_Date", "Type", "Symbol", "Grade", "Entry_Price", "Current_Price", 
+                "Max_Price", "Profit_Pct", "Max_Profit_Pct", "Disparity", "MA40", "MA90", "MA185", 
+                "Conv_Score", "Bowl_Count", "Touch_Status", "Status"
+            ]
+            df = pd.DataFrame(columns=headers)
+            df.to_excel(file_path, sheet_name=sheet_name, index=False)
+            print(f"📁 엑셀 파일이 없어 신규 생성했습니다: {file_path}")
+        else:
+            df = pd.read_excel(file_path, sheet_name=sheet_name)
+        
+        mask = (df['Symbol'] == data_dict['Symbol']) & (df['Type'] == data_dict['Type']) & (df['Status'] != 'Sold')
+        
+        if mask.any():
+            idx = df.index[mask][0]
+            entry_price = float(df.at[idx, 'Entry_Price'])
+            curr_p = float(data_dict['Current_Price'])
+            
+            prev_max = float(df.at[idx].get('Max_Price', entry_price)) if 'Max_Price' in df.columns else entry_price
+            new_max = max(prev_max, curr_p)
+            
+            df.at[idx, 'Current_Price'] = curr_p
+            df.at[idx, 'Max_Price'] = new_max
+            df.at[idx, 'Profit_Pct'] = (curr_p - entry_price) / entry_price * 100
+            df.at[idx, 'Max_Profit_Pct'] = (new_max - entry_price) / entry_price * 100
+            df.at[idx, 'Scan_Date'] = data_dict['Scan_Date']
+        else:
+            data_dict['Max_Price'] = data_dict['Entry_Price']
+            data_dict['Max_Profit_Pct'] = 0
+            new_row = pd.DataFrame([data_dict])
+            df = pd.concat([df, new_row], ignore_index=True)
+            
+        # 엑셀 파일 저장 (스타일 보존을 위해 openpyxl 엔진 사용)
+        with pd.ExcelWriter(file_path, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
+            df.to_excel(writer, sheet_name=sheet_name, index=False)
+            
+    except Exception as e:
+        print(f"Excel Update Error: {e}")
 
 # 프로그램 시작 시 메모리에 로드
 manual_inventory = load_inventory()
@@ -398,7 +446,7 @@ async def get_buy_cost():
 
 async def buy_scan_task(app):
     """매수 스캔 태스크: 들여쓰기 교정 및 S급 추적 로직 정상화 + 1분봉 수급/미지패턴/60분수익률 연동"""
-    global notified_symbols, buy_individual_status, pending_s_buys, missed_60m_tracker
+    global notified_symbols, buy_individual_status, pending_s_buys, missed_60m_tracker, last_rise_run_hour
     while True:
         try:
             krw_filtered = []
@@ -462,13 +510,18 @@ async def buy_scan_task(app):
 
                 lock_status = "🚨 [LOCK]" if strategy.is_buy_locked else "✅ [NORMAL]"
                 real_total_avg = current_market_avg + strategy.prev_day_offset
-                    
-                print(f"\n📊 [시장 현황] {lock_status} | 순수시황: {current_market_avg:+.2f}% (내부적용: {real_total_avg:+.2f}%) | 바닥기준: {strategy.market_ref_rate:+.2f}%")
+                
+                ref = strategy.market_ref_rate
+                th = 2.0 if ref <= -5.0 else (1.5 if ref <= -3.0 else 1.0)
+                target_rate = ref + th
+                gap = target_rate - real_total_avg
+                
+                log_msg = f"📊 [시장 현황] {lock_status} | 현재: {real_total_avg:+.2f}% | 바닥: {ref:+.2f}%"
                 if strategy.is_buy_locked:
-                    ref = strategy.market_ref_rate
-                    th = 2.0 if ref <= -5.0 else (1.5 if ref <= -3.0 else 1.0)
-                    target_rate = ref + th
-                    print(f"   💡 해제조건: 내부적용수치({real_total_avg:+.2f}%)가 목표치({target_rate:+.2f}%)를 넘어야 풀립니다.")
+                    log_msg += f" | 목표: {target_rate:+.2f}% (▲{gap:.2f}% 부족)"
+                
+                logger.info(log_msg)
+                print(log_msg)
             if strategy.is_buy_locked:
                 print(f"🚫 [시장잠금] Panic Filter 상태입니다. 스캔을 생략하고 5분 뒤 시장을 재확인합니다.")
                 await asyncio.sleep(300)
@@ -517,12 +570,20 @@ async def buy_scan_task(app):
 
                 df = pd.DataFrame(ohlcv, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
                 is_buy, reason, grade, data_dict = await strategy.check_buy_signal(exchange, df, symbol, w_list)
-                if not is_buy: # 단타 신호가 없을 때 일봉 스윙 체크
-                    ohlcv_1d = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '1d', limit=100)
-                    if len(ohlcv_1d) >= 50:
+                
+                # //======== [2026-05-13 수정: 하루 2번(8시, 20시) 정밀 스캔 및 limit 300 상향] ========//
+                now = datetime.now()
+                is_rise_time = (now.hour in [0, 8, 20]) and (now.hour != last_rise_run_hour)
+                
+                if not is_buy and is_rise_time:
+                    ohlcv_1d = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '1d', limit=300)
+                    if len(ohlcv_1d) >= 200:
                         df_1d = pd.DataFrame(ohlcv_1d, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
-                        # buy_type='RISE1'을 명시적으로 전달해야 함
+                        # buy_type='RISE1'을 명시적으로 전달 (RISE1/2 분기는 전략단에서 수행)
                         is_buy, reason, grade, data_dict = await strategy.check_buy_signal(exchange, df_1d, symbol, w_list, buy_type='RISE1')
+                        if not is_buy:
+                            print(f"🔍 [RISE-SCAN] {symbol} | 결과: {reason}")
+                # //======================================================================================//
                 extracted_type = "1"
                 if "TYPE1" in reason: extracted_type = "1"
                 elif "TYPE2" in reason: extracted_type = "2"
@@ -541,19 +602,74 @@ async def buy_scan_task(app):
                     if symbol in notified_symbols and (datetime.now() - notified_symbols[symbol]) < timedelta(hours=1):
                         continue
 
+                    # //======== [2026-05-14 수정: curr_price -> current_price 및 수치 연동] ========//
+                    is_swing = "RISE" in reason
+                    if is_swing:
+                        ma40_v = data_dict.get('ma40_val', float(df_1d.iloc[-1]['ma40']))
+                        ma90_v = data_dict.get('ma90_val', float(df_1d.iloc[-1]['ma90']))
+                        ma185_v = data_dict.get('ma185_val', float(df_1d.iloc[-1]['ma185']))
+                        disparity_v = abs(ma40_v - ma90_v) / ma90_v * 100 if ma90_v > 0 else 0
+                        
+                        excel_row = {
+                            'Scan_Date': datetime.now().strftime('%Y-%m-%d %H:%M'),
+                            'Type': 'RISE1' if 'RISE1' in reason else 'RISE2',
+                            'Symbol': symbol,
+                            'Grade': grade,
+                            'Entry_Price': current_price,
+                            'Current_Price': current_price,
+                            'Profit_Pct': 0,  # <-- 누락되었던 초기 수익률 복구
+                            'Disparity': disparity_v,
+                            'MA40': ma40_v,
+                            'MA90': ma90_v,
+                            'MA185': ma185_v,
+                            'Conv_Score': data_dict.get('conv_score', 8),
+                            'Bowl_Count': data_dict.get('bowl_count', 30),
+                            'Touch_Status': '90_Touch' if 'RISE1' in reason else 'Dynamic_Touch',
+                            'Status': 'Holding'
+                        }
+                        update_rise_excel(excel_row)
+                    # //============================================================================//
+
                     current_grade = grade if grade else "S"
                     notified_symbols[symbol] = datetime.now()
                     balance = await asyncio.to_thread(exchange.fetch_balance)
                     free_krw = float(balance['free'].get('KRW', 0))
-                    # buy_cost = await get_buy_cost()
-                    if "RISE1" in reason:
-                        buy_cost = 200000  # 스윙 (RISE1)
-                    else:
-                        buy_cost = 400000  # 단타 (TYPE 1~4)
-                    # # TYPE 4일 경우에만 예산을 2/4로 축소 (신규 로직 검증용)
-                    # if extracted_type == "4":
-                    #     buy_cost = int(buy_cost / 2)
-                    #     logger.info(f"🛡️ [리스크관리] {symbol} TYPE4 감지로 매수금액 50% 축소: {buy_cost:,.0f}원")
+                    
+                    # //======== [2026-05-13 수정: 단타/스윙(2:1) 동적 한도 산출 및 진입 제어] ========//
+                    inv_snapshot = load_inventory()
+                    day_invested, swing_invested = 0, 0
+                    
+                    for item in inv_snapshot.values():
+                        cost = float(item.get('purchase_price', item.get('avg_price', 0))) * float(item.get('total_quantity', 0))
+                        if str(item.get('buy_type')) == 'RISE1' or "RISE" in str(item.get('grade', '')) or "RISE" in str(item.get('reason', '')):
+                            swing_invested += cost
+                        else:
+                            day_invested += cost
+
+                    total_equity = free_krw + day_invested + swing_invested
+                    
+                    # config에 DAY_TRADE_RATIO(2), SWING_TRADE_RATIO(1)가 없으면 기본값 적용
+                    ratio_d = getattr(config, 'DAY_TRADE_RATIO', 2)
+                    ratio_s = getattr(config, 'SWING_TRADE_RATIO', 1)
+                    ratio_sum = ratio_d + ratio_s
+                    
+                    day_limit = total_equity * (ratio_d / ratio_sum)
+                    swing_limit = total_equity * (ratio_s / ratio_sum)
+
+                    is_swing = "RISE" in reason
+                    limit_amt = swing_limit if is_swing else day_limit
+                    current_invested = swing_invested if is_swing else day_invested
+                    
+                    buy_cost = getattr(config, 'DEFAULT_TEST_BUY', 125000)
+
+                    if is_swing:
+                        logger.info(f"🛡️ [관망모드] {symbol} RISE 신호 포착. 엑셀 기록 완료.")
+                        await app.bot.send_message(
+                            config.CHAT_ID,
+                            f"🔔 [RISE 포착/관망중] {symbol}\n사유: {reason}\n현재가: {current_price:,.0f}원\n※ 백테스트 관망 모드로 매수는 진행되지 않습니다."
+                        )
+                        continue
+                    # //==================================================================================//
                     buy_type = get_symbol_buy_type(symbol, reason)
 
                     # [개선] grade 값 우선 사용, 없으면 reason에서 추출
@@ -658,6 +774,9 @@ async def buy_scan_task(app):
                         )
 
             print(f"\n✅ 스캔 완료 | {datetime.now().strftime('%H:%M:%S')}")
+            if datetime.now().hour in [8, 20]:
+                last_rise_run_hour = datetime.now().hour
+                print(f"DEBUG: 🔍 [RISE-SCAN] 하루 2번 스캔 완료 | 시간: {datetime.now().strftime('%H:%M:%S')}")
             await asyncio.sleep(180)
 
         except Exception as e:
@@ -1636,7 +1755,36 @@ async def handle_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE)
         elif msg == "💰 금액설정":
             await update.message.reply_text("매수 단위 금액 선택:",
                                             reply_markup=telegram_ui.get_amt_kb(config.DEFAULT_TEST_BUY))
-
+        # //======== [2026-05-14 추가: 백테스트(BT) 명령어 처리] ========//
+        elif msg.upper().startswith("BT"):
+            parts = msg.split()
+            if len(parts) < 2:
+                await update.message.reply_text("⚠️ 종목명을 함께 입력해주세요. (예: bt mapo)")
+                return 
+                
+            target_sym = parts[1].upper()
+            if not target_sym.endswith("/KRW"): target_sym += "/KRW"
+            
+            await update.message.reply_text(f"🔍 [{target_sym}] 일봉 백테스트를 시작합니다...")
+            try:
+                bt_ohlcv = await asyncio.to_thread(exchange.fetch_ohlcv, target_sym, '1d', limit=300)
+                bt_df = pd.DataFrame(bt_ohlcv, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
+                
+                is_buy, bt_reason, bt_grade, bt_data = await strategy.check_buy_signal(exchange, bt_df, target_sym, [], buy_type='RISE1')
+                
+                if is_buy:
+                    await update.message.reply_text(
+                        f"✅ [백테스트 결과] {target_sym}\n"
+                        f"등급: {bt_grade}\n"
+                        f"사유: {bt_reason}\n"
+                        f"이격도: {abs(bt_data.get('ma40_val',0)-bt_data.get('ma90_val',0))/bt_data.get('ma90_val',1)*100:.2f}%\n"
+                        f"밥그릇: {bt_data.get('bowl_count',0)}개\n"
+                        f"수렴점수: {bt_data.get('conv_score',0)}점"
+                    )
+                else:
+                    await update.message.reply_text(f"❌ [백테스트 결과] {target_sym}\n포착 실패: {bt_reason}")
+            except Exception as e:
+                await update.message.reply_text(f"⚠️ 백테스트 오류: {e}")
 
 async def process_report_logic(update, context, query=None):
     """[최종 복구] 실시간 리포트 - 11개 전 종목 노출 + 수익률 정상화 + 흰색 제거"""
