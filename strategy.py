@@ -174,11 +174,12 @@ def get_updated_emergency_level(symbol, current_level, buy_type, rsi, is_3m_belo
     Level 2 -> 1 (하향): 타입별 분기된 조건 적용
     Level 1 -> 0 (해제): 타입별 독립 기준 적용
     """
-    buy_type = int(buy_type)
+    # //======== [2026-05-15 수정: 강제 int 형변환 삭제 (ValueError 방지)] ========//
     
     # [교정] 타입별 하향(2->1) 조건 정의
-    is_recovering_general = (buy_type != 3 and is_3m_below_ma40)
-    is_recovering_type3 = (buy_type == 3 and is_type3_stable)
+    is_recovering_general = (str(buy_type) != '3' and is_3m_below_ma40)
+    is_recovering_type3 = (str(buy_type) == '3' and is_type3_stable)
+    # //========================================================================//
 
     # 1. 트리거 (0 -> 2): 진입 조건 (기존 유지)
     if current_level == 0:
@@ -716,17 +717,24 @@ async def check_buy_signal(exchange, df, symbol, warning_list, buy_type='1'):
                 dynamic_vol_limit = 40.0  # [Case B] 필수 조건 충족 + 일반 구간
         else:
             dynamic_vol_limit = 20.0      # [Case C] 추세 미달 및 고점 구간
-    
+            
+    # //======== [2026-05-15 수정: 일봉(RISE) 스윙 시 상단방어/설거지 방어막 완전 차단] ========//
+    if is_rise_mode:
+        dynamic_vol_limit = 999.0  # 일봉 스윙은 캔들 구간 변동성(상단방어)을 무제한 허용
+
     if volatility >= dynamic_vol_limit:
         print(f"DEBUG: {symbol} 매수 탈락 - 변동성 과다({volatility:.1f}% >= {dynamic_vol_limit}%)")
         return False, f"🚫 [상단방어] 구간 변동성({volatility:.1f}%) > 허용치({dynamic_vol_limit}%)", "F", {}
         
-    if curr_price < curr['high'] * 0.90:
-        return False, f"🚫 [설거지방어] 고가대비 이탈(-10.0%↑)", "F", {}
+    if not is_rise_mode:
+        if curr_price < curr['high'] * 0.90:
+            return False, f"🚫 [설거지방어] 고가대비 이탈(-10.0%↑)", "F", {}
 
-    if upper_wick >= 5.0:
-        print(f"DEBUG: {symbol} 매수 탈락 - 윗꼬리 과다({upper_wick:.1f}%)")
-        return False, f"🚫 [윗꼬리 방어] 윗꼬리 과다({upper_wick:.1f}%) 설거지 포착", "F", {}    
+        if upper_wick >= 5.0:
+            print(f"DEBUG: {symbol} 매수 탈락 - 윗꼬리 과다({upper_wick:.1f}%)")
+            return False, f"🚫 [윗꼬리 방어] 윗꼬리 과다({upper_wick:.1f}%) 설거지 포착", "F", {}    
+    # //========================================================================================//
+
     # [가격 필터] 10원 미만 또는 10,000원 이상 → BTC 마켓 동전주/비정상 차단
     if curr_price < 1 or curr_price >= 10000:
         return False, "가격필터(BTC마켓)", "", data_dict
@@ -734,11 +742,13 @@ async def check_buy_signal(exchange, df, symbol, warning_list, buy_type='1'):
     # [유의 종목] 수급 돌파(S/S+) 포함 모든 매수 신호에서 투자유의 종목 제외 (먼저 검사)
     if symbol.split('/')[0] in warning_list:
         return False, "투자유의", "F", data_dict
-    # 현재가(close) 대비 고가(high)의 순수 물리적 거리를 계산 (양봉 기준)
-    upper_wick_dist_pct = (curr['high'] - curr_price) / curr_price * 100
-    
-    if upper_wick_dist_pct >= 5.0:
-        return False, f"🚫 [저항과다] 윗꼬리(현재가대비):{upper_wick_dist_pct:.2f}%", "F", data_dict
+        
+    # //======== [2026-05-15 수정: 저항과다 방어막도 RISE 모드 제외] ========//
+    if not is_rise_mode:
+        upper_wick_dist_pct = (curr['high'] - curr_price) / curr_price * 100
+        
+        if upper_wick_dist_pct >= 5.0:
+            return False, f"🚫 [저항과다] 윗꼬리(현재가대비):{upper_wick_dist_pct:.2f}%", "F", data_dict
         
     ###### [신규 추가] 스테이블 코인 및 185일선 고점(상위 30%) 원천 차단 ######
     # 1. 스테이블 코인 필터링 (USDC, USDT, DAI 등 차트 왜곡 종목)
@@ -867,9 +877,18 @@ async def check_buy_signal(exchange, df, symbol, warning_list, buy_type='1'):
 
     data_dict = _fill_data_dict_full(df, curr, prev, curr_price, symbol)
 
-    # 1. 지옥행 가드 (Panic Sell 차단)
+    # //======== [2026-05-15 수정: RISE 모드 판별 및 지옥행 가드 격리, 동적 탐색 범위 설정] ========//
+    is_rise_mode = str(buy_type).startswith('RISE')
+    now_h = datetime.now().hour
+    
+    if 22 <= now_h < 24:
+        d_search = df.iloc[-7:]
+    else:
+        d_search = df.iloc[-7:-1]
+        
+    # 1. 지옥행 가드 (Panic Sell 차단) - 단타 전용
     is_panic_sell = (data_dict.get('vol_ratio', 0) >= 1.5) and (curr_price < float(curr['open']))
-    if is_panic_sell:
+    if is_panic_sell and not is_rise_mode:
         return False, "🚫 [지옥행가드] 대량 매도 음봉 출현(Panic Sell)", "F", data_dict
 
     # 2. 거래량 질적 분석 (Volume Profile - 1.5배)
@@ -1335,38 +1354,39 @@ async def check_buy_signal(exchange, df, symbol, warning_list, buy_type='1'):
     if upper_shadow_pct > 1.0: reasons_t4.append(f"윗꼬리과다({upper_shadow_pct:.1f}%)")
     # //========================================================================================//
 
-    # //======== [2026-05-14 최종수정: 완전 잉태형 S+ 및 RISE 독립 분기] ========//
+    # //======== [2026-05-15 최종수정: 수렴 6점 하향, 시간대별 d_search 적용, RISE2 우선순위 독립] ========//
     if str(buy_type) == 'RISE1':
         desc_cnt_185 = (df['ma185'].diff().tail(50) < 0).sum()
         is_rice_bowl = desc_cnt_185 >= 30 
 
         g_list = [abs(df['ma40'].iloc[-1-i] - df['ma90'].iloc[-1-i]) / df['ma90'].iloc[-1-i] * 100 for i in range(0, 51, 5)]
         conv_score = sum(1 for i in range(10) if g_list[i] < g_list[i+1])
-        is_converging = (g_list[0] <= 5.0) and (conv_score >= 8)
-
-        d1_to_d6 = df.iloc[-7:-1] if len(df) >= 8 else pd.DataFrame()
+        is_converging = (g_list[0] <= 5.0) and (conv_score >= 6)
         
-        if is_rice_bowl and is_converging and not d1_to_d6.empty:
+        if is_rice_bowl and is_converging and not d_search.empty:
             data_dict['bowl_count'] = int(desc_cnt_185)
             data_dict['conv_score'] = int(conv_score)
             
-            # --- [RISE1 검사: 90선 상향 터치 (음봉/양봉 무관)] ---
-            rise1_touch = (d1_to_d6['high'] >= d1_to_d6['ma90']).any()
+            # --- [RISE1 검사: 90선 상향 터치] ---
+            rise1_touch = (d_search['high'] >= d_search['ma90']).any()
             
             if rise1_touch:
                 is_compressed_success = True
                 last_bull_open, last_bull_close = 0, 0
                 
-                for i in range(len(df)-7, len(df)-1):
-                    c_o, c_c = df['open'].iloc[i], df['close'].iloc[i]
-                    if c_c > c_o: 
-                        last_bull_open, last_bull_close = c_o, c_c
-                    elif c_c < c_o:
-                        c_max, c_min = max(c_o, c_c), min(c_o, c_c)
-                        # 완전 잉태형 검증: 음봉 몸통이 양봉 몸통을 벗어나면 탈락
-                        if last_bull_close == 0 or c_max > last_bull_close or c_min < last_bull_open:
-                            is_compressed_success = False
-                            break
+                max_amp = ((d_search['high'] - d_search['low']) / d_search['low'] * 100).max()
+                if max_amp >= 20.0:
+                    is_compressed_success = False
+                else:
+                    for i in range(len(df)-7, len(df)):
+                        c_o, c_c = df['open'].iloc[i], df['close'].iloc[i]
+                        if c_c > c_o: 
+                            last_bull_open, last_bull_close = c_o, c_c
+                        elif c_c < c_o:
+                            c_max, c_min = max(c_o, c_c), min(c_o, c_c)
+                            if last_bull_close == 0 or c_max > last_bull_close or c_min < last_bull_open:
+                                is_compressed_success = False
+                                break
                 
                 if is_compressed_success:
                     data_dict['grade'] = 'S+'
@@ -1375,12 +1395,11 @@ async def check_buy_signal(exchange, df, symbol, warning_list, buy_type='1'):
                     data_dict['grade'] = 'S'
                     return True, f"🚀 [RISE1-S] 밥그릇+수렴({conv_score}) + 90선터치", "S", data_dict
 
-            # --- [RISE2 검사: RISE1 터치 실패 시 바로 실행 (누락 방지)] ---
+            # --- [RISE2 검사: 40선/90선 중 상단선 지지 확인] ---
             is_40_above = df['ma40'].iloc[-1] > df['ma90'].iloc[-1]
             target_line = df['ma40'] if is_40_above else df['ma90']
             
-            # 배열에 따라 40선 또는 90선 상향 터치 확인
-            rise2_touch = (d1_to_d6['high'] >= target_line.iloc[-7:-1]).any()
+            rise2_touch = (d_search['high'] >= target_line.loc[d_search.index]).any()
             
             if rise2_touch:
                 target_name = "40선" if is_40_above else "90선"
@@ -1389,7 +1408,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list, buy_type='1'):
 
         f_reasons = []
         if not is_rice_bowl: f_reasons.append(f"밥그릇({desc_cnt_185}/30)")
-        if not is_converging: f_reasons.append(f"수렴({conv_score}/8)")
+        if not is_converging: f_reasons.append(f"수렴({conv_score}/6)")
         f_reasons.append("터치조건미달")
         return False, f"RISE 미달({', '.join(f_reasons)})", "F", data_dict
     # //========================================================================================//
@@ -1596,8 +1615,9 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
     global last_profit_dict
     # //========================================================//
 
-    buy_type = int(buy_type) # 타입 비교 에러 방지용 강제 형변환
-    support_price = 0.0      # NameError 원천 차단 방어막
+    # //======== [2026-05-15 수정: 강제 int 형변환 삭제 및 변수 보호] ========//
+    support_price = 0.0
+    # //======================================================================//
 
         # 1. 실시간 현재가 확정
     temp_curr = df.iloc[-1]
@@ -1611,7 +1631,10 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
     temp_p_pct = ((curr_p - purchase_price) / purchase_price * 100) if purchase_price > 0 else 0
     prev_p = last_profit_dict.get(symbol, temp_p_pct)
 
-    if (temp_p_pct - prev_p) >= 1.5:
+    is_rise_mode = str(buy_type).startswith('RISE')
+
+    # 상승 폭이 1.5% 이상이더라도 RISE 종목이면 번개 익절을 수행하지 않음
+    if (temp_p_pct - prev_p) >= 1.5 and not is_rise_mode:
         if temp_p_pct >= 1.0: # 1% 수익 마지노선 가드
             last_profit_dict[symbol] = temp_p_pct
             return True, f"⚡ [번개익절] L{old_lvl}상태에서 1.5% 폭등 감지. 지정가 매도 시도 (수익 {temp_p_pct:.2f}%)", True
@@ -1653,9 +1676,9 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
 
     # [2단계] 패닉 대응: 상승 시 보류, 횡보/하락 시 유예 매도 (Emergency=False)
     if is_buy_locked:
-        # //======== [2026-04-30 수정: 패닉 발생 시 타입 1, 3 전용 2시간(4봉) 보호막] ========//
-        panic_shield_bars = 4 if buy_type in [1, 3] else 0
-        if buy_type in [1, 3] and symbol_inventory_age < panic_shield_bars:
+        # //======== [2026-05-15 수정: 패닉 보호막 타입 검사 시 str 형변환] ========//
+        panic_shield_bars = 4 if str(buy_type) in ['1', '3'] else 0
+        if str(buy_type) in ['1', '3'] and symbol_inventory_age < panic_shield_bars:
             return False, f"🛡️ [T{buy_type}-패닉유예] 2시간 보호 ({symbol_inventory_age}봉)", False
         if curr_p > float(prev['close']):
             # 상승 중이면 패닉이라도 수익을 위해 일단 홀딩 (유예)

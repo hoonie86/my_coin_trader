@@ -70,16 +70,15 @@ def get_symbol_buy_type(symbol, reason=""):
     reason 문자열에서 TYPE1, 2, 3 존재 여부를 파악하여 타입 번호 리턴.
     찾지 못할 경우 인벤토리를 확인하거나 기본값 1을 리턴.
     """
-    # 1. reason 문자열에서 TYPE 확인
-    if "TYPE1" in reason:
-        return 1
-    elif "TYPE2" in reason:
-        return 2
-    elif "TYPE3" in reason:
-        return 3
-    elif "TYPE4" in reason:
-        return 4
-    # 2. reason에 정보가 없을 경우 기존 인벤토리 정보 참조
+    if "TYPE1" in reason: return 1
+    elif "TYPE2" in reason: return 2
+    elif "TYPE3" in reason: return 3
+    elif "TYPE4" in reason: return 4
+    # //======== [2026-05-15 수정: RISE 스윙 타입 추가] ========//
+    elif "RISE1" in reason: return "RISE1"
+    elif "RISE2" in reason: return "RISE2"
+    # //========================================================//
+    
     inv_data = load_inventory()
     sym_only = symbol.split('/')[0]
     inv_item = inv_data.get(symbol) or inv_data.get(sym_only) or {}
@@ -663,13 +662,16 @@ async def buy_scan_task(app):
                     buy_cost = getattr(config, 'DEFAULT_TEST_BUY', 125000)
 
                     if is_swing:
-                        logger.info(f"🛡️ [관망모드] {symbol} RISE 신호 포착. 엑셀 기록 완료.")
-                        await app.bot.send_message(
-                            config.CHAT_ID,
-                            f"🔔 [RISE 포착/관망중] {symbol}\n사유: {reason}\n현재가: {current_price:,.0f}원\n※ 백테스트 관망 모드로 매수는 진행되지 않습니다."
-                        )
+                        logger.info(f"🛡️ [관망모드] {symbol} RISE 신호 포착. 엑셀 기록 완료. (등급:{grade})")
+                        # //======== [2026-05-15 수정: 피로도 감소를 위해 S+ 급만 텔레그램 알림 발송] ========//
+                        if grade == 'S+':
+                            await app.bot.send_message(
+                                config.CHAT_ID,
+                                f"💎 [RISE S+ 포착/관망중] {symbol}\n사유: {reason}\n현재가: {current_price:,.0f}원\n※ 백테스트 관망 모드로 매수는 진행되지 않습니다."
+                            )
+                        # //========================================================================//
                         continue
-                    # //==================================================================================//
+                        
                     buy_type = get_symbol_buy_type(symbol, reason)
 
                     # [개선] grade 값 우선 사용, 없으면 reason에서 추출
@@ -1757,24 +1759,42 @@ async def handle_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE)
                                             reply_markup=telegram_ui.get_amt_kb(config.DEFAULT_TEST_BUY))
         # //======== [2026-05-14 추가: 백테스트(BT) 명령어 처리] ========//
         elif msg.upper().startswith("BT"):
-            parts = msg.split()
+            parts = msg.upper().split()
             if len(parts) < 2:
-                await update.message.reply_text("⚠️ 종목명을 함께 입력해주세요. (예: bt mapo)")
-                return 
+                await update.message.reply_text("⚠️ 종목명을 함께 입력해주세요. (예: bt mapo 또는 bt mapo d-2)")
+                return
                 
-            target_sym = parts[1].upper()
+            target_sym = parts[1]
             if not target_sym.endswith("/KRW"): target_sym += "/KRW"
             
-            await update.message.reply_text(f"🔍 [{target_sym}] 일봉 백테스트를 시작합니다...")
+            # D-N 파싱 (기본값 1 = 전일자)
+            offset = 1 
+            if len(parts) >= 3 and parts[2].startswith("D"):
+                try:
+                    offset_str = parts[2].replace("D", "").replace("-", "")
+                    offset = int(offset_str) if offset_str else 1
+                except ValueError:
+                    offset = 1
+
+            await update.message.reply_text(f"🔍 [{target_sym}] D-{offset} 기준 일봉 백테스트를 시작합니다...")
             try:
-                bt_ohlcv = await asyncio.to_thread(exchange.fetch_ohlcv, target_sym, '1d', limit=300)
+                # 과거 데이터를 자를 것을 대비해 넉넉하게 350개 호출
+                bt_ohlcv = await asyncio.to_thread(exchange.fetch_ohlcv, target_sym, '1d', limit=350)
                 bt_df = pd.DataFrame(bt_ohlcv, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
+                
+                # 핵심: offset 수치만큼 데이터프레임의 꼬리(최신 날짜)를 잘라내어 과거로 되돌림
+                if offset > 0:
+                    bt_df = bt_df.iloc[:-offset].reset_index(drop=True)
+                
+                # 테스트 기준일 추출 (ms -> YYYY-MM-DD)
+                test_timestamp = bt_df['time'].iloc[-1]
+                test_date = datetime.fromtimestamp(test_timestamp / 1000).strftime('%Y-%m-%d')
                 
                 is_buy, bt_reason, bt_grade, bt_data = await strategy.check_buy_signal(exchange, bt_df, target_sym, [], buy_type='RISE1')
                 
                 if is_buy:
                     await update.message.reply_text(
-                        f"✅ [백테스트 결과] {target_sym}\n"
+                        f"✅ [백테스트 결과] {target_sym} (기준일: {test_date})\n"
                         f"등급: {bt_grade}\n"
                         f"사유: {bt_reason}\n"
                         f"이격도: {abs(bt_data.get('ma40_val',0)-bt_data.get('ma90_val',0))/bt_data.get('ma90_val',1)*100:.2f}%\n"
@@ -1782,7 +1802,7 @@ async def handle_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE)
                         f"수렴점수: {bt_data.get('conv_score',0)}점"
                     )
                 else:
-                    await update.message.reply_text(f"❌ [백테스트 결과] {target_sym}\n포착 실패: {bt_reason}")
+                    await update.message.reply_text(f"❌ [백테스트 결과] {target_sym} (기준일: {test_date})\n포착 실패: {bt_reason}")
             except Exception as e:
                 await update.message.reply_text(f"⚠️ 백테스트 오류: {e}")
 
