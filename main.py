@@ -153,7 +153,7 @@ def update_rise_excel(data_dict):
             entry_price = float(df.at[idx, 'Entry_Price'])
             curr_p = float(data_dict['Current_Price'])
             
-            prev_max = float(df.at[idx].get('Max_Price', entry_price)) if 'Max_Price' in df.columns else entry_price
+            prev_max = float(df.loc[idx].get('Max_Price', entry_price)) if 'Max_Price' in df.columns else entry_price
             new_max = max(prev_max, curr_p)
             
             df.at[idx, 'Current_Price'] = curr_p
@@ -572,7 +572,7 @@ async def buy_scan_task(app):
                 
                 # //======== [2026-05-13 수정: 하루 2번(8시, 20시) 정밀 스캔 및 limit 300 상향] ========//
                 now = datetime.now()
-                is_rise_time = (now.hour in [0, 8, 20]) and (now.hour != last_rise_run_hour)
+                is_rise_time = (now.hour in [0, 7, 14, 21, 23]) and (now.hour != last_rise_run_hour)
                 
                 if not is_buy and is_rise_time:
                     ohlcv_1d = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '1d', limit=300)

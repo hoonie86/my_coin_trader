@@ -181,9 +181,19 @@ def get_updated_emergency_level(symbol, current_level, buy_type, rsi, is_3m_belo
     is_recovering_type3 = (str(buy_type) == '3' and is_type3_stable)
     # //========================================================================//
 
-    # 1. 트리거 (0 -> 2): 진입 조건 (기존 유지)
+    # 1. 트리거 (0 -> 2): 진입 조건 (RISE 모드와 단타 모드 이원화)
     if current_level == 0:
-        if (profit_pct >= 1.3 or has_rsi_spike or soaring_rate >= 1.0 or max_profit_pct >= 5.0):
+        # //======== [2026-05-16 수정: RISE(일봉) 종목은 '수직 분출' 시에만 비상 엔진 가동] ========//
+        is_rise = str(buy_type).startswith('RISE')
+        
+        # 임계값 설정 (RISE는 3분봉의 노이즈를 견디도록 대폭 상향)
+        t_profit = 10.0 if is_rise else 1.3
+        t_soaring = 8.0 if is_rise else 1.0     # 일봉이 하루에 8% 이상 쏘는 경우 (오버슈팅)
+        t_max_profit = 12.0 if is_rise else 5.0  # 수익 12% 돌파 시 '줄 때 먹기' 모드
+        
+        # RISE에서는 틱 사이즈 3배 조건 등은 무시하고 아래 핵심 4가지만 체크
+        if (profit_pct >= t_profit or has_rsi_spike or soaring_rate >= t_soaring or max_profit_pct >= t_max_profit):
+            logger.info(f"🚨 [비상진입] {symbol} (RISE-스윙모드) | 수익:{profit_pct:.1f}% | 캔들:{soaring_rate:.1f}%")
             return 2
     
     # 2. 하향 (Level 2 -> 1): 타입별로 분기된 변수에 따라 전환
@@ -386,6 +396,9 @@ async def check_buy_signal(exchange, df, symbol, warning_list, buy_type='1'):
     Returns:
         tuple: (is_buy: bool, reason: str, grade: str, data_dict: dict)
     """
+    # //======== [수정: 참조 오류 방지를 위해 최상단에 선언] ========//
+    is_rise_mode = str(buy_type).startswith('RISE')
+    # //==========================================================//
     grade = ""
     global s_plus_tracker
     if 's_plus_tracker' not in globals():
@@ -876,9 +889,6 @@ async def check_buy_signal(exchange, df, symbol, warning_list, buy_type='1'):
     ma90_val = float(curr['ma90']) if not pd.isna(curr['ma90']) else None
 
     data_dict = _fill_data_dict_full(df, curr, prev, curr_price, symbol)
-
-    # //======== [2026-05-15 수정: RISE 모드 판별 및 지옥행 가드 격리, 동적 탐색 범위 설정] ========//
-    is_rise_mode = str(buy_type).startswith('RISE')
     now_h = datetime.now().hour
     
     if 22 <= now_h < 24:
@@ -1361,13 +1371,20 @@ async def check_buy_signal(exchange, df, symbol, warning_list, buy_type='1'):
 
         g_list = [abs(df['ma40'].iloc[-1-i] - df['ma90'].iloc[-1-i]) / df['ma90'].iloc[-1-i] * 100 for i in range(0, 51, 5)]
         conv_score = sum(1 for i in range(10) if g_list[i] < g_list[i+1])
-        is_converging = (g_list[0] <= 5.0) and (conv_score >= 6)
         
+        # 배열 상태에 따른 이격도 한도 동적 설정 (역배열 5%, 정배열 2%)
+        is_40_below_90 = df['ma40'].iloc[-1] < df['ma90'].iloc[-1]
+        gap_limit = 5.0 if is_40_below_90 else 2.0
+        is_converging = (g_list[0] <= gap_limit) and (conv_score >= 6)
+        
+        # 상세 디버그 로그 출력
+        logger.info(f"🔍 [RISE-DEBUG] {symbol} | 밥그릇:{is_rice_bowl}({desc_cnt_185}) | 수렴:{is_converging}(점수:{conv_score}, 이격:{g_list[0]:.2f}%/한도:{gap_limit}%)")
+
         if is_rice_bowl and is_converging and not d_search.empty:
             data_dict['bowl_count'] = int(desc_cnt_185)
             data_dict['conv_score'] = int(conv_score)
             
-            # --- [RISE1 검사: 90선 상향 터치] ---
+            # --- [RISE1 검사: 90선 상향 터치 확인] ---
             rise1_touch = (d_search['high'] >= d_search['ma90']).any()
             
             if rise1_touch:
@@ -1384,7 +1401,8 @@ async def check_buy_signal(exchange, df, symbol, warning_list, buy_type='1'):
                             last_bull_open, last_bull_close = c_o, c_c
                         elif c_c < c_o:
                             c_max, c_min = max(c_o, c_c), min(c_o, c_c)
-                            if last_bull_close == 0 or c_max > last_bull_close or c_min < last_bull_open:
+                            # 잉태형 조건 완화: 음봉 몸통 하단(c_min)이 양봉 시가(last_bull_open)를 깨지만 않으면 통과
+                            if last_bull_close == 0 or c_min < last_bull_open:
                                 is_compressed_success = False
                                 break
                 
@@ -1395,7 +1413,7 @@ async def check_buy_signal(exchange, df, symbol, warning_list, buy_type='1'):
                     data_dict['grade'] = 'S'
                     return True, f"🚀 [RISE1-S] 밥그릇+수렴({conv_score}) + 90선터치", "S", data_dict
 
-            # --- [RISE2 검사: 40선/90선 중 상단선 지지 확인] ---
+            # --- [RISE2 검사: 40선/90선 중 상단 지지선 터치 (RISE1 실패 시 수행)] ---
             is_40_above = df['ma40'].iloc[-1] > df['ma90'].iloc[-1]
             target_line = df['ma40'] if is_40_above else df['ma90']
             
@@ -1405,13 +1423,21 @@ async def check_buy_signal(exchange, df, symbol, warning_list, buy_type='1'):
                 target_name = "40선" if is_40_above else "90선"
                 data_dict['grade'] = 'S'
                 return True, f"⭐ [RISE2] 밥그릇+수렴({conv_score}) + 동적지지({target_name}) 터치", "S", data_dict
+            else:
+                logger.info(f"🔍 [RISE-DEBUG] {symbol} | 터치 실패 (RISE1/2 조건 미충족)")
 
         f_reasons = []
-        if not is_rice_bowl: f_reasons.append(f"밥그릇({desc_cnt_185}/30)")
-        if not is_converging: f_reasons.append(f"수렴({conv_score}/6)")
-        f_reasons.append("터치조건미달")
+        if not is_rice_bowl: 
+            f_reasons.append(f"밥그릇({desc_cnt_185}/30)")
+        
+        if not is_converging: 
+            f_reasons.append(f"수렴({conv_score}/6, 이격:{g_list[0]:.2f}%>한도:{gap_limit}%)")
+        
+        # 밥그릇/수렴 관문을 넘었는데 리턴되지 않았다면 '터치' 실패가 확실할 때만 로그 추가
+        if is_rice_bowl and is_converging:
+            f_reasons.append("터치미달")
+            
         return False, f"RISE 미달({', '.join(f_reasons)})", "F", data_dict
-    # //========================================================================================//
 
     # //======== [2026-04-16 수정: TYPE 4 공통 타점 적용] ========//
     if not reasons_t4:
@@ -1754,16 +1780,17 @@ async def check_sell_signal(exchange, df, symbol, purchase_price, max_price=0, g
     df_3m = None
     is_3m_below_ma40 = False
 
-        # Level 1 이상일 때만 실시간 3분봉 체크
+    # //======== [스윙(RISE) 종목 비상 감시 타임프레임 30분봉 동적 할당] ========//
     if old_lvl >= 1 or profit_rate_pct >= 10.0:
         try:
-            ohlcv_3m = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '3m', limit=50)
+            target_tf = '30m' if str(buy_type).startswith('RISE') else '3m'
+            ohlcv_3m = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, target_tf, limit=50)
             df_3m = pd.DataFrame(ohlcv_3m, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
             df_3m['ma40'] = df_3m['close'].rolling(40).mean()
             if df_3m['close'].iloc[-1] < df_3m['ma40'].iloc[-1]:
                 is_3m_below_ma40 = True
         except Exception as e:
-            logger.error(f"3분봉 데이터 조회 실패: {e}")
+            logger.error(f"비상 데이터({target_tf}) 조회 실패: {e}")
 
     ma40_slope = (ma40_val - prev_ma40) / prev_ma40 if prev_ma40 > 0 else 0
     is_converging = abs(ma40_val - ma185_val) < abs(prev_ma40 - prev_ma185)
