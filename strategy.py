@@ -386,7 +386,9 @@ def _get_pattern_labels(df, curr, curr_price, rsi_val, ma5_val, ma20_val, ma185_
 
 # [사용자 원본 버전 2 - 메인 사용 중인 로직]
 # [확장] 하락장 대응 + 정배열 전환 + 급등 추적 모두 반영. 기존 로직 삭제 없이 주석/분기로 보강.
-async def check_buy_signal(exchange, df, symbol, warning_list, buy_type='1'):
+# //======== [백테스트 우회 파라미터 추가] ========//
+async def check_buy_signal(exchange, df, symbol, warning_list, buy_type='1', is_backtest=False):
+# //==================================================//
     """
     매수 신호 판단 함수 (4개 값 리턴)
     
@@ -436,8 +438,10 @@ async def check_buy_signal(exchange, df, symbol, warning_list, buy_type='1'):
     except Exception as e:
         return False, f"⚠️ 초기 필터링 에러: {e}", "", {}  
 
-    if is_buy_locked:
+    # //======== [백테스트 시 실시간 시장잠금(Panic Filter) 무시] ========//
+    if is_buy_locked and not is_backtest:
         return False, f"DEBUG: 🚫 [시장잠금] Panic Filter 작동 중 (해제 기준:{-1 - market_ref_rate:.2f}% 상승)", "", {}
+    # //=============================================================//
 
     # 기본 data_dict 초기화 (조건 탈락 여부와 관계없이 끝까지 계산해 빈칸 채움)
     data_dict = {}

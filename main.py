@@ -1832,7 +1832,9 @@ async def handle_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 test_timestamp = bt_df['time'].iloc[-1]
                 test_date = datetime.fromtimestamp(test_timestamp / 1000).strftime('%Y-%m-%d')
                 
-                is_buy, bt_reason, bt_grade, bt_data = await strategy.check_buy_signal(exchange, bt_df, target_sym, [], buy_type='RISE1')
+                # //======== [백테스트 스위치(is_backtest=True) 켜기] ========//
+                is_buy, bt_reason, bt_grade, bt_data = await strategy.check_buy_signal(exchange, bt_df, target_sym, [], buy_type='RISE1', is_backtest=True)
+                # //=============================================================//
                 
                 if is_buy:
                     await update.message.reply_text(
