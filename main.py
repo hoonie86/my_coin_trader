@@ -32,9 +32,31 @@ class StreamToLogger:
 sys.stdout = StreamToLogger(logger.info)
 sys.stderr = StreamToLogger(logger.error)
 
+# //======== [감시모드 파일 저장/로드 추가 시작] ========//
+SETTINGS_FILE = "/home/rocky/my_coin_trader/trades/settings.json"
+
+def load_settings():
+    if os.path.exists(SETTINGS_FILE):
+        try:
+            with open(SETTINGS_FILE, "r") as f:
+                return json.load(f)
+        except:
+            pass
+    return {}
+
+def save_settings():
+    try:
+        with open(SETTINGS_FILE, "w") as f:
+            json.dump({'sell': sell_mute_status, 'buy': buy_individual_status}, f, indent=4)
+    except Exception as e:
+        logger.error(f"Settings Save Error: {e}")
+
+_loaded_settings = load_settings()
+
 # [전역 상태 관리] - 기존 로직 100% 유지 + 신규 토글 상태 반영
-sell_mute_status = {}  # [기능 19] 'AUTO' | 'WATCH'
-buy_individual_status = {}  # 종목별 매수 개별 상태
+sell_mute_status = _loaded_settings.get('sell', {})  # [기능 19] 'AUTO' | 'WATCH'
+buy_individual_status = _loaded_settings.get('buy', {})  # 종목별 매수 개별 상태
+# //======== [감시모드 파일 저장/로드 추가 끝] ========//
 pending_approvals = {}  # [기능 17] 무응답 자동 대응용
 highest_rates = {}  # [기능 16] 수익 상승 보고용
 last_rise_run_hour = -1
@@ -1268,9 +1290,13 @@ async def sell_monitor_task(app):
                     continue
 
                 # 3단계: 매도 엔진 & 유예 관리 (야간 AUTO 반영)
-                m_status = sell_mute_status.get(symbol, 'WATCH')
-                # 사용자가 KEEP을 눌렀다면 야간이라도 KEEP 유지
-                status = m_status if m_status == 'KEEP' else ('AUTO' if is_night else m_status)
+                # //======== [야간 강제 변환 차단: 사용자 명시적 설정 최우선 존중] ========//
+                m_status = sell_mute_status.get(symbol)
+                if m_status in ['KEEP', 'WATCH', 'AUTO']:
+                    status = m_status
+                else:
+                    status = 'AUTO' if is_night else 'WATCH' # 설정 없는 종목만 야간 AUTO
+                # //================================================================//
 
                 ticker = await asyncio.to_thread(exchange.fetch_ticker, symbol)
                 this_curr_p = float(ticker.get('last') or ticker.get('close') or 0)
@@ -1421,6 +1447,13 @@ async def sell_monitor_task(app):
 
                 # 4. 최종 매도 집행
                 if is_sell_final and status != 'KEEP':
+                    # //======== [감시모드 실제 주문 차단 추가 시작] ========//
+                    if status == 'WATCH':
+                        if symbol in pending_approvals: del pending_approvals[symbol]
+                        logger.info(f"👀 [WATCH 차단] {symbol} 매도 타점 도달. 감시모드이므로 주문을 생략합니다.")
+                        continue
+                    # //======== [감시모드 실제 주문 차단 추가 끝] ========//
+
                     # // ========== [최종 급매도 방어] ========== //
                     if is_protected:
                         logger.info(f"🛡️ [보호작동] {symbol} 평단가 갱신 직후 매도 시그널 무시 (60초 보호 중)")
@@ -1714,6 +1747,12 @@ async def handle_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE)
             else:
                 await query.answer("이미 처리되었거나 유효하지 않은 요청입니다.", show_alert=True)
 
+        # //======== [감시모드 상태 저장 로직 추가 시작] ========//
+        save_actions = ["toggle_buy_auto", "toggle_sell_auto", "set_buy_watch", "set_sell_watch", "set_sell_keep", "toggle_all_sell_auto", "set_all_sell_watch", "reset_all_sell_status"]
+        if action in save_actions:
+            save_settings()
+        # //======== [감시모드 상태 저장 로직 추가 끝] ========//
+
     elif update.message and update.message.text:
         # 기존 텍스트 메시지 처리 로직 100% 유지
         if msg == "📊 실시간 리포트":
@@ -1753,6 +1792,9 @@ async def handle_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE)
             config.buy_mute_mode = None
             sell_mute_status.clear();
             buy_individual_status.clear()
+            # //======== [감시모드 초기화 파일 저장 추가 시작] ========//
+            save_settings()
+            # //======== [감시모드 초기화 파일 저장 추가 끝] ========//
             await update.message.reply_text("🔄 시스템 상태가 초기화되었습니다.")
         elif msg == "💰 금액설정":
             await update.message.reply_text("매수 단위 금액 선택:",
@@ -1880,9 +1922,14 @@ async def process_report_logic(update, context, query=None):
                 this_elapsed_bars = 99
 
             # 야간 모드 및 모드 아이콘 판정
-            raw_status = sell_mute_status.get(symbol, 'WATCH')
+            # //======== [야간 강제 변환 차단: 사용자 명시적 설정 최우선 존중] ========//
+            raw_status = sell_mute_status.get(symbol)
             is_global_auto = is_night or is_manual_auto
-            status = raw_status if raw_status == 'KEEP' else ('AUTO' if is_global_auto else raw_status)
+            if raw_status in ['KEEP', 'WATCH', 'AUTO']:
+                status = raw_status
+            else:
+                status = 'AUTO' if is_global_auto else 'WATCH'
+            # //================================================================//
 
             ohlcv = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, '30m', limit=100)
             df = pd.DataFrame(ohlcv, columns=['time', 'open', 'high', 'low', 'close', 'vol'])
