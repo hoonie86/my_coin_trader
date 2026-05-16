@@ -1427,7 +1427,13 @@ async def sell_monitor_task(app):
                         this_profit, is_sell_signal, this_curr_p, ma40_line,
                         sell_reason, symbol, pending_approvals, buy_type=this_buy_type
                     )
-                    mode_icon = " 🤖" if status == 'AUTO' else ""
+                    
+                    if status == 'AUTO':
+                        mode_icon = " 🤖"
+                    elif m_status == 'WATCH':
+                        mode_icon = " 👀"
+                    else:
+                        mode_icon = ""
 
                 if is_emergency:
                     mode_str, report_color = "긴급", "🚨"
@@ -1486,10 +1492,16 @@ async def sell_monitor_task(app):
                     is_manual_auto = (getattr(config, 'buy_mute_mode', 'MANUAL') == 'AUTO')
                     
                     mode_tag = ""
+                    current_global_mode = getattr(config, 'buy_mute_mode', 'MANUAL')
+                    
                     if is_night:
                         mode_tag = " (야간 AUTO)"
                     elif is_manual_auto:
                         mode_tag = " (AUTO)"
+                    elif current_global_mode == 'WATCH':
+                        mode_tag = " (WATCH)"
+                    else:
+                        mode_tag = "" # 기본 모드
 
                     msg_text = (
                         f"📊 [정기 리포트] ({now_str}){mode_tag}\n"
@@ -2012,7 +2024,12 @@ async def process_report_logic(update, context, query=None):
                 else:
                     mode_str = "일반"
                 
-                mode_icon = " 🤖" if status == 'AUTO' else ""
+                if status == 'AUTO':
+                    mode_icon = " 🤖"
+                elif raw_status == 'WATCH':
+                    mode_icon = " 👀"
+                else:
+                    mode_icon = ""
 
             # [복구 내용 2: 꼬여있던 리포트 출력 포맷 정상화]
             report_line = f"{report_color} [{this_grade} | {mode_str}] {symbol.split('/')[0]:<6} | {this_curr_p:,.0f}원 | {this_profit:+.2f}%({this_profit_krw:+,.0f}원) | {status_text}{mode_icon}"
@@ -2054,12 +2071,16 @@ async def process_report_logic(update, context, query=None):
             final_rows.extend(report_kb.inline_keyboard)
 
         # 최종 메시지 조립
+        current_global_mode = getattr(config, 'buy_mute_mode', 'MANUAL')
+                    
         if is_night:
             mode_tag = " (야간 AUTO)"
         elif is_manual_auto:
             mode_tag = " (AUTO)"
+        elif current_global_mode == 'WATCH':
+            mode_tag = " (WATCH)"
         else:
-            mode_tag = ""
+            mode_tag = "" # 기본 모드
 
         msg_text = f"📊 [실시간 리포트]{mode_tag}\n{summary}" + ("━━━━━━━━━━━━\n" + "\n".join(final_text_lines) if final_text_lines else "보유 종목 없음")
 
