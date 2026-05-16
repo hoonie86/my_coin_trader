@@ -32,7 +32,7 @@ class StreamToLogger:
 sys.stdout = StreamToLogger(logger.info)
 sys.stderr = StreamToLogger(logger.error)
 
-# //======== [감시모드 파일 저장/로드 추가 시작] ========//
+# //======== [감시모드 파일 저장/로드 최종 완성] ========//
 SETTINGS_FILE = "/home/rocky/my_coin_trader/trades/settings.json"
 
 def load_settings():
@@ -47,7 +47,11 @@ def load_settings():
 def save_settings():
     try:
         with open(SETTINGS_FILE, "w") as f:
-            json.dump({'sell': sell_mute_status, 'buy': buy_individual_status}, f, indent=4)
+            json.dump({
+                'sell': sell_mute_status, 
+                'buy': buy_individual_status,
+                'global_buy_mute_mode': getattr(config, 'buy_mute_mode', 'MANUAL')
+            }, f, indent=4)
     except Exception as e:
         logger.error(f"Settings Save Error: {e}")
 
@@ -56,7 +60,9 @@ _loaded_settings = load_settings()
 # [전역 상태 관리] - 기존 로직 100% 유지 + 신규 토글 상태 반영
 sell_mute_status = _loaded_settings.get('sell', {})  # [기능 19] 'AUTO' | 'WATCH'
 buy_individual_status = _loaded_settings.get('buy', {})  # 종목별 매수 개별 상태
-# //======== [감시모드 파일 저장/로드 추가 끝] ========//
+config.buy_mute_mode = _loaded_settings.get('global_buy_mute_mode', 'MANUAL')
+# //==================================================//
+
 pending_approvals = {}  # [기능 17] 무응답 자동 대응용
 highest_rates = {}  # [기능 16] 수익 상승 보고용
 last_rise_run_hour = -1
@@ -1791,22 +1797,31 @@ async def handle_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE)
             config.buy_mute_mode = 'AUTO'
             GLOBAL_BUY_MODE = "SHIELD"
             print(f"✅ [DEBUG] 시스템 모드 변경: {config.buy_mute_mode} | 매수속도: {GLOBAL_BUY_MODE}")
+            # //======== [전체 모드 파일 저장 추가] ========//
+            save_settings()
+            # //==========================================//
             await update.message.reply_text("🛡️ [자동-신중] 10분 추적 후 매수합니다.")
         elif msg == "⚡ 자동(즉시)":
             config.buy_mute_mode = 'AUTO'
             GLOBAL_BUY_MODE = "LIGHTNING"
             print(f"✅ [DEBUG] 시스템 모드 변경: {config.buy_mute_mode} | 매수속도: {GLOBAL_BUY_MODE}")
+            # //======== [전체 모드 파일 저장 추가] ========//
+            save_settings()
+            # //==========================================//
             await update.message.reply_text("⚡ [자동-즉시] 대기 없이 즉시 매수합니다.")
         elif msg == "⏳ 감시 모드":
             config.buy_mute_mode = 'WATCH'
+            # //======== [전체 모드 파일 저장 추가] ========//
+            save_settings()
+            # //==========================================//
             await update.message.reply_text("🔍 [전체 제어] 감시 모드 활성화")
         elif msg == "🔄 모드 초기화":
             config.buy_mute_mode = None
             sell_mute_status.clear();
             buy_individual_status.clear()
-            # //======== [감시모드 초기화 파일 저장 추가 시작] ========//
+            # //======== [감시모드 초기화 파일 저장] ========//
             save_settings()
-            # //======== [감시모드 초기화 파일 저장 추가 끝] ========//
+            # //==========================================//
             await update.message.reply_text("🔄 시스템 상태가 초기화되었습니다.")
         elif msg == "💰 금액설정":
             await update.message.reply_text("매수 단위 금액 선택:",
