@@ -1368,80 +1368,95 @@ async def check_buy_signal(exchange, df, symbol, warning_list, buy_type='1', is_
     if upper_shadow_pct > 1.0: reasons_t4.append(f"윗꼬리과다({upper_shadow_pct:.1f}%)")
     # //========================================================================================//
 
-    # //======== [2026-05-15 최종수정: 수렴 6점 하향, 시간대별 d_search 적용, RISE2 우선순위 독립] ========//
-    if str(buy_type) == 'RISE1':
-        desc_cnt_185 = (df['ma185'].diff().tail(50) < 0).sum()
-        is_rice_bowl = desc_cnt_185 >= 30 
-
-        g_list = [abs(df['ma40'].iloc[-1-i] - df['ma90'].iloc[-1-i]) / df['ma90'].iloc[-1-i] * 100 for i in range(0, 51, 5)]
-        conv_score = sum(1 for i in range(10) if g_list[i] < g_list[i+1])
+    # //======== [2026-05-18 RISE 1 & 2 고도화 모델 적용 시작] ========//
+    if str(buy_type).startswith('RISE'):
+        # 1. 환경 필터: 4일 단위 5구간 이격도 분석 (최근 20봉)
+        recent_20 = df.tail(20)
+        disp_arr = np.where(
+            recent_20['ma185'] > 0, 
+            abs(recent_20['ma40'] - recent_20['ma185']) / recent_20['ma185'] * 100, 
+            999
+        )
+        chunks = [np.mean(disp_arr[i:i+4]) for i in range(0, 20, 4)]
+        conv_score = sum(1 for i in range(1, 5) if chunks[i] < chunks[i-1])
+        is_env_ok = conv_score >= 3
         
-        # 배열 상태에 따른 이격도 한도 동적 설정 (역배열 5%, 정배열 2%)
-        is_40_below_90 = df['ma40'].iloc[-1] < df['ma90'].iloc[-1]
-        gap_limit = 5.0 if is_40_below_90 else 2.0
-        is_converging = (g_list[0] <= gap_limit) and (conv_score >= 6)
-        
-        # 상세 디버그 로그 출력
-        logger.info(f"🔍 [RISE-DEBUG] {symbol} | 밥그릇:{is_rice_bowl}({desc_cnt_185}) | 수렴:{is_converging}(점수:{conv_score}, 이격:{g_list[0]:.2f}%/한도:{gap_limit}%)")
+        # 2. 공통 생명선 가드: 캔들 고가(High) 기준
+        c_high = float(curr['high'])
+        is_ma14_guarded = c_high >= float(curr['ma14'])
+        is_ma5_guarded = c_high >= float(curr['ma5'])
+        is_yangbong = curr_price > float(curr['open'])
 
-        if is_rice_bowl and is_converging and not d_search.empty:
-            data_dict['bowl_count'] = int(desc_cnt_185)
-            data_dict['conv_score'] = int(conv_score)
+        if str(buy_type) == 'RISE1':
+            d_5 = df.tail(5)
+            bear_cnt = (d_5['close'] < d_5['open']).sum()
             
-            # --- [RISE1 검사: 90선 상향 터치 확인] ---
-            rise1_touch = (d_search['high'] >= d_search['ma90']).any()
+            # (1) 패턴 1 (Spring): 양봉 + 1~2음봉 눌림 + 14선 가드
+            is_spring = is_yangbong and (1 <= bear_cnt <= 2) and is_ma14_guarded
             
-            if rise1_touch:
-                is_compressed_success = True
-                last_bull_open, last_bull_close = 0, 0
-                
-                max_amp = ((d_search['high'] - d_search['low']) / d_search['low'] * 100).max()
-                if max_amp >= 20.0:
-                    is_compressed_success = False
-                else:
-                    for i in range(len(df)-7, len(df)):
-                        c_o, c_c = df['open'].iloc[i], df['close'].iloc[i]
-                        if c_c > c_o: 
-                            last_bull_open, last_bull_close = c_o, c_c
-                        elif c_c < c_o:
-                            c_max, c_min = max(c_o, c_c), min(c_o, c_c)
-                            # 잉태형 조건 완화: 음봉 몸통 하단(c_min)이 양봉 시가(last_bull_open)를 깨지만 않으면 통과
-                            if last_bull_close == 0 or c_min < last_bull_open:
-                                is_compressed_success = False
-                                break
-                
-                if is_compressed_success:
+            # (2) 변칙 2 (Linear): 저점 상승 우상향 + 5선 가드
+            is_linear = d_5['low'].is_monotonic_increasing and is_ma5_guarded
+            
+            # (3) 변칙 1 (W-Bottom): 4봉 중 3봉 종가 상승 + 5선 터치 2회 이상 + 14선 가드
+            close_diffs = d_5['close'].diff().dropna() # 길이 5의 diff는 4개의 변화량
+            up_close_cnt = (close_diffs > 0).sum()
+            ma5_touches = (d_5['high'] >= d_5['ma5']).sum()
+            is_w_bottom = (up_close_cnt >= 3) and (ma5_touches >= 2) and is_ma14_guarded
+            
+            if is_env_ok:
+                if is_spring:
                     data_dict['grade'] = 'S+'
-                    return True, f"💎 [RISE1-S+] 밥그릇+수렴({conv_score}) + 90선터치 + 완전잉태형", "S+", data_dict
-                else:
+                    return True, f"💎 [RISE1-S+] 수렴({conv_score}/4) + Spring발사(양음음)", "S+", data_dict
+                elif is_linear:
                     data_dict['grade'] = 'S'
-                    return True, f"🚀 [RISE1-S] 밥그릇+수렴({conv_score}) + 90선터치", "S", data_dict
-
-            # --- [RISE2 검사: 40선/90선 중 상단 지지선 터치 (RISE1 실패 시 수행)] ---
-            is_40_above = df['ma40'].iloc[-1] > df['ma90'].iloc[-1]
-            target_line = df['ma40'] if is_40_above else df['ma90']
+                    return True, f"🚀 [RISE1-S] 수렴({conv_score}/4) + Linear상승(5선)", "S", data_dict
+                elif is_w_bottom and is_yangbong:
+                    data_dict['grade'] = 'S'
+                    return True, f"⭐ [RISE1-S] 수렴({conv_score}/4) + W쌍바닥 반등", "S", data_dict
+                    
+            f_reasons = []
+            if not is_env_ok: f_reasons.append(f"수렴미달({conv_score}/4)")
+            if is_env_ok: f_reasons.append("가드 및 트리거(Spring/Linear/W) 미달")
+            return False, f"RISE1 미달({', '.join(f_reasons)})", "F", data_dict
             
-            rise2_touch = (d_search['high'] >= target_line.loc[d_search.index]).any()
+        elif str(buy_type) == 'RISE2':
+            # 1. 피벗(Pivot) 찾기: 최근 7봉 내 최고가(High) 인덱스
+            recent_7 = df.tail(7)
+            pivot_idx = recent_7['high'].idxmax()
             
-            if rise2_touch:
-                target_name = "40선" if is_40_above else "90선"
-                data_dict['grade'] = 'S'
-                return True, f"⭐ [RISE2] 밥그릇+수렴({conv_score}) + 동적지지({target_name}) 터치", "S", data_dict
+            # 2. RISE 1 에너지(분출 폭) 계산 (최근 15봉 내 양봉 기준)
+            recent_15 = df.tail(15)
+            bulls = recent_15[recent_15['close'] >= recent_15['open']]
+            rise1_power = ((bulls['high'] - bulls['open']) / bulls['open'] * 100).max() if not bulls.empty else 0
+            
+            # 3. 가변 음봉 개수(n) 설정 (업데이트된 수치 반영)
+            if rise1_power >= 40.0:
+                neg_limit = 6
+            elif rise1_power >= 20.0:
+                neg_limit = 5
+            elif rise1_power >= 5.0:
+                neg_limit = 4
             else:
-                logger.info(f"🔍 [RISE-DEBUG] {symbol} | 터치 실패 (RISE1/2 조건 미충족)")
-
-        f_reasons = []
-        if not is_rice_bowl: 
-            f_reasons.append(f"밥그릇({desc_cnt_185}/30)")
-        
-        if not is_converging: 
-            f_reasons.append(f"수렴({conv_score}/6, 이격:{g_list[0]:.2f}%>한도:{gap_limit}%)")
-        
-        # 밥그릇/수렴 관문을 넘었는데 리턴되지 않았다면 '터치' 실패가 확실할 때만 로그 추가
-        if is_rice_bowl and is_converging:
-            f_reasons.append("터치미달")
+                neg_limit = 3
+                
+            # 4. 피벗 이후 음봉 카운트 (양봉 무시, 기간 조정 산출)
+            d_after_pivot = df.loc[pivot_idx:]
+            d_adjust = d_after_pivot.iloc[1:] if len(d_after_pivot) > 1 else pd.DataFrame()
+            neg_count = (d_adjust['close'] <= d_adjust['open']).sum() if not d_adjust.empty else 0
             
-        return False, f"RISE 미달({', '.join(f_reasons)})", "F", data_dict
+            is_step_ready = (neg_count >= neg_limit)
+            
+            if is_env_ok and is_ma14_guarded:
+                if is_step_ready and is_yangbong:
+                    data_dict['grade'] = 'S+'
+                    return True, f"💎 [RISE2-S+] 수렴({conv_score}/4) + 가변조정({neg_count}/{neg_limit}음봉) 완료", "S+", data_dict
+                    
+            f_reasons = []
+            if not is_env_ok: f_reasons.append(f"수렴미달({conv_score}/4)")
+            if not is_ma14_guarded: f_reasons.append("14선가드(고가)이탈")
+            if is_env_ok and is_ma14_guarded: f_reasons.append(f"조정미달(현재:{neg_count}음봉/요구:{neg_limit}음봉)")
+            return False, f"RISE2 미달({', '.join(f_reasons)})", "F", data_dict
+    # //======== [2026-05-18 RISE 1 & 2 고도화 모델 적용 끝] ========//
 
     # //======== [2026-04-16 수정: TYPE 4 공통 타점 적용] ========//
     if not reasons_t4:
