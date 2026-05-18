@@ -1368,94 +1368,134 @@ async def check_buy_signal(exchange, df, symbol, warning_list, buy_type='1', is_
     if upper_shadow_pct > 1.0: reasons_t4.append(f"윗꼬리과다({upper_shadow_pct:.1f}%)")
     # //========================================================================================//
 
-    # //======== [2026-05-18 RISE 1 & 2 고도화 모델 적용 시작] ========//
+    # //======== [2026-05-18 RISE 1 & 2 고도화 모델 적용 시작 (S+ 전용 및 망치 유예/격상)] ========//
     if str(buy_type).startswith('RISE'):
-        # 1. 환경 필터: 4일 단위 5구간 이격도 분석 (최근 20봉)
-        recent_20 = df.tail(20)
-        disp_arr = np.where(
-            recent_20['ma185'] > 0, 
-            abs(recent_20['ma40'] - recent_20['ma185']) / recent_20['ma185'] * 100, 
-            999
-        )
-        chunks = [np.mean(disp_arr[i:i+4]) for i in range(0, 20, 4)]
-        conv_score = sum(1 for i in range(1, 5) if chunks[i] < chunks[i-1])
-        is_env_ok = conv_score >= 3
         
-        # 2. 공통 생명선 가드: 캔들 고가(High) 기준
-        c_high = float(curr['high'])
-        is_ma14_guarded = c_high >= float(curr['ma14'])
-        is_ma5_guarded = c_high >= float(curr['ma5'])
-        is_yangbong = curr_price > float(curr['open'])
+        # [1. 22시 데이터 참조 시간 원칙]
+        now_hour = datetime.now().hour
+        if 22 <= now_hour < 24:
+            d_rise = df.copy() # 야간: 오늘 캔들 포함
+        else:
+            d_rise = df.iloc[:-1].copy() # 일반: 어제까지 확정 캔들
 
+        curr_r = d_rise.iloc[-1]
+        curr_r_price = float(curr_r['close'])
+        is_yangbong = curr_r_price > float(curr_r['open'])
+
+        # [보조 함수: 이격도 평균 산출 및 망치형 판별]
+        def analyze_disp_chunks(series, chunk_size, mode='conv'):
+            vals = series.values
+            if len(vals) < (chunk_size * 5): return False
+            chunks = [np.mean(vals[i:i+chunk_size]) for i in range(0, chunk_size * 5, chunk_size)]
+            if mode == 'conv': count = sum(1 for i in range(1, 5) if chunks[i] < chunks[i-1])
+            else: count = sum(1 for i in range(1, 5) if chunks[i] > chunks[i-1])
+            return count >= 3
+
+        def is_hammer_grace(c):
+            body = abs(float(c['close']) - float(c['open']))
+            l_shadow = min(float(c['close']), float(c['open'])) - float(c['low'])
+            u_shadow = float(c['high']) - max(float(c['close']), float(c['open']))
+            # 아랫꼬리가 몸통 이상, 윗꼬리는 몸통 10% 이하 (도지도 커버하기 위해 0.001 보정)
+            return (l_shadow >= max(body, 0.001)) and (u_shadow <= max(body, 0.001) * 0.1)
+
+        # [2. 이평선 대전제 (Grand Premise) 하드 게이트]
+        is_gp_ok = False
+        disp_40_90 = abs(d_rise['ma40'] - d_rise['ma90']) / d_rise['ma90'] * 100
+        r_ma40, r_ma90, r_ma14 = float(curr_r['ma40']), float(curr_r['ma90']), float(curr_r['ma14'])
+        gp_reasons = []
+        
+        if r_ma40 < r_ma90:
+            if analyze_disp_chunks(disp_40_90.tail(20), 4, mode='conv'): 
+                is_gp_ok = True
+            else:
+                disp_14_40 = abs(d_rise['ma14'] - d_rise['ma40']) / d_rise['ma40'] * 100
+                if r_ma14 < r_ma40:
+                    is_gp_ok = analyze_disp_chunks(disp_14_40.tail(10), 2, mode='conv')
+                    if not is_gp_ok: gp_reasons.append("역배열 발산 중 14/40 수렴(하단) 실패")
+                else:
+                    is_gp_ok = analyze_disp_chunks(disp_14_40.tail(10), 2, mode='div')
+                    if not is_gp_ok: gp_reasons.append("역배열 발산 중 14/40 발산(상단) 실패")
+            if not is_gp_ok and not gp_reasons: gp_reasons.append("40/90 수렴(20봉/4주기) 실패")
+        else:
+            is_gp_ok = analyze_disp_chunks(disp_40_90.tail(20), 4, mode='div')
+            if not is_gp_ok: gp_reasons.append("정배열 40/90 발산(20봉/4주기) 실패")
+
+        if not is_gp_ok:
+            return False, f"🚫 [RISE-대전제탈락] {' | '.join(gp_reasons)}", "F", data_dict
+
+        # [3. 공통 가드 및 망치형 격상] 고가가 선 아래여도 망치형이면 터치(지지)로 완벽히 인정
+        c_high = float(curr_r['high'])
+        is_ma14_guarded = (c_high >= float(curr_r['ma14'])) or is_hammer_grace(curr_r)
+        is_ma5_guarded = (c_high >= float(curr_r['ma5'])) or is_hammer_grace(curr_r)
+
+        # [4. RISE 1: 바닥 탈출 모델 (S+ 전용)]
         if str(buy_type) == 'RISE1':
-            d_5 = df.tail(5)
+            d_5 = d_rise.tail(5)
+            # (1) Spring: 양봉 + 1~2음봉 + 14선 가드(망치포함)
             bear_cnt = (d_5['close'] < d_5['open']).sum()
-            
-            # (1) 패턴 1 (Spring): 양봉 + 1~2음봉 눌림 + 14선 가드
             is_spring = is_yangbong and (1 <= bear_cnt <= 2) and is_ma14_guarded
             
-            # (2) 변칙 2 (Linear): 저점 상승 우상향 + 5선 가드
+            # (2) Linear: 저점 상승 우상향 + 5선 가드(망치포함)
             is_linear = d_5['low'].is_monotonic_increasing and is_ma5_guarded
             
-            # (3) 변칙 1 (W-Bottom): 4봉 중 3봉 종가 상승 + 5선 터치 2회 이상 + 14선 가드
-            close_diffs = d_5['close'].diff().dropna() # 길이 5의 diff는 4개의 변화량
-            up_close_cnt = (close_diffs > 0).sum()
-            ma5_touches = (d_5['high'] >= d_5['ma5']).sum()
-            is_w_bottom = (up_close_cnt >= 3) and (ma5_touches >= 2) and is_ma14_guarded
+            # (3) W-Bottom: 4봉 중 3봉 종가 상승 + 5선 2회 지지(망치포함) + 14선 가드
+            up_close = (d_5['close'].diff() > 0).sum()
+            ma5_touch = sum(1 for i in range(len(d_5)) if float(d_5.iloc[i]['high']) >= float(d_5.iloc[i]['ma5']) or is_hammer_grace(d_5.iloc[i]))
+            is_w_bottom = (up_close >= 3) and (ma5_touch >= 2) and is_ma14_guarded
             
-            if is_env_ok:
-                if is_spring:
-                    data_dict['grade'] = 'S+'
-                    return True, f"💎 [RISE1-S+] 수렴({conv_score}/4) + Spring발사(양음음)", "S+", data_dict
-                elif is_linear:
-                    data_dict['grade'] = 'S'
-                    return True, f"🚀 [RISE1-S] 수렴({conv_score}/4) + Linear상승(5선)", "S", data_dict
-                elif is_w_bottom and is_yangbong:
-                    data_dict['grade'] = 'S'
-                    return True, f"⭐ [RISE1-S] 수렴({conv_score}/4) + W쌍바닥 반등", "S", data_dict
-                    
-            f_reasons = []
-            if not is_env_ok: f_reasons.append(f"수렴미달({conv_score}/4)")
-            if is_env_ok: f_reasons.append("가드 및 트리거(Spring/Linear/W) 미달")
-            return False, f"RISE1 미달({', '.join(f_reasons)})", "F", data_dict
+            if is_spring: 
+                data_dict['grade'] = 'S+'
+                return True, "💎 [RISE1-S+] Spring(양음음) 14선 지지(망치/터치) 발사", "S+", data_dict
+            if is_linear: 
+                data_dict['grade'] = 'S+'
+                return True, "🚀 [RISE1-S+] Linear상승 5선 지지(망치/터치)", "S+", data_dict
+            if is_w_bottom and is_yangbong: 
+                data_dict['grade'] = 'S+'
+                return True, "⭐ [RISE1-S+] W-Bottom반등 5선 2회 지지", "S+", data_dict
             
+            # RISE 1 탈락 시 상세 사유 독립적 반환
+            r1_fails = []
+            if not is_ma14_guarded: r1_fails.append("14선가드(망치포함)실패")
+            if not is_spring and not is_linear and not is_w_bottom: r1_fails.append("Spring/Linear/W패턴 트리거 미달")
+            return False, f"🚫 [RISE1-조건미달] {' | '.join(r1_fails)}", "F", data_dict
+            
+        # [5. RISE 2: 안착 재도약 모델 (S+ 전용)]
         elif str(buy_type) == 'RISE2':
-            # 1. 피벗(Pivot) 찾기: 최근 7봉 내 최고가(High) 인덱스
-            recent_7 = df.tail(7)
-            pivot_idx = recent_7['high'].idxmax()
+            # 피벗 찾기: 최근 7봉 중 최고가 양봉
+            recent_7 = d_rise.tail(7)
+            bulls_7 = recent_7[recent_7['close'] > recent_7['open']]
+            if bulls_7.empty:
+                return False, "🚫 [RISE2-포착실패] 최근 7봉 내 피벗(양봉) 기준점 없음", "F", data_dict
+            pivot_idx = bulls_7['high'].idxmax()
             
-            # 2. RISE 1 에너지(분출 폭) 계산 (최근 15봉 내 양봉 기준)
-            recent_15 = df.tail(15)
-            bulls = recent_15[recent_15['close'] >= recent_15['open']]
-            rise1_power = ((bulls['high'] - bulls['open']) / bulls['open'] * 100).max() if not bulls.empty else 0
+            # 피벗 다음 봉부터의 조정 구간 데이터
+            d_adjust = d_rise.loc[pivot_idx:].iloc[1:]
             
-            # 3. 가변 음봉 개수(n) 설정 (업데이트된 수치 반영)
-            if rise1_power >= 40.0:
-                neg_limit = 6
-            elif rise1_power >= 20.0:
-                neg_limit = 5
-            elif rise1_power >= 5.0:
-                neg_limit = 4
-            else:
-                neg_limit = 3
+            # 양봉 무시, 음봉(도지 포함)만 필터링
+            neg_candles = d_adjust[d_adjust['close'] <= d_adjust['open']]
+            neg_count = len(neg_candles)
+            
+            if neg_count < 3:
+                return False, f"⏳ [RISE2-대기] 유효 음봉 부족 (현재:{neg_count}개 / 최소:3개 요구)", "F", data_dict
+
+            # 음봉 4개 초과 시 종목 폐기 조건 검사 (14선 터치나 망치가 없으면 가차없이 폐기)
+            if neg_count > 4 and not is_ma14_guarded:
+                return False, f"🚫 [RISE2-폐기] 조정 이탈 (음봉 {neg_count}개 구간 14선 가드 및 망치유예 모두 실패)", "F", data_dict
+            
+            # 14선 아래에서 생성된 망치 개수 카운트 (강력한 S+ 시그널 포착용)
+            hammer_below_14_cnt = sum(1 for _, c in neg_candles.iterrows() if float(c['high']) < float(c['ma14']) and is_hammer_grace(c))
+            
+            # S+ 타점 판별 1: 14선 밑에서 망치 2개 이상 (양봉 안 기다리고 내일 급등 확률 최우선으로 찍음)
+            if hammer_below_14_cnt >= 2:
+                data_dict['grade'] = 'S+'
+                return True, f"🔥 [RISE2-최우선S+] 14선 하단 망치형 {hammer_below_14_cnt}개 포착! (강력한 바닥 지지)", "S+", data_dict
+            
+            # S+ 타점 판별 2: 14선 가드(망치/터치) 통과 후 양봉 확정 시
+            if is_ma14_guarded and is_yangbong:
+                data_dict['grade'] = 'S+'
+                return True, f"💎 [RISE2-S+] 음봉 {neg_count}개 지지 후 14선 가드(망치/터치) 양봉 탈환", "S+", data_dict
                 
-            # 4. 피벗 이후 음봉 카운트 (양봉 무시, 기간 조정 산출)
-            d_after_pivot = df.loc[pivot_idx:]
-            d_adjust = d_after_pivot.iloc[1:] if len(d_after_pivot) > 1 else pd.DataFrame()
-            neg_count = (d_adjust['close'] <= d_adjust['open']).sum() if not d_adjust.empty else 0
-            
-            is_step_ready = (neg_count >= neg_limit)
-            
-            if is_env_ok and is_ma14_guarded:
-                if is_step_ready and is_yangbong:
-                    data_dict['grade'] = 'S+'
-                    return True, f"💎 [RISE2-S+] 수렴({conv_score}/4) + 가변조정({neg_count}/{neg_limit}음봉) 완료", "S+", data_dict
-                    
-            f_reasons = []
-            if not is_env_ok: f_reasons.append(f"수렴미달({conv_score}/4)")
-            if not is_ma14_guarded: f_reasons.append("14선가드(고가)이탈")
-            if is_env_ok and is_ma14_guarded: f_reasons.append(f"조정미달(현재:{neg_count}음봉/요구:{neg_limit}음봉)")
-            return False, f"RISE2 미달({', '.join(f_reasons)})", "F", data_dict
+            return False, f"⏳ [RISE2-대기] 음봉 {neg_count}개 지지 중 (망치유예 {hammer_below_14_cnt}개) | 양봉 확정 대기", "F", data_dict
     # //======== [2026-05-18 RISE 1 & 2 고도화 모델 적용 끝] ========//
 
     # //======== [2026-04-16 수정: TYPE 4 공통 타점 적용] ========//
